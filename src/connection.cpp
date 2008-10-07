@@ -1,0 +1,751 @@
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+// permit persons to whom the Software is furnished to do so.
+//  
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+// WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
+// OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+#include "pyodbc.h"
+#include "connection.h"
+#include "cursor.h"
+#include "pyodbcmodule.h"
+#include "errors.h"
+
+static char connection_doc[] =
+    "Connection objects manage connections to the database.\n"
+    "\n"
+    "Each manages a single ODBC HDBC.";
+
+static Connection*
+Connection_Validate(PyObject* self)
+{
+    Connection* cnxn;
+    
+    if (self == 0 || !Connection_Check(self))
+    {
+        PyErr_SetString(PyExc_TypeError, "Connection object required");
+        return 0;
+    }
+
+    cnxn = (Connection*)self;
+
+    if (cnxn->hdbc == SQL_NULL_HANDLE)
+    {
+        PyErr_SetString(ProgrammingError, "Attempt to use a closed connection.");
+        return 0;
+    }
+
+    return cnxn;
+}
+
+static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi)
+{
+    // This should have been checked by the global connect function.
+    I(PyString_Check(pConnectString) || PyUnicode_Check(pConnectString));
+
+    const int cchMax = 600;
+
+    if (PySequence_Length(pConnectString) >= cchMax)
+    {
+        PyErr_SetString(PyExc_TypeError, "connection string too long");
+        return false;
+    }
+
+    // The driver manager determines if the app is a Unicode app based on whether we call SQLDriverConnectA or
+    // SQLDriverConnectW.  Some drivers, notably Microsoft Access/Jet, change their behavior based on this, so we try
+    // the Unicode version first.  (The Access driver only supports Unicode text, but SQLDescribeCol returns SQL_CHAR
+    // instead of SQL_WCHAR if we connect with the ANSI version.  Obviously this causes lots of errors since we believe
+    // what it tells us (SQL_CHAR).)
+
+    // Python supports only UCS-2 and UCS-4, so we shouldn't need to worry about receiving surrogate pairs.  However,
+    // Windows does use UCS-16, so it is possible something would be misinterpreted as one.  We may need to examine
+    // this more.
+
+    SQLRETURN ret;
+
+    if (!fAnsi)
+    {
+        SQLWCHAR szConnectW[cchMax];
+        if (PyUnicode_Check(pConnectString))
+        {
+            Py_UNICODE* p = PyUnicode_AS_UNICODE(pConnectString);
+            for (int i = 0, c = PyUnicode_GET_SIZE(pConnectString); i <= c; i++)
+                szConnectW[i] = (wchar_t)p[i];
+        }
+        else
+        {
+            const char* p = PyString_AS_STRING(pConnectString);
+            for (int i = 0, c = PyString_GET_SIZE(pConnectString); i <= c; i++)
+                szConnectW[i] = (wchar_t)p[i];
+        }
+
+        Py_BEGIN_ALLOW_THREADS
+            ret = SQLDriverConnectW(hdbc, 0, szConnectW, SQL_NTS, 0, 0, 0, SQL_DRIVER_NOPROMPT);
+        Py_END_ALLOW_THREADS
+            if (SQL_SUCCEEDED(ret))
+                return true;
+
+        // The Unicode function failed.  If the error is that the driver doesn't have a Unicode version (IM001), continue
+        // to the ANSI version.
+
+        PyObject* error = GetErrorFromHandle("SQLDriverConnectW", hdbc, SQL_NULL_HANDLE);
+        if (!HasSqlState(error, "IM001"))
+        {
+            PyErr_SetObject(PyObject_Type(error), error);
+            return false;
+        }
+        Py_XDECREF(error);
+    }
+        
+    SQLCHAR szConnect[cchMax];
+    if (PyUnicode_Check(pConnectString))
+    {
+        Py_UNICODE* p = PyUnicode_AS_UNICODE(pConnectString);
+        for (int i = 0, c = PyUnicode_GET_SIZE(pConnectString); i <= c; i++)
+        {
+            if (p[i] > 0xFF)
+            {
+                PyErr_SetString(PyExc_TypeError, "A Unicode connection string was supplied but the driver does "
+                                "not have a Unicode connect function");
+                return false;
+            }
+            szConnect[i] = (char)p[i];
+        }
+    }
+    else
+    {
+        const char* p = PyString_AS_STRING(pConnectString);
+        memcpy(szConnect, p, PyString_GET_SIZE(pConnectString) + 1);
+    }
+
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLDriverConnect(hdbc, 0, szConnect, SQL_NTS, 0, 0, 0, SQL_DRIVER_NOPROMPT);
+    Py_END_ALLOW_THREADS
+    if (SQL_SUCCEEDED(ret))
+        return true;
+
+    RaiseErrorFromHandle("SQLDriverConnect", hdbc, SQL_NULL_HANDLE);
+
+    return false;
+}
+
+
+PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi)
+{
+    // pConnectString
+    //   A string or unicode object.  (This must be checked by the caller.)
+    //
+    // fAnsi
+    //   If true, do not attempt a Unicode connection.
+
+    //
+    // Allocate HDBC and connect
+    //
+
+    HDBC hdbc = SQL_NULL_HANDLE;
+    if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_DBC, henv, &hdbc)))
+        return RaiseErrorFromHandle("SQLAllocHandle", SQL_NULL_HANDLE, SQL_NULL_HANDLE);
+
+    if (!Connect(pConnectString, hdbc, fAnsi))
+    {
+        // Connect has already set an exception.
+        SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
+        return 0;
+    }
+
+    //
+    // Connected, so allocate the Connection object. 
+    //
+
+    // Set all variables to something valid, so we don't crash in dealloc if this function fails.
+
+    Connection* cnxn = PyObject_NEW(Connection, &ConnectionType);
+
+    if (cnxn == 0)
+    {
+        SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
+        return 0;
+    }
+
+    cnxn->hdbc                   = hdbc;
+    cnxn->searchescape           = 0;
+    cnxn->odbc_major             = 3;
+    cnxn->odbc_minor             = 50;
+    cnxn->nAutoCommit            = fAutoCommit ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
+    cnxn->supports_describeparam = false;
+    cnxn->datetime_precision     = 19; // default: "yyyy-mm-dd hh:mm:ss"
+
+    //
+    // Initialize autocommit mode.
+    //
+
+    // The DB API says we have to default to manual-commit, but ODBC defaults to auto-commit.  We also provide a
+    // keyword parameter that allows the user to override the DB API and force us to start in auto-commit (in which
+    // case we don't have to do anything).
+
+    if (fAutoCommit == false && !SQL_SUCCEEDED(SQLSetConnectAttr(cnxn->hdbc, SQL_ATTR_AUTOCOMMIT, (SQLPOINTER)cnxn->nAutoCommit, SQL_IS_UINTEGER)))
+    {
+        RaiseErrorFromHandle("SQLSetConnnectAttr(SQL_ATTR_AUTOCOMMIT)", cnxn->hdbc, SQL_NULL_HANDLE);
+        Py_DECREF(cnxn);
+        return 0;
+    }
+    
+#ifdef TRACE_ALL
+    printf("cnxn.new cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
+#endif
+
+    //
+    // Gather connection-level information we'll need later.
+    //
+
+    // FUTURE: Measure performance here.  Consider caching by connection string if necessary.
+
+    char szVer[20];
+    SQLSMALLINT cch = 0;
+    if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_DRIVER_ODBC_VER, szVer, _countof(szVer), &cch)))
+    {
+        char* dot = strchr(szVer, '.');
+        if (dot)
+        {
+            *dot = '\0';
+            cnxn->odbc_major=(char)atoi(szVer);
+            cnxn->odbc_minor=(char)atoi(dot + 1);
+        }
+    }
+
+    char szYN[2];
+    if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_DESCRIBE_PARAMETER, szYN, _countof(szYN), &cch)))
+    {
+        cnxn->supports_describeparam = szYN[0] == 'Y';
+    }
+
+    // What is the datetime precision?  This unfortunately requires a cursor (HSTMT).
+
+    HSTMT hstmt = 0;
+    if (SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, cnxn->hdbc, &hstmt)))
+    {
+        if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_TYPE_TIMESTAMP)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
+        {
+            SQLINTEGER columnsize;
+            if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
+            {
+                cnxn->datetime_precision = columnsize;
+            }
+        }
+
+        SQLFreeStmt(hstmt, SQL_CLOSE);
+    }
+
+    return reinterpret_cast<PyObject*>(cnxn);
+}
+
+
+static int
+Connection_clear(Connection* cnxn)
+{
+    // Internal method for closing the connection.  (Not called close so it isn't confused with the external close
+    // method.)
+
+    if (cnxn->hdbc != SQL_NULL_HANDLE)
+    {
+        // REVIEW: Release threads? (But make sure you zero out hdbc *first*!
+
+#ifdef TRACE_ALL
+        printf("cnxn.clear cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
+#endif
+
+        if (cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF)
+            SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, SQL_ROLLBACK);
+        SQLDisconnect(cnxn->hdbc);
+        SQLFreeHandle(SQL_HANDLE_DBC, cnxn->hdbc);
+        cnxn->hdbc = SQL_NULL_HANDLE;
+    }
+
+    Py_XDECREF(cnxn->searchescape);
+    cnxn->searchescape = 0;
+    
+    return 0;
+}
+
+static void
+Connection_dealloc(PyObject* self)
+{
+    Connection* cnxn = (Connection*)self;
+    Connection_clear(cnxn);
+    PyObject_Del(self);
+}
+
+static char close_doc[] =
+    "Close the connection now (rather than whenever __del__ is called).\n"
+    "\n"
+    "The connection will be unusable from this point forward and a ProgrammingError\n"
+    "will be raised if any operation is attempted with the connection.  The same\n"
+    "applies to all cursor objects trying to use the connection.\n"
+    "\n"
+    "Note that closing a connection without committing the changes first will cause\n"
+    "an implicit rollback to be performed.";
+    
+static PyObject*
+Connection_close(PyObject* self, PyObject* args)
+{
+    UNUSED(args);
+    
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
+
+    Connection_clear(cnxn);
+
+    Py_RETURN_NONE;
+}
+
+static PyObject*
+Connection_cursor(PyObject* self, PyObject* args)
+{
+    UNUSED(args);
+    
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
+
+    return (PyObject*)Cursor_New(cnxn);
+}
+
+static PyObject*
+Connection_execute(PyObject* self, PyObject* args)
+{
+    PyObject* result = 0;
+
+    Cursor* cursor;
+    Connection* cnxn = Connection_Validate(self);
+
+    if (!cnxn)
+        return 0;
+
+    cursor = Cursor_New(cnxn);
+    if (!cursor)
+        return 0;
+
+    result = Cursor_execute((PyObject*)cursor, args);
+
+    Py_DECREF((PyObject*)cursor);
+
+    return result;
+}
+
+enum
+{
+    GI_YESNO,
+    GI_STRING,
+    GI_UINTEGER,
+    GI_USMALLINT,
+};
+
+struct GetInfoType
+{
+    SQLUSMALLINT infotype;
+    int datatype; // GI_XXX
+};
+
+static const GetInfoType aInfoTypes[] = {
+    { SQL_ACCESSIBLE_PROCEDURES, GI_YESNO },
+    { SQL_ACCESSIBLE_TABLES, GI_YESNO },
+    { SQL_ACTIVE_ENVIRONMENTS, GI_USMALLINT },
+    { SQL_AGGREGATE_FUNCTIONS, GI_UINTEGER },
+    { SQL_ALTER_DOMAIN, GI_UINTEGER },
+    { SQL_ALTER_TABLE, GI_UINTEGER },
+    { SQL_ASYNC_MODE, GI_UINTEGER },
+    { SQL_BATCH_ROW_COUNT, GI_UINTEGER },
+    { SQL_BATCH_SUPPORT, GI_UINTEGER },
+    { SQL_BOOKMARK_PERSISTENCE, GI_UINTEGER },
+    { SQL_CATALOG_LOCATION, GI_USMALLINT },
+    { SQL_CATALOG_NAME, GI_YESNO },
+    { SQL_CATALOG_NAME_SEPARATOR, GI_STRING },
+    { SQL_CATALOG_TERM, GI_STRING },
+    { SQL_CATALOG_USAGE, GI_UINTEGER },
+    { SQL_COLLATION_SEQ, GI_STRING },
+    { SQL_COLUMN_ALIAS, GI_YESNO },
+    { SQL_CONCAT_NULL_BEHAVIOR, GI_USMALLINT },
+    { SQL_CONVERT_FUNCTIONS, GI_UINTEGER },
+    { SQL_CONVERT_VARCHAR, GI_UINTEGER },
+    { SQL_CORRELATION_NAME, GI_USMALLINT },
+    { SQL_CREATE_ASSERTION, GI_UINTEGER },
+    { SQL_CREATE_CHARACTER_SET, GI_UINTEGER },
+    { SQL_CREATE_COLLATION, GI_UINTEGER },
+    { SQL_CREATE_DOMAIN, GI_UINTEGER },
+    { SQL_CREATE_SCHEMA, GI_UINTEGER },
+    { SQL_CREATE_TABLE, GI_UINTEGER },
+    { SQL_CREATE_TRANSLATION, GI_UINTEGER },
+    { SQL_CREATE_VIEW, GI_UINTEGER },
+    { SQL_CURSOR_COMMIT_BEHAVIOR, GI_USMALLINT },
+    { SQL_CURSOR_ROLLBACK_BEHAVIOR, GI_USMALLINT },
+    { SQL_DATABASE_NAME, GI_STRING },
+    { SQL_DATA_SOURCE_NAME, GI_STRING },
+    { SQL_DATA_SOURCE_READ_ONLY, GI_YESNO },
+    { SQL_DATETIME_LITERALS, GI_UINTEGER },
+    { SQL_DBMS_NAME, GI_STRING },
+    { SQL_DBMS_VER, GI_STRING },
+    { SQL_DDL_INDEX, GI_UINTEGER },
+    { SQL_DEFAULT_TXN_ISOLATION, GI_UINTEGER },
+    { SQL_DESCRIBE_PARAMETER, GI_YESNO },
+    { SQL_DM_VER, GI_STRING },
+    { SQL_DRIVER_NAME, GI_STRING },
+    { SQL_DRIVER_ODBC_VER, GI_STRING },
+    { SQL_DRIVER_VER, GI_STRING },
+    { SQL_DROP_ASSERTION, GI_UINTEGER },
+    { SQL_DROP_CHARACTER_SET, GI_UINTEGER },
+    { SQL_DROP_COLLATION, GI_UINTEGER },
+    { SQL_DROP_DOMAIN, GI_UINTEGER },
+    { SQL_DROP_SCHEMA, GI_UINTEGER },
+    { SQL_DROP_TABLE, GI_UINTEGER },
+    { SQL_DROP_TRANSLATION, GI_UINTEGER },
+    { SQL_DROP_VIEW, GI_UINTEGER },
+    { SQL_DYNAMIC_CURSOR_ATTRIBUTES1, GI_UINTEGER },
+    { SQL_DYNAMIC_CURSOR_ATTRIBUTES2, GI_UINTEGER },
+    { SQL_EXPRESSIONS_IN_ORDERBY, GI_YESNO },
+    { SQL_FILE_USAGE, GI_USMALLINT },
+    { SQL_FORWARD_ONLY_CURSOR_ATTRIBUTES1, GI_UINTEGER },
+    { SQL_FORWARD_ONLY_CURSOR_ATTRIBUTES2, GI_UINTEGER },
+    { SQL_GETDATA_EXTENSIONS, GI_UINTEGER },
+    { SQL_GROUP_BY, GI_USMALLINT },
+    { SQL_IDENTIFIER_CASE, GI_USMALLINT },
+    { SQL_IDENTIFIER_QUOTE_CHAR, GI_STRING },
+    { SQL_INDEX_KEYWORDS, GI_UINTEGER },
+    { SQL_INFO_SCHEMA_VIEWS, GI_UINTEGER },
+    { SQL_INSERT_STATEMENT, GI_UINTEGER },
+    { SQL_INTEGRITY, GI_YESNO },
+    { SQL_KEYSET_CURSOR_ATTRIBUTES1, GI_UINTEGER },
+    { SQL_KEYSET_CURSOR_ATTRIBUTES2, GI_UINTEGER },
+    { SQL_KEYWORDS, GI_STRING },
+    { SQL_LIKE_ESCAPE_CLAUSE, GI_YESNO },
+    { SQL_MAX_ASYNC_CONCURRENT_STATEMENTS, GI_UINTEGER },
+    { SQL_MAX_BINARY_LITERAL_LEN, GI_UINTEGER },
+    { SQL_MAX_CATALOG_NAME_LEN, GI_USMALLINT },
+    { SQL_MAX_CHAR_LITERAL_LEN, GI_UINTEGER },
+    { SQL_MAX_COLUMNS_IN_GROUP_BY, GI_USMALLINT },
+    { SQL_MAX_COLUMNS_IN_INDEX, GI_USMALLINT },
+    { SQL_MAX_COLUMNS_IN_ORDER_BY, GI_USMALLINT },
+    { SQL_MAX_COLUMNS_IN_SELECT, GI_USMALLINT },
+    { SQL_MAX_COLUMNS_IN_TABLE, GI_USMALLINT },
+    { SQL_MAX_COLUMN_NAME_LEN, GI_USMALLINT },
+    { SQL_MAX_CONCURRENT_ACTIVITIES, GI_USMALLINT },
+    { SQL_MAX_CURSOR_NAME_LEN, GI_USMALLINT },
+    { SQL_MAX_DRIVER_CONNECTIONS, GI_USMALLINT },
+    { SQL_MAX_IDENTIFIER_LEN, GI_USMALLINT },
+    { SQL_MAX_INDEX_SIZE, GI_UINTEGER },
+    { SQL_MAX_PROCEDURE_NAME_LEN, GI_USMALLINT },
+    { SQL_MAX_ROW_SIZE, GI_UINTEGER },
+    { SQL_MAX_ROW_SIZE_INCLUDES_LONG, GI_YESNO },
+    { SQL_MAX_SCHEMA_NAME_LEN, GI_USMALLINT },
+    { SQL_MAX_STATEMENT_LEN, GI_UINTEGER },
+    { SQL_MAX_TABLES_IN_SELECT, GI_USMALLINT },
+    { SQL_MAX_TABLE_NAME_LEN, GI_USMALLINT },
+    { SQL_MAX_USER_NAME_LEN, GI_USMALLINT },
+    { SQL_MULTIPLE_ACTIVE_TXN, GI_YESNO },
+    { SQL_MULT_RESULT_SETS, GI_YESNO },
+    { SQL_NEED_LONG_DATA_LEN, GI_YESNO },
+    { SQL_NON_NULLABLE_COLUMNS, GI_USMALLINT },
+    { SQL_NULL_COLLATION, GI_USMALLINT },
+    { SQL_NUMERIC_FUNCTIONS, GI_UINTEGER },
+    { SQL_ODBC_INTERFACE_CONFORMANCE, GI_UINTEGER },
+    { SQL_ODBC_VER, GI_STRING },
+    { SQL_OJ_CAPABILITIES, GI_UINTEGER },
+    { SQL_ORDER_BY_COLUMNS_IN_SELECT, GI_YESNO },
+    { SQL_PARAM_ARRAY_ROW_COUNTS, GI_UINTEGER },
+    { SQL_PARAM_ARRAY_SELECTS, GI_UINTEGER },
+    { SQL_PROCEDURES, GI_YESNO },
+    { SQL_PROCEDURE_TERM, GI_STRING },
+    { SQL_QUOTED_IDENTIFIER_CASE, GI_USMALLINT },
+    { SQL_ROW_UPDATES, GI_YESNO },
+    { SQL_SCHEMA_TERM, GI_STRING },
+    { SQL_SCHEMA_USAGE, GI_UINTEGER },
+    { SQL_SCROLL_OPTIONS, GI_UINTEGER },
+    { SQL_SEARCH_PATTERN_ESCAPE, GI_STRING },
+    { SQL_SERVER_NAME, GI_STRING },
+    { SQL_SPECIAL_CHARACTERS, GI_STRING },
+    { SQL_SQL92_DATETIME_FUNCTIONS, GI_UINTEGER },
+    { SQL_SQL92_FOREIGN_KEY_DELETE_RULE, GI_UINTEGER },
+    { SQL_SQL92_FOREIGN_KEY_UPDATE_RULE, GI_UINTEGER },
+    { SQL_SQL92_GRANT, GI_UINTEGER },
+    { SQL_SQL92_NUMERIC_VALUE_FUNCTIONS, GI_UINTEGER },
+    { SQL_SQL92_PREDICATES, GI_UINTEGER },
+    { SQL_SQL92_RELATIONAL_JOIN_OPERATORS, GI_UINTEGER },
+    { SQL_SQL92_REVOKE, GI_UINTEGER },
+    { SQL_SQL92_ROW_VALUE_CONSTRUCTOR, GI_UINTEGER },
+    { SQL_SQL92_STRING_FUNCTIONS, GI_UINTEGER },
+    { SQL_SQL92_VALUE_EXPRESSIONS, GI_UINTEGER },
+    { SQL_SQL_CONFORMANCE, GI_UINTEGER },
+    { SQL_STANDARD_CLI_CONFORMANCE, GI_UINTEGER },
+    { SQL_STATIC_CURSOR_ATTRIBUTES1, GI_UINTEGER },
+    { SQL_STATIC_CURSOR_ATTRIBUTES2, GI_UINTEGER },
+    { SQL_STRING_FUNCTIONS, GI_UINTEGER },
+    { SQL_SUBQUERIES, GI_UINTEGER },
+    { SQL_SYSTEM_FUNCTIONS, GI_UINTEGER },
+    { SQL_TABLE_TERM, GI_STRING },
+    { SQL_TIMEDATE_ADD_INTERVALS, GI_UINTEGER },
+    { SQL_TIMEDATE_DIFF_INTERVALS, GI_UINTEGER },
+    { SQL_TIMEDATE_FUNCTIONS, GI_UINTEGER },
+    { SQL_TXN_CAPABLE, GI_USMALLINT },
+    { SQL_TXN_ISOLATION_OPTION, GI_UINTEGER },
+    { SQL_UNION, GI_UINTEGER },
+    { SQL_USER_NAME, GI_STRING },
+    { SQL_XOPEN_CLI_YEAR, GI_STRING },
+};
+
+static PyObject*
+Connection_getinfo(PyObject* self, PyObject* args)
+{
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
+
+    SQLUSMALLINT infotype;
+    if (!PyArg_ParseTuple(args, "l", &infotype))
+        return 0;
+
+    unsigned int i = 0;
+    for (; i < _countof(aInfoTypes); i++)
+    {
+        if (aInfoTypes[i].infotype == infotype)
+            break;
+    }
+
+    if (i == _countof(aInfoTypes))
+        return RaiseErrorV(0, ProgrammingError, "Invalid getinfo value: %d", infotype);
+
+    char szBuffer[0x1000];
+    SQLSMALLINT cch = 0;
+
+    if (!SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, infotype, szBuffer, sizeof(szBuffer), &cch)))
+    {
+        RaiseErrorFromHandle("SQLGetInfo", cnxn->hdbc, SQL_NULL_HANDLE);
+        return 0;
+    }
+
+    PyObject* result = 0;
+
+    switch (aInfoTypes[i].datatype)
+    {
+    case GI_YESNO:
+        result = (szBuffer[0] == 'Y') ? Py_True : Py_False;
+        Py_INCREF(result);
+        break;
+            
+    case GI_STRING:
+        result = PyString_FromStringAndSize(szBuffer, (Py_ssize_t)cch);
+        break;
+        
+    case GI_UINTEGER:
+    {
+        SQLUINTEGER n = *(SQLUINTEGER*)szBuffer; // Does this work on PPC or do we need a union?
+        if (n <= (SQLUINTEGER)PyInt_GetMax())
+            result = PyInt_FromLong((long)n);
+        else
+            result = PyLong_FromUnsignedLong(n);
+        break;
+    }
+    
+    case GI_USMALLINT:
+        result = PyInt_FromLong(*(SQLUSMALLINT*)szBuffer);
+        break;
+    }
+
+    return result;
+}
+
+
+static PyObject*
+Connection_endtrans(PyObject* self, PyObject* args, SQLSMALLINT type)
+{
+    UNUSED(args);
+    
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
+    
+#ifdef TRACE_ALL
+    printf("%s: cnxn=%p hdbc=%d\n", (type == SQL_COMMIT) ? "commit" : "rollback", cnxn, cnxn->hdbc);
+#endif
+
+    if (!SQL_SUCCEEDED(SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, type)))
+    {
+        RaiseErrorFromHandle("SQLEndTran", cnxn->hdbc, SQL_NULL_HANDLE);
+        return 0;
+    }
+
+    Py_RETURN_NONE;
+}
+
+static PyObject*
+Connection_commit(PyObject* self, PyObject* args)
+{
+    return Connection_endtrans(self, args, SQL_COMMIT);
+}
+
+static PyObject*
+Connection_rollback(PyObject* self, PyObject* args)
+{
+    return Connection_endtrans(self, args, SQL_ROLLBACK);
+}
+
+static char cursor_doc[] = 
+    "Return a new Cursor Object using the connection.";
+    
+static char execute_doc[] =
+    "execute(sql, [params]) --> None | Cursor | count\n" \
+    "\n" \
+    "Creates a new Cursor object, calls its execute method, and returns its return\n" \
+    "value.  See Cursor.execute for a description of the parameter formats and\n" \
+    "return values.\n" \
+    "\n" \
+    "This is a convenience method that is not part of the DB API.  Since a new\n" \
+    "Cursor is allocated by each call, this should not be used if more than one SQL\n" \
+    "statement needs to be executed.";
+
+static char commit_doc[] =
+    "Commit any pending transaction to the database.";
+
+static char rollback_doc[] =
+    "Causes the the database to roll back to the start of any pending transaction.";
+
+static char getinfo_doc[] =
+    "getinfo(type) --> str | int | bool\n"
+    "\n"
+    "Calls SQLGetInfo, passing `type`, and returns the result formatted as a Python object.";
+
+
+PyObject*
+Connection_getautocommit(PyObject* self, void* closure)
+{
+    UNUSED(closure);
+
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
+
+    PyObject* result = (cnxn->nAutoCommit == SQL_AUTOCOMMIT_ON) ? Py_True : Py_False;
+    Py_INCREF(result);
+    return result;
+}
+
+static int
+Connection_setautocommit(PyObject* self, PyObject* value, void* closure)
+{
+    UNUSED(closure);
+
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return -1;
+
+    if (value == 0)
+    {
+        PyErr_SetString(PyExc_TypeError, "Cannot delete the autocommit attribute.");
+        return -1;
+    }
+    
+    int nAutoCommit = PyObject_IsTrue(value) ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
+    if (!SQL_SUCCEEDED(SQLSetConnectAttr(cnxn->hdbc, SQL_ATTR_AUTOCOMMIT, (SQLPOINTER)nAutoCommit, SQL_IS_UINTEGER)))
+    {
+        RaiseErrorFromHandle("SQLSetConnectAttr", cnxn->hdbc, SQL_NULL_HANDLE);
+        return -1;
+    }
+
+    cnxn->nAutoCommit = nAutoCommit;
+
+    return 0;
+}
+
+
+PyObject*
+Connection_getsearchescape(Connection* self, void* closure)
+{
+    UNUSED(closure);
+    
+    if (!self->searchescape)
+    {
+        char sz[8] = { 0 };
+        SQLSMALLINT cch = 0;
+
+        if (!SQL_SUCCEEDED(SQLGetInfo(self->hdbc, SQL_SEARCH_PATTERN_ESCAPE, &sz, _countof(sz), &cch)))
+            return RaiseErrorFromHandle("SQLGetInfo", self->hdbc, SQL_NULL_HANDLE);
+
+        self->searchescape = PyString_FromStringAndSize(sz, (Py_ssize_t)cch);
+    }
+
+    Py_INCREF(self->searchescape);
+    return self->searchescape;
+}
+     
+static struct PyMethodDef Connection_methods[] =
+{
+    { "cursor",        (PyCFunction)Connection_cursor,   METH_NOARGS,  cursor_doc    },
+    { "close",         (PyCFunction)Connection_close,    METH_NOARGS,  close_doc     },
+    { "execute",       (PyCFunction)Connection_execute,  METH_VARARGS, execute_doc   },
+    { "commit",        (PyCFunction)Connection_commit,   METH_NOARGS,  commit_doc    },
+    { "rollback",      (PyCFunction)Connection_rollback, METH_NOARGS,  rollback_doc  },
+    { "getinfo",       (PyCFunction)Connection_getinfo,  METH_VARARGS, getinfo_doc   },
+    { 0, 0, 0, 0 }
+};
+
+static PyGetSetDef Connection_getseters[] = {
+    { "searchescape", (getter)Connection_getsearchescape, 0,
+        "The ODBC search pattern escape character, as returned by\n"
+        "SQLGetInfo(SQL_SEARCH_PATTERN_ESCAPE).  These are driver specific.", 0 },
+    { "autocommit", Connection_getautocommit, Connection_setautocommit,
+      "Returns True if the connection is in autocommit mode; False otherwise.", 0 },
+    { 0 }
+};
+
+PyTypeObject ConnectionType =
+{
+    PyObject_HEAD_INIT(0)
+    0,                                                      // ob_size
+    "pyodbc.Connection",                                    // tp_name
+    sizeof(Connection),                                     // tp_basicsize
+    0,                                                      // tp_itemsize
+    (destructor)Connection_dealloc,                         // destructor tp_dealloc
+    0,                                                      // tp_print
+    0,                                                      // tp_getattr
+    0,                                                      // tp_setattr
+    0,                                                      // tp_compare
+    0,                                                      // tp_repr
+    0,                                                      // tp_as_number
+    0,                                                      // tp_as_sequence
+    0,                                                      // tp_as_mapping
+    0,                                                      // tp_hash
+    0,                                                      // tp_call
+    0,                                                      // tp_str
+    0,                                                      // tp_getattro
+    0,                                                      // tp_setattro
+    0,                                                      // tp_as_buffer
+    Py_TPFLAGS_DEFAULT,                                     // tp_flags
+    connection_doc,                                         // tp_doc
+    0,                                                      // tp_traverse
+    0,                                                      // tp_clear
+    0,                                                      // tp_richcompare
+    0,                                                      // tp_weaklistoffset
+    0,                                                      // tp_iter
+    0,                                                      // tp_iternext
+    Connection_methods,                                     // tp_methods
+    0,                                                      // tp_members
+    Connection_getseters,                                   // tp_getset
+    0,                                                      // tp_base
+    0,                                                      // tp_dict
+    0,                                                      // tp_descr_get
+    0,                                                      // tp_descr_set
+    0,                                                      // tp_dictoffset
+    0,                                                      // tp_init
+    0,                                                      // tp_alloc
+    0,                                                      // tp_new
+    0,                                                      // tp_free
+    0,                                                      // tp_is_gc
+    0,                                                      // tp_bases
+    0,                                                      // tp_mro
+    0,                                                      // tp_cache
+    0,                                                      // tp_subclasses
+    0,                                                      // tp_weaklist
+};

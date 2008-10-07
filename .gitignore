@@ -1,0 +1,9 @@
+setup.cfg
+MANIFEST
+build
+dist
+*.pdb
+*.pyc
+*.pyo
+tmp
+web/*.cmd
