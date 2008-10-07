@@ -13,7 +13,7 @@ def main():
     version_str, version = get_version()
 
     files = [ 'pyodbcmodule.cpp', 'cursor.cpp', 'row.cpp', 'connection.cpp', 'buffer.cpp', 'params.cpp', 'errors.cpp', 'getdata.cpp' ]
-    files = [ join('src', f) for f in files ]
+    files = [ abspath(join('src', f)) for f in files ]
     libraries = []
 
     extra_compile_args = None
