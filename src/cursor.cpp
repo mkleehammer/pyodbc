@@ -22,6 +22,7 @@
 #include "params.h"
 #include "errors.h"
 #include "getdata.h"
+#include "dbspecific.h"
 
 enum
 {
@@ -171,6 +172,7 @@ PythonTypeFromSqlType(const SQLCHAR* name, SQLSMALLINT type)
         break;
         
     case SQL_TYPE_TIME:
+    case SQL_SS_TIME2:          // SQL Server 2008+
         pytype = (PyObject*)PyDateTimeAPI->TimeType;
         break;
         

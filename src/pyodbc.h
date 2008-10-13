@@ -17,6 +17,7 @@
 #ifdef _MSC_VER
 #include <windows.h>
 #include <malloc.h>
+#pragma warning(disable: 4127) // "conditional expression is constant" testing compilation constants
 typedef __int64 INT64;
 typedef unsigned __int64 UINT64;
 #else

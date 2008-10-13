@@ -64,6 +64,14 @@ class SqlServerTestCase(unittest.TestCase):
         unittest.TestCase.__init__(self, method_name)
         self.connection_string = connection_string
 
+    def get_sqlserver_version(self):
+        """
+        Returns the major version: 8-->2000, 9==2005, 10 == SS2008
+        """
+        self.cursor.execute("exec master..xp_msver 'ProductVersion'")
+        row = self.cursor.fetchone()
+        return int(row.Character_Value.split('.', 1)[0])
+
     def setUp(self):
         self.cnxn   = pyodbc.connect(self.connection_string)
         self.cursor = self.cnxn.cursor()
@@ -71,6 +79,13 @@ class SqlServerTestCase(unittest.TestCase):
         for i in range(3):
             try:
                 self.cursor.execute("drop table t%d" % i)
+                self.cnxn.commit()
+            except:
+                pass
+
+        for i in range(3):
+            try:
+                self.cursor.execute("drop procedure proc%d" % i)
                 self.cnxn.commit()
             except:
                 pass
@@ -498,116 +513,78 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(value, result)
 
 
-    # Not supported in 2005.  Get 2008 beta.
-    # def test_date(self):
-    #     value = date.today()
-    #  
-    #     self.cursor.execute("create table t1(dt datetime)")
-    #     self.cursor.execute("insert into t1 values (?)", value)
-    #  
-    #     result = self.cursor.execute("select dt from t1").fetchone()[0]
-    #     self.assertEquals(value, result)
+    def test_date(self):
+        ver = self.get_sqlserver_version()
+        if ver < 10:            # 2008 only
+            return              # so pass / ignore
 
-    # Not supported in 2005.  Get 2008 beta.
-    # def test_time(self):
-    #     value = datetime.now().time()
-    #  
-    #     self.cursor.execute("create table t1(dt datetime)")
-    #     self.cursor.execute("insert into t1 values (?)", value)
-    #  
-    #     result = self.cursor.execute("select dt from t1").fetchone()[0]
-    #     self.assertEquals(value, result)
+        value = date.today()
+     
+        self.cursor.execute("create table t1(d date)")
+        self.cursor.execute("insert into t1 values (?)", value)
+     
+        result = self.cursor.execute("select d from t1").fetchone()[0]
+        self.assertEquals(value, result)
+
+
+    def test_time(self):
+        ver = self.get_sqlserver_version()
+        if ver < 10:            # 2008 only
+            return              # so pass / ignore
+
+        value = datetime.now().time()
+        
+        # We aren't yet writing values using the new extended time type so the value written to the database is only
+        # down to the second.
+        value = value.replace(microsecond=0)
+         
+        self.cursor.execute("create table t1(t time)")
+        self.cursor.execute("insert into t1 values (?)", value)
+         
+        result = self.cursor.execute("select t from t1").fetchone()[0]
+        self.assertEquals(value, result)
 
     #
     # stored procedures
     #
 
+    # def test_callproc(self):
+    #     "callproc with a simple input-only stored procedure"
+    #     pass
+
     def test_sp_results(self):
         self.cursor.execute(
             """
-            if exists (select * from dbo.sysobjects where id = object_id(N'[test_select]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-            drop procedure [dbo].[test_select]
-            """)
-        self.cursor.execute(
-            """
-            Create procedure test_select
+            Create procedure proc1
             AS
               select top 10 name, id, xtype, refdate
               from sysobjects
             """)
-        rows = self.cursor.execute("exec test_select").fetchall()
+        rows = self.cursor.execute("exec proc1").fetchall()
         self.assertEquals(type(rows), list)
         self.assertEquals(len(rows), 10) # there has to be at least 10 items in sysobjects
         self.assertEquals(type(rows[0].refdate), datetime)
 
-    # Note: This will fail because the last thing in the stored procedure is an implicit drop, not a select!
-    #
+
     def test_sp_results_from_temp(self):
+
+        # Note: I've used "set nocount on" so that we don't get the number of rows deleted from #tmptable.
+        # If you don't do this, you'd need to call nextset() once to skip it.
+
         self.cursor.execute(
             """
-            if exists (select * from dbo.sysobjects where id = object_id(N'[test_select]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-            drop procedure [dbo].[test_select]
-            """)
-        self.cursor.execute(
-            """
-            Create procedure test_select
+            Create procedure proc1
             AS
+              set nocount on
               select top 10 name, id, xtype, refdate
               into #tmptable
               from sysobjects
 
               select * from #tmptable
             """)
-        # Because we're using a temporary table, two results are returned:
-        #
-        #   (1) the results of the drop table, which is the number of rows in the temporary table
-        #   (2) the result set from the select.
-        #
-        # Ignore the first result (which is just cursor.rowcount)
-
-        self.cursor.execute("exec test_select")
-        self.assertEquals(self.cursor.rowcount, 10) # (1)
-        self.assert_(self.cursor.description is None)
-
-        self.assert_(self.cursor.nextset())         # (2)
+        self.cursor.execute("exec proc1")
         self.assert_(self.cursor.description is not None)
         self.assert_(len(self.cursor.description) == 4)
-
-        rows = self.cursor.fetchall()
-        self.assertEquals(type(rows), list)
-        self.assertEquals(len(rows), 10) # there has to be at least 10 items in sysobjects
-        self.assertEquals(type(rows[0].refdate), datetime)
-
-
-    def test_sp_results_from_temp2(self):
-        self.cursor.execute(
-            """
-            if exists (select * from dbo.sysobjects where id = object_id(N'[test_select]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-            drop procedure [dbo].[test_select]
-            """)
-        self.cursor.execute(
-            """
-            Create procedure test_select
-            AS
-              select top 10 name, id, xtype, refdate
-              into #tmptable
-              from sysobjects
-
-              select * from #tmptable
-            """)
-        # Because we're using a temporary table, two results are returned:
-        #
-        #   (1) the results of the drop table, which is the number of rows in the temporary table
-        #   (2) the result set from the select.
-        #
-        # Ignore the first result (which is just cursor.rowcount)
-
-        # Note: Try dynamically figuring out whether nextset() is required or not.
-
-        self.cursor.execute("exec test_select")
-        while self.cursor.description is None:
-            if not self.cursor.nextset():
-                raise SystemExit('No result set!')
 
         rows = self.cursor.fetchall()
         self.assertEquals(type(rows), list)
@@ -618,13 +595,9 @@ class SqlServerTestCase(unittest.TestCase):
     def test_sp_results_from_vartbl(self):
         self.cursor.execute(
             """
-            if exists (select * from dbo.sysobjects where id = object_id(N'[test_select]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
-            drop procedure [dbo].[test_select]
-            """)
-        self.cursor.execute(
-            """
-            Create procedure test_select
+            Create procedure proc1
             AS
+              set nocount on
               declare @tmptbl table(name varchar(100), id int, xtype varchar(4), refdate datetime)
 
               insert into @tmptbl
@@ -633,17 +606,7 @@ class SqlServerTestCase(unittest.TestCase):
 
               select * from @tmptbl
             """)
-        # Because we're using a temporary table, two results are returned:
-        #
-        #   (1) the results of the drop table, which is the number of rows in the temporary table
-        #   (2) the result set from the select.
-        #
-        # Ignore the first result (which is just cursor.rowcount)
-        
-        self.cursor.execute("exec test_select")
-        self.assertEquals(self.cursor.rowcount, 10) # (1)
-        self.assert_(self.cursor.nextset())         # (2)
-
+        self.cursor.execute("exec proc1")
         rows = self.cursor.fetchall()
         self.assertEquals(type(rows), list)
         self.assertEquals(len(rows), 10) # there has to be at least 10 items in sysobjects

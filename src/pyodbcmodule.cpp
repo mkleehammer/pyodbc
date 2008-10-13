@@ -17,6 +17,8 @@
 #include "wrapper.h"
 #include "errors.h"
 #include "getdata.h"
+#include "cnxninfo.h"
+#include "dbspecific.h"
 
 #include <time.h>
 #include <stdarg.h>
@@ -196,6 +198,7 @@ static bool import_types()
     OurTimeType     = PyDateTimeAPI->TimeType;
 
     Cursor_init();
+    CnxnInfo_init();
     GetData_init();
 
     PyObject* decimalmod = PyImport_ImportModule("decimal");
@@ -499,6 +502,7 @@ static const ConstantDef aConstants[] = {
     MAKECONST(SQL_TYPE_DATE),
     MAKECONST(SQL_TYPE_TIME),
     MAKECONST(SQL_TYPE_TIMESTAMP),
+    MAKECONST(SQL_SS_TIME2),
     MAKECONST(SQL_INTERVAL_MONTH),
     MAKECONST(SQL_INTERVAL_YEAR),
     MAKECONST(SQL_INTERVAL_YEAR_TO_MONTH),
@@ -736,7 +740,7 @@ initpyodbc()
 
     ErrorInit();
 
-    if (PyType_Ready(&ConnectionType) < 0 || PyType_Ready(&CursorType) < 0 || PyType_Ready(&RowType) < 0)
+    if (PyType_Ready(&ConnectionType) < 0 || PyType_Ready(&CursorType) < 0 || PyType_Ready(&RowType) < 0 || PyType_Ready(&CnxnInfoType) < 0)
         return;
 
     pModule = Py_InitModule4("pyodbc", pyodbc_methods, module_doc, NULL, PYTHON_API_VERSION);

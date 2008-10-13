@@ -1,7 +1,7 @@
 include src\*.h
 include src\*.cpp
 include tests\*
-include README.txt
+include *.txt
 prune setup.cfg
 
 include web\*

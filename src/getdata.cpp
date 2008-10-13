@@ -7,6 +7,7 @@
 #include "cursor.h"
 #include "connection.h"
 #include "errors.h"
+#include "dbspecific.h"
 
 void GetData_init()
 {
@@ -481,6 +482,22 @@ GetDataDouble(Cursor* cur, int iCol)
     return PyFloat_FromDouble(value);
 }
 
+static PyObject*
+GetSqlServerTime(Cursor* cur, int iCol)
+{
+    SQL_SS_TIME2_STRUCT value;
+    
+    SQLLEN cbFetched = 0;
+
+    if (!SQL_SUCCEEDED(SQLGetData(cur->hstmt, (SQLSMALLINT)(iCol+1), SQL_C_BINARY, &value, sizeof(value), &cbFetched)))
+        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+
+    if (cbFetched == SQL_NULL_DATA)
+        Py_RETURN_NONE;
+
+    int micros = value.fraction / 1000; // nanos --> micros
+    return PyTime_FromTime(value.hour, value.minute, value.second, micros);
+}
 
 static PyObject*
 GetDataTimestamp(Cursor* cur, int iCol)
@@ -498,15 +515,16 @@ GetDataTimestamp(Cursor* cur, int iCol)
     switch (cur->colinfos[iCol].sql_type)
     {
     case SQL_TYPE_TIME:
-        return PyTime_FromTime(value.hour, value.minute, value.second, 0);
-
+    {
+        int micros = value.fraction / 1000; // nanos --> micros
+        return PyTime_FromTime(value.hour, value.minute, value.second, micros);
+    }
+    
     case SQL_TYPE_DATE:
         return PyDate_FromDate(value.year, value.month, value.day);
     }
 
-    // The fraction field is in nanoseconds.
-    int micros = value.fraction / 1000;
-
+    int micros = value.fraction / 1000; // nanos --> micros
     return PyDateTime_FromDateAndTime(value.year, value.month, value.day, value.hour, value.minute, value.second, micros);
 }
 
@@ -566,6 +584,9 @@ GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_TYPE_TIME:
     case SQL_TYPE_TIMESTAMP:
         return GetDataTimestamp(cur, iCol);
+
+    case SQL_SS_TIME2:
+        return GetSqlServerTime(cur, iCol);
     }
 
     return RaiseErrorV("HY106", ProgrammingError, "ODBC SQL type %d is not yet supported.  column-index=%zd  type=%d",

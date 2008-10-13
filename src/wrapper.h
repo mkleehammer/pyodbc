@@ -29,6 +29,8 @@ public:
         return *this;
     }
 
+    bool IsValid() const { return p != 0; }
+
     PyObject* Detach()
     {
         PyObject* pT = p;

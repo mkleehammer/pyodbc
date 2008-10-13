@@ -1,10 +1,11 @@
 #!/usr/bin/python
 
 import sys, os, re
-from distutils.core import setup, Command
+from distutils.core import setup
 from distutils.extension import Extension
 from distutils.errors import *
 from os.path import exists, abspath, dirname, join, isdir
+
 
 OFFICIAL_BUILD = 9999
 
@@ -12,8 +13,7 @@ def main():
 
     version_str, version = get_version()
 
-    files = [ 'pyodbcmodule.cpp', 'cursor.cpp', 'row.cpp', 'connection.cpp', 'buffer.cpp', 'params.cpp', 'errors.cpp', 'getdata.cpp' ]
-    files = [ abspath(join('src', f)) for f in files ]
+    files = [ abspath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
     libraries = []
 
     extra_compile_args = None
@@ -25,9 +25,8 @@ def main():
         libraries.append('odbc32')
         extra_compile_args = [ '/W4' ]
 
-        # Add debugging symbols
-        extra_compile_args = [ '/W4', '/Zi', '/Od' ]
-        extra_link_args    = [ '/DEBUG' ]
+        # extra_compile_args = [ '/W4', '/Zi', '/Od' ]
+        # extra_link_args    = [ '/DEBUG' ]
 
     elif os.environ.get("OS", '').lower().startswith('windows'):
         # Windows Cygwin (posix on windows)
@@ -42,6 +41,22 @@ def main():
         # Other posix-like: Linux, Solaris, etc.
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
         libraries.append('odbc')
+
+    macros = [ ('PYODBC_%s' % name, value) for name,value in zip(['MAJOR', 'MINOR', 'MICRO', 'BUILD'], version) ]
+
+    # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
+    # command.
+    try:
+        sys.argv.remove('--assert')
+        macros.append(('PYODBC_ASSERT', 1))
+    except ValueError:
+        pass
+
+    try:
+        sys.argv.remove('--trace')
+        macros.append(('TRACE_ALL', 1))
+    except ValueError:
+        pass
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
@@ -58,7 +73,7 @@ def main():
 
            ext_modules = [ Extension('pyodbc', files,
                                      libraries=libraries,
-                                     define_macros = [ ('PYODBC_%s' % name, value) for name,value in zip(['MAJOR', 'MINOR', 'MICRO', 'BUILD'], version) ],
+                                     define_macros = macros,
                                      extra_compile_args=extra_compile_args,
                                      extra_link_args=extra_link_args
                                      ) ],
@@ -75,6 +90,7 @@ def main():
 
            url = 'http://pyodbc.sourceforge.net',
            download_url = 'http://github.com/pyodbc/pyodbc/tree/master')
+
 
 
 def get_version():

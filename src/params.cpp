@@ -7,6 +7,7 @@
 #include "buffer.h"
 #include "wrapper.h"
 #include "errors.h"
+#include "dbspecific.h"
 
 struct ParamDesc
 {
@@ -350,6 +351,7 @@ static const char* SqlTypeName(SQLSMALLINT n)
         _MAKESTR(SQL_TYPE_DATE);
         _MAKESTR(SQL_TYPE_TIME);
         _MAKESTR(SQL_TYPE_TIMESTAMP);
+        _MAKESTR(SQL_SS_TIME2);
     }
     return "unknown";
 }
@@ -564,7 +566,7 @@ static bool BindParam(Cursor* cur, int iParam, const ParamDesc* pDesc, PyObject*
             // (How many leading digits do we want to keep?  With SQL Server 2005, this should be 3: 123000000)
             int keep = (int)pow(10.0, 9-min(9, precision));
             value->fraction = value->fraction / keep * keep;
-            decimalDigits = precision;
+            decimalDigits = (SQLSMALLINT)precision;
         }
 
         fSqlType = SQL_TIMESTAMP;

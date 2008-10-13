@@ -14,6 +14,8 @@
 #include "cursor.h"
 #include "pyodbcmodule.h"
 #include "errors.h"
+#include "wrapper.h"
+#include "cnxninfo.h"
 
 static char connection_doc[] =
     "Connection objects manage connections to the database.\n"
@@ -171,13 +173,9 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi)
         return 0;
     }
 
-    cnxn->hdbc                   = hdbc;
-    cnxn->searchescape           = 0;
-    cnxn->odbc_major             = 3;
-    cnxn->odbc_minor             = 50;
-    cnxn->nAutoCommit            = fAutoCommit ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
-    cnxn->supports_describeparam = false;
-    cnxn->datetime_precision     = 19; // default: "yyyy-mm-dd hh:mm:ss"
+    cnxn->hdbc         = hdbc;
+    cnxn->nAutoCommit  = fAutoCommit ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
+    cnxn->searchescape = 0;
 
     //
     // Initialize autocommit mode.
@@ -202,43 +200,19 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi)
     // Gather connection-level information we'll need later.
     //
 
-    // FUTURE: Measure performance here.  Consider caching by connection string if necessary.
+    Object info(GetConnectionInfo(pConnectString, cnxn));
 
-    char szVer[20];
-    SQLSMALLINT cch = 0;
-    if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_DRIVER_ODBC_VER, szVer, _countof(szVer), &cch)))
+    if (!info.IsValid())
     {
-        char* dot = strchr(szVer, '.');
-        if (dot)
-        {
-            *dot = '\0';
-            cnxn->odbc_major=(char)atoi(szVer);
-            cnxn->odbc_minor=(char)atoi(dot + 1);
-        }
+        Py_DECREF(cnxn);
+        return 0;
     }
 
-    char szYN[2];
-    if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_DESCRIBE_PARAMETER, szYN, _countof(szYN), &cch)))
-    {
-        cnxn->supports_describeparam = szYN[0] == 'Y';
-    }
-
-    // What is the datetime precision?  This unfortunately requires a cursor (HSTMT).
-
-    HSTMT hstmt = 0;
-    if (SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, cnxn->hdbc, &hstmt)))
-    {
-        if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_TYPE_TIMESTAMP)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
-        {
-            SQLINTEGER columnsize;
-            if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
-            {
-                cnxn->datetime_precision = columnsize;
-            }
-        }
-
-        SQLFreeStmt(hstmt, SQL_CLOSE);
-    }
+    CnxnInfo* p = (CnxnInfo*)info.Get();
+    cnxn->odbc_major             = p->odbc_major;
+    cnxn->odbc_minor             = p->odbc_minor;
+    cnxn->supports_describeparam = p->supports_describeparam;
+    cnxn->datetime_precision     = p->datetime_precision;
 
     return reinterpret_cast<PyObject*>(cnxn);
 }
