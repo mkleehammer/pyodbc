@@ -35,8 +35,6 @@ void CnxnInfo_init()
     {
         sha = PyImport_ImportModule("sha");
     }
-
-    printf("hashlib=%p sha=%p\n", hashlib, sha);
 }
 
 static PyObject* GetHash(PyObject* p)
@@ -71,8 +69,6 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
     if (!p)
         return 0;
     Object info((PyObject*)p);
-
-    printf("********************************************************************************\n");
 
     // set defaults
     p->odbc_major             = 3;
