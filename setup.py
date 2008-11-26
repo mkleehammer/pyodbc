@@ -91,7 +91,7 @@ def main():
                            'Topic :: Database',
                           ],
 
-           url = 'http://pyodbc.sourceforge.net',
+           url = 'http://code.google.com/p/pyodbc',
            download_url = 'http://github.com/pyodbc/pyodbc/tree/master')
 
 
