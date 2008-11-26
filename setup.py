@@ -92,7 +92,7 @@ def main():
                           ],
 
            url = 'http://code.google.com/p/pyodbc',
-           download_url = 'http://github.com/pyodbc/pyodbc/tree/master')
+           download_url = 'http://code.google.com/p/pyodbc/downloads/list')
 
 
 
