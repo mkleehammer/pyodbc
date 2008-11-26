@@ -4,8 +4,11 @@
 usage = """\
 usage: %prog [options] connection_string
 
-Unit tests for MySQL.  To use, pass a connection string as the parameter.
-The tests will create and drop tables t1 and t2 as necessary.
+Unit tests for MySQL.  To use, pass a connection string as the parameter.  The tests will create and drop tables t1 and
+t2 as necessary.  The default installation of mysql allows you to connect locally with no password and already contains
+a 'test' database, so you can probably use the following.  (Update the driver name as appropriate.)
+
+  ./mysqltests DRIVER={MySQL};DATABASE=test
 
 These tests use the pyodbc library from the build directory, not the version installed in your
 Python directories.  You must run `python setup.py build` before running these tests.
@@ -15,7 +18,7 @@ import sys, os, re
 import unittest
 from decimal import Decimal
 from datetime import datetime, date, time
-from os.path import join, getsize, dirname, abspath
+from os.path import join, getsize, dirname, abspath, basename
 from testutils import *
 
 _TESTSTR = '0123456789-abcdefghijklmnopqrstuvwxyz-'
@@ -230,27 +233,35 @@ class MySqlTestCase(unittest.TestCase):
     # bit
     #
 
-    def test_bit(self):
-        value = True
-        self.cursor.execute("create table t1(b bit)")
-        self.cursor.execute("insert into t1 values (?)", value)
-        v = self.cursor.execute("select b from t1").fetchone()[0]
-        self.assertEqual(type(v), bool)
-        self.assertEqual(v, value)
+    # The MySQL driver maps BIT colums to the ODBC bit data type, but they aren't behaving quite like a Boolean value
+    # (which is what the ODBC bit data type really represents).  The MySQL BOOL data type is just an alias for a small
+    # integer, so pyodbc can't recognize it and map it back to True/False.
+    #
+    # You can use both BIT and BOOL and they will act as you expect if you treat them as integers.  You can write 0 and
+    # 1 to them and they will work.
 
-    def test_bit_string_true(self):
-        self.cursor.execute("create table t1(b bit)")
-        self.cursor.execute("insert into t1 values (?)", "xyzzy")
-        v = self.cursor.execute("select b from t1").fetchone()[0]
-        self.assertEqual(type(v), bool)
-        self.assertEqual(v, True)
-
-    def test_bit_string_false(self):
-        self.cursor.execute("create table t1(b bit)")
-        self.cursor.execute("insert into t1 values (?)", "")
-        v = self.cursor.execute("select b from t1").fetchone()[0]
-        self.assertEqual(type(v), bool)
-        self.assertEqual(v, False)
+    # def test_bit(self):
+    #     value = True
+    #     self.cursor.execute("create table t1(b bit)")
+    #     self.cursor.execute("insert into t1 values (?)", value)
+    #     v = self.cursor.execute("select b from t1").fetchone()[0]
+    #     self.assertEqual(type(v), bool)
+    #     self.assertEqual(v, value)
+    #  
+    # def test_bit_string_true(self):
+    #     self.cursor.execute("create table t1(b bit)")
+    #     self.cursor.execute("insert into t1 values (?)", "xyzzy")
+    #     v = self.cursor.execute("select b from t1").fetchone()[0]
+    #     self.assertEqual(type(v), bool)
+    #     self.assertEqual(v, True)
+    #  
+    # def test_bit_string_false(self):
+    #     self.cursor.execute("create table t1(b bit)")
+    #     self.cursor.execute("insert into t1 values (?)", "")
+    #     v = self.cursor.execute("select b from t1").fetchone()[0]
+    #     self.assertEqual(type(v), bool)
+    #     self.assertEqual(v, False)
+    
     #
     # decimal
     #
@@ -628,7 +639,9 @@ def main():
         parser.error('Only one argument is allowed.  Do you need quotes around the connection string?')
 
     if not args:
-        connection_string = load_setup_connection_string('sqlservertests')
+        filename = basename(sys.argv[0])
+        assert filename.endswith('.py')
+        connection_string = load_setup_connection_string(filename[:-3])
 
         if not connection_string:
             parser.print_help()
