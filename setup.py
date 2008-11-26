@@ -6,7 +6,6 @@ from distutils.extension import Extension
 from distutils.errors import *
 from os.path import exists, abspath, dirname, join, isdir
 
-
 OFFICIAL_BUILD = 9999
 
 def main():
@@ -118,8 +117,8 @@ def get_version():
     # beta for 2.1.5.  Using 'git describe' we can find out how many changes have been made after 2.1.4 and we'll use
     # this count as the beta id (beta1, beta2, etc.)
     #
-    # Since the 4 numbers are put into the Windows DLL, we want to make sure the beta versions sort *after* the
-    # official, so we set the final build number to 9999, but we don't show it.
+    # Since the 4 numbers are put into the Windows DLL, we want to make sure the beta versions sort *before* the
+    # official, so we set the official build number to 9999, but we don't show it.
 
     name    = None              # branch/feature name.  Should be None for official builds.
     numbers = None              # The 4 integers that make up the version.

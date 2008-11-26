@@ -753,13 +753,16 @@ initpyodbc()
     if (!CreateExceptions())
         return;
 
+    // The 'build' version number is a beta identifier.  For example, if it is 7, then we are on beta7 of the
+    // (major,minor.micro) version.  On Windows, we poke these values into the DLL's version resource, so when we make
+    // an official build (which come *after* the betas), we set the BUILD to 9999 so installers will know that it
+    // should replace any installed betas.  However, we obviously don't want to see these.
+
     PyObject* pVersion;
-    if (PYODBC_BUILD == 0)
+    if (PYODBC_BUILD == 9999)
         pVersion = PyString_FromFormat("%d.%d.%d", PYODBC_MAJOR, PYODBC_MINOR, PYODBC_MICRO);
     else
-        pVersion = PyString_FromFormat("%d.%d.%d-%d", PYODBC_MAJOR, PYODBC_MINOR, PYODBC_MICRO, PYODBC_BUILD);
-    if (!pVersion)
-        return;
+        pVersion = PyString_FromFormat("%d.%d.%d-beta%d", PYODBC_MAJOR, PYODBC_MINOR, PYODBC_MICRO, PYODBC_BUILD);
     PyModule_AddObject(pModule, "version", pVersion);
 
     PyModule_AddIntConstant(pModule, "threadsafety", 1);
