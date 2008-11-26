@@ -23,10 +23,10 @@ def main():
         # Windows native
         files.append(join('src', 'pyodbc.rc'))
         libraries.append('odbc32')
-        extra_compile_args = [ '/W4' ]
+        extra_compile_args = ['/W4']
 
-        # extra_compile_args = [ '/W4', '/Zi', '/Od' ]
-        # extra_link_args    = [ '/DEBUG' ]
+        # extra_compile_args = ['/W4', '/Zi', '/Od']
+        # extra_link_args    = ['/DEBUG']
 
     elif os.environ.get("OS", '').lower().startswith('windows'):
         # Windows Cygwin (posix on windows)
@@ -39,10 +39,14 @@ def main():
 
     else:
         # Other posix-like: Linux, Solaris, etc.
+
+        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
+        extra_compile_args = ['-Wno-write-strings']
+
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
         libraries.append('odbc')
 
-    macros = [ ('PYODBC_%s' % name, value) for name,value in zip(['MAJOR', 'MINOR', 'MICRO', 'BUILD'], version) ]
+    macros = [('PYODBC_%s' % name, value) for name,value in zip(['MAJOR', 'MINOR', 'MICRO', 'BUILD'], version)]
 
     # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
     # command.
@@ -71,14 +75,14 @@ def main():
            maintainer       = "Michael Kleehammer",
            maintainer_email = "michael@kleehammer.com",
 
-           ext_modules = [ Extension('pyodbc', files,
+           ext_modules = [Extension('pyodbc', files,
                                      libraries=libraries,
                                      define_macros = macros,
                                      extra_compile_args=extra_compile_args,
                                      extra_link_args=extra_link_args
-                                     ) ],
+                                     )],
 
-           classifiers = [ 'Development Status :: 5 - Production/Stable',
+           classifiers = ['Development Status :: 5 - Production/Stable',
                            'Intended Audience :: Developers',
                            'Intended Audience :: System Administrators',
                            'License :: OSI Approved :: MIT License',
@@ -86,7 +90,7 @@ def main():
                            'Operating System :: POSIX',
                            'Programming Language :: Python',
                            'Topic :: Database',
-                           ],
+                          ],
 
            url = 'http://pyodbc.sourceforge.net',
            download_url = 'http://github.com/pyodbc/pyodbc/tree/master')
@@ -144,7 +148,7 @@ def _get_version_pkginfo():
             match = re_ver.search(line)
             if match:
                 name    = line.split(':', 1)[1].strip()
-                numbers = [ int(n or 0) for n in match.groups() ]
+                numbers = [int(n or 0) for n in match.groups()]
                 return name, numbers
 
     return None, None
@@ -160,7 +164,7 @@ def _get_version_git():
     if not match:
         return None, None
 
-    numbers = [ int(n or OFFICIAL_BUILD) for n in match.groups() ]
+    numbers = [int(n or OFFICIAL_BUILD) for n in match.groups()]
     if numbers[-1] == OFFICIAL_BUILD:
         name = '%s.%s.%s' % tuple(numbers[:3])
     if numbers[-1] != OFFICIAL_BUILD:
