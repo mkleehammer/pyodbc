@@ -436,6 +436,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
+        self.assertEquals(type(value), datetime)
         self.assertEquals(value, result)
 
     def test_datetime_fraction(self):
@@ -448,6 +449,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
      
         result = self.cursor.execute("select dt from t1").fetchone()[0]
+        self.assertEquals(type(value), datetime)
         self.assertEquals(result, value)
 
     def test_datetime_fraction_rounded(self):
@@ -461,17 +463,50 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", full)
      
         result = self.cursor.execute("select dt from t1").fetchone()[0]
+        self.assertEquals(type(result), datetime)
         self.assertEquals(result, rounded)
 
     def test_date(self):
-        value = date(2001, 1, 1)
+        ver = self.get_sqlserver_version()
+        if ver < 10:            # 2008 only
+            return              # so pass / ignore
 
-        self.cursor.execute("create table t1(dt date)")
+        value = date.today()
+     
+        self.cursor.execute("create table t1(d date)")
+        self.cursor.execute("insert into t1 values (?)", value)
+     
+        result = self.cursor.execute("select d from t1").fetchone()[0]
+        self.assertEquals(type(value), date)
+        self.assertEquals(value, result)
+
+    def test_time(self):
+        ver = self.get_sqlserver_version()
+        if ver < 10:            # 2008 only
+            return              # so pass / ignore
+
+        value = datetime.now().time()
+        
+        # We aren't yet writing values using the new extended time type so the value written to the database is only
+        # down to the second.
+        value = value.replace(microsecond=0)
+         
+        self.cursor.execute("create table t1(t time)")
+        self.cursor.execute("insert into t1 values (?)", value)
+         
+        result = self.cursor.execute("select t from t1").fetchone()[0]
+        self.assertEquals(type(value), time)
+        self.assertEquals(value, result)
+
+    def test_datetime2(self):
+        value = datetime(2007, 1, 15, 3, 4, 5)
+
+        self.cursor.execute("create table t1(dt datetime2)")
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEquals(type(result), type(value))
-        self.assertEquals(result, value)
+        self.assertEquals(type(value), datetime)
+        self.assertEquals(value, result)
 
     #
     # ints and floats
@@ -512,37 +547,6 @@ class SqlServerTestCase(unittest.TestCase):
         result  = self.cursor.execute("select n from t1").fetchone()[0]
         self.assertEqual(value, result)
 
-
-    def test_date(self):
-        ver = self.get_sqlserver_version()
-        if ver < 10:            # 2008 only
-            return              # so pass / ignore
-
-        value = date.today()
-     
-        self.cursor.execute("create table t1(d date)")
-        self.cursor.execute("insert into t1 values (?)", value)
-     
-        result = self.cursor.execute("select d from t1").fetchone()[0]
-        self.assertEquals(value, result)
-
-
-    def test_time(self):
-        ver = self.get_sqlserver_version()
-        if ver < 10:            # 2008 only
-            return              # so pass / ignore
-
-        value = datetime.now().time()
-        
-        # We aren't yet writing values using the new extended time type so the value written to the database is only
-        # down to the second.
-        value = value.replace(microsecond=0)
-         
-        self.cursor.execute("create table t1(t time)")
-        self.cursor.execute("insert into t1 values (?)", value)
-         
-        result = self.cursor.execute("select t from t1").fetchone()[0]
-        self.assertEquals(value, result)
 
     #
     # stored procedures
