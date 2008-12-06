@@ -11,3 +11,6 @@ prune web\*.cmd
 # because I use PATHEXT on Windows.
 prune setup.PY
 include setup.py
+
+# Include this file, needed for bdist_rpm
+include MANIFEST.in
