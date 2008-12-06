@@ -30,7 +30,7 @@ void CnxnInfo_init()
 
     update = PyString_FromString("update");
 
-    // hashlib = PyImport_ImportModule("hashlib");
+    hashlib = PyImport_ImportModule("hashlib");
     if (!hashlib)
     {
         sha = PyImport_ImportModule("sha");
