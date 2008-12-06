@@ -86,10 +86,10 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi)
         }
 
         Py_BEGIN_ALLOW_THREADS
-            ret = SQLDriverConnectW(hdbc, 0, szConnectW, SQL_NTS, 0, 0, 0, SQL_DRIVER_NOPROMPT);
+        ret = SQLDriverConnectW(hdbc, 0, szConnectW, SQL_NTS, 0, 0, 0, SQL_DRIVER_NOPROMPT);
         Py_END_ALLOW_THREADS
-            if (SQL_SUCCEEDED(ret))
-                return true;
+        if (SQL_SUCCEEDED(ret))
+            return true;
 
         // The Unicode function failed.  If the error is that the driver doesn't have a Unicode version (IM001), continue
         // to the ANSI version.
@@ -149,13 +149,19 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi)
     //
 
     HDBC hdbc = SQL_NULL_HANDLE;
-    if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_DBC, henv, &hdbc)))
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLAllocHandle(SQL_HANDLE_DBC, henv, &hdbc);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLAllocHandle", SQL_NULL_HANDLE, SQL_NULL_HANDLE);
 
     if (!Connect(pConnectString, hdbc, fAnsi))
     {
         // Connect has already set an exception.
+        Py_BEGIN_ALLOW_THREADS
         SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
+        Py_END_ALLOW_THREADS
         return 0;
     }
 
@@ -169,7 +175,9 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi)
 
     if (cnxn == 0)
     {
+        Py_BEGIN_ALLOW_THREADS
         SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
+        Py_END_ALLOW_THREADS
         return 0;
     }
 
@@ -185,11 +193,19 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi)
     // keyword parameter that allows the user to override the DB API and force us to start in auto-commit (in which
     // case we don't have to do anything).
 
-    if (fAutoCommit == false && !SQL_SUCCEEDED(SQLSetConnectAttr(cnxn->hdbc, SQL_ATTR_AUTOCOMMIT, (SQLPOINTER)cnxn->nAutoCommit, SQL_IS_UINTEGER)))
+    if (fAutoCommit == false)
     {
-        RaiseErrorFromHandle("SQLSetConnnectAttr(SQL_ATTR_AUTOCOMMIT)", cnxn->hdbc, SQL_NULL_HANDLE);
-        Py_DECREF(cnxn);
-        return 0;
+        SQLRETURN ret;
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLSetConnectAttr(cnxn->hdbc, SQL_ATTR_AUTOCOMMIT, (SQLPOINTER)cnxn->nAutoCommit, SQL_IS_UINTEGER);
+        Py_END_ALLOW_THREADS
+
+        if (!SQL_SUCCEEDED(ret))
+        {
+            RaiseErrorFromHandle("SQLSetConnnectAttr(SQL_ATTR_AUTOCOMMIT)", cnxn->hdbc, SQL_NULL_HANDLE);
+            Py_DECREF(cnxn);
+            return 0;
+        }
     }
     
 #ifdef TRACE_ALL
@@ -233,9 +249,14 @@ Connection_clear(Connection* cnxn)
 #endif
 
         if (cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF)
+        {
+            Py_BEGIN_ALLOW_THREADS
             SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, SQL_ROLLBACK);
-        SQLDisconnect(cnxn->hdbc);
-        SQLFreeHandle(SQL_HANDLE_DBC, cnxn->hdbc);
+            SQLDisconnect(cnxn->hdbc);
+            SQLFreeHandle(SQL_HANDLE_DBC, cnxn->hdbc);
+            Py_END_ALLOW_THREADS
+        }
+        
         cnxn->hdbc = SQL_NULL_HANDLE;
     }
 
@@ -494,7 +515,11 @@ Connection_getinfo(PyObject* self, PyObject* args)
     char szBuffer[0x1000];
     SQLSMALLINT cch = 0;
 
-    if (!SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, infotype, szBuffer, sizeof(szBuffer), &cch)))
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLGetInfo(cnxn->hdbc, infotype, szBuffer, sizeof(szBuffer), &cch);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
     {
         RaiseErrorFromHandle("SQLGetInfo", cnxn->hdbc, SQL_NULL_HANDLE);
         return 0;
@@ -545,7 +570,11 @@ Connection_endtrans(PyObject* self, PyObject* args, SQLSMALLINT type)
     printf("%s: cnxn=%p hdbc=%d\n", (type == SQL_COMMIT) ? "commit" : "rollback", cnxn, cnxn->hdbc);
 #endif
 
-    if (!SQL_SUCCEEDED(SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, type)))
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, type);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
     {
         RaiseErrorFromHandle("SQLEndTran", cnxn->hdbc, SQL_NULL_HANDLE);
         return 0;
@@ -622,7 +651,11 @@ Connection_setautocommit(PyObject* self, PyObject* value, void* closure)
     }
     
     int nAutoCommit = PyObject_IsTrue(value) ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
-    if (!SQL_SUCCEEDED(SQLSetConnectAttr(cnxn->hdbc, SQL_ATTR_AUTOCOMMIT, (SQLPOINTER)nAutoCommit, SQL_IS_UINTEGER)))
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLSetConnectAttr(cnxn->hdbc, SQL_ATTR_AUTOCOMMIT, (SQLPOINTER)nAutoCommit, SQL_IS_UINTEGER);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
     {
         RaiseErrorFromHandle("SQLSetConnectAttr", cnxn->hdbc, SQL_NULL_HANDLE);
         return -1;
@@ -644,7 +677,11 @@ Connection_getsearchescape(Connection* self, void* closure)
         char sz[8] = { 0 };
         SQLSMALLINT cch = 0;
 
-        if (!SQL_SUCCEEDED(SQLGetInfo(self->hdbc, SQL_SEARCH_PATTERN_ESCAPE, &sz, _countof(sz), &cch)))
+        SQLRETURN ret;
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLGetInfo(self->hdbc, SQL_SEARCH_PATTERN_ESCAPE, &sz, _countof(sz), &cch);
+        Py_END_ALLOW_THREADS
+        if (!SQL_SUCCEEDED(ret))
             return RaiseErrorFromHandle("SQLGetInfo", self->hdbc, SQL_NULL_HANDLE);
 
         self->searchescape = PyString_FromStringAndSize(sz, (Py_ssize_t)cch);

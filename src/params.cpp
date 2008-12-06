@@ -31,7 +31,9 @@ void FreeParameterData(Cursor* cur)
 
     if (cur->paramdata)
     {
+        Py_BEGIN_ALLOW_THREADS
         SQLFreeStmt(cur->hstmt, SQL_RESET_PARAMS);
+        Py_END_ALLOW_THREADS
         free(cur->paramdata);
         cur->paramdata = 0;
     }

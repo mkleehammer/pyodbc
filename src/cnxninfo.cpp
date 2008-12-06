@@ -76,9 +76,17 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
     p->supports_describeparam = false;
     p->datetime_precision     = 19; // default: "yyyy-mm-dd hh:mm:ss"
 
+    // WARNING: The GIL lock is released for the *entire* function here.  Do not touch any objects, call Python APIs,
+    // etc.  We are simply making ODBC calls and setting atomic values (ints & chars).  Also, make sure the lock gets
+    // released -- do not add an early exit.
+
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+
     char szVer[20];
     SQLSMALLINT cch = 0;
-    if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_DRIVER_ODBC_VER, szVer, _countof(szVer), &cch)))
+    ret = SQLGetInfo(cnxn->hdbc, SQL_DRIVER_ODBC_VER, szVer, _countof(szVer), &cch);
+    if (SQL_SUCCEEDED(ret))
     {
         char* dot = strchr(szVer, '.');
         if (dot)
@@ -90,7 +98,8 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
     }
 
     char szYN[2];
-    if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_DESCRIBE_PARAMETER, szYN, _countof(szYN), &cch)))
+    ret = SQLGetInfo(cnxn->hdbc, SQL_DESCRIBE_PARAMETER, szYN, _countof(szYN), &cch);
+    if (SQL_SUCCEEDED(ret))
     {
         p->supports_describeparam = szYN[0] == 'Y';
     }
@@ -111,6 +120,10 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
 
         SQLFreeStmt(hstmt, SQL_CLOSE);
     }
+
+    Py_END_ALLOW_THREADS
+
+    // WARNING: Released the lock now.
     
     return info.Detach();
 }

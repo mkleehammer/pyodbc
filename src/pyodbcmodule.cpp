@@ -297,16 +297,21 @@ mod_datasources(PyObject* self)
 
     SQLUSMALLINT nDirection = SQL_FETCH_FIRST;
 
-    RETCODE retcode=SQL_SUCCESS;
-    while (SQL_SUCCEEDED(retcode=SQLDataSources(henv, SQL_FETCH_NEXT,
-                                                szDSN,  _countof(szDSN),  &cbDSN,
-                                                szDesc, _countof(szDesc), &cbDesc)))
+    SQLRETURN ret;
+
+    for (;;)
     {
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLDataSources(henv, SQL_FETCH_NEXT, szDSN,  _countof(szDSN),  &cbDSN, szDesc, _countof(szDesc), &cbDesc);
+        Py_END_ALLOW_THREADS
+        if (!SQL_SUCCEEDED(ret))
+            break;
+        
         PyDict_SetItemString(result, (const char*)szDSN, PyString_FromString((const char*)szDesc));
         nDirection = SQL_FETCH_NEXT;
     }
     
-    if (retcode != SQL_NO_DATA)
+    if (ret != SQL_NO_DATA)
     {
         Py_DECREF(result);
         return RaiseErrorFromHandle("SQLDataSources", SQL_NULL_HANDLE, SQL_NULL_HANDLE);

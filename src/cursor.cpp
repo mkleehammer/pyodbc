@@ -692,7 +692,9 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
 
         szLastFunction = "SQLParamData";
         PyObject* pParam;
+        Py_BEGIN_ALLOW_THREADS
         ret = SQLParamData(cur->hstmt, (SQLPOINTER*)&pParam);
+        Py_END_ALLOW_THREADS
 
         if (ret == SQL_NEED_DATA)
         {
@@ -706,7 +708,11 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
                 byte* pb;
                 SQLLEN cb;
                 while (it.Next(pb, cb))
+                {
+                    Py_BEGIN_ALLOW_THREADS
                     SQLPutData(cur->hstmt, pb, cb);
+                    Py_END_ALLOW_THREADS
+                }
             }
             else if (PyUnicode_Check(pParam))
             {
@@ -717,7 +723,9 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
                 while (offset < cb)
                 {
                     SQLLEN remaining = min(MAX_VARCHAR_BUFFER, cb - offset);
+                    Py_BEGIN_ALLOW_THREADS
                     SQLPutData(cur->hstmt, &p[offset], remaining * 2);
+                    Py_END_ALLOW_THREADS
                     offset += remaining;
                 }
             }
@@ -729,7 +737,9 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
                 while (offset < cb)
                 {
                     SQLLEN remaining = min(MAX_VARCHAR_BUFFER, cb - offset);
+                    Py_BEGIN_ALLOW_THREADS
                     SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
+                    Py_END_ALLOW_THREADS
                     offset += remaining;
                 }
             }
@@ -760,7 +770,10 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
 #endif
 
     SQLSMALLINT cCols = 0;
-    if (!SQL_SUCCEEDED(SQLNumResultCols(cur->hstmt, &cCols)))
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLNumResultCols(cur->hstmt, &cCols);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
     {
         // Note: The SQL Server driver sometimes returns HY007 here if multiple statements (separated by ;) were
         // submitted.  This is not documented, but I've seen it with multiple successful inserts.  
@@ -1157,7 +1170,10 @@ Cursor_tables(PyObject* self, PyObject* args, PyObject* kwargs)
         return RaiseErrorFromHandle("SQLTables", cur->cnxn->hdbc, cur->hstmt);
 
     SQLSMALLINT cCols;
-    if (!SQL_SUCCEEDED(SQLNumResultCols(cur->hstmt, &cCols)))
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLNumResultCols(cur->hstmt, &cCols);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     
     if (!PrepareResults(cur, cCols))
@@ -1223,7 +1239,10 @@ Cursor_columns(PyObject* self, PyObject* args, PyObject* kwargs)
         return RaiseErrorFromHandle("SQLColumns", cur->cnxn->hdbc, cur->hstmt);
 
     SQLSMALLINT cCols;
-    if (!SQL_SUCCEEDED(SQLNumResultCols(cur->hstmt, &cCols)))
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLNumResultCols(cur->hstmt, &cCols);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     
     if (!PrepareResults(cur, cCols))
@@ -1297,7 +1316,10 @@ Cursor_statistics(PyObject* self, PyObject* args, PyObject* kwargs)
         return RaiseErrorFromHandle("SQLStatistics", cur->cnxn->hdbc, cur->hstmt);
 
     SQLSMALLINT cCols;
-    if (!SQL_SUCCEEDED(SQLNumResultCols(cur->hstmt, &cCols)))
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLNumResultCols(cur->hstmt, &cCols);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     
     if (!PrepareResults(cur, cCols))
@@ -1371,7 +1393,10 @@ _specialColumns(PyObject* self, PyObject* args, PyObject* kwargs, SQLUSMALLINT n
         return RaiseErrorFromHandle("SQLSpecialColumns", cur->cnxn->hdbc, cur->hstmt);
 
     SQLSMALLINT cCols;
-    if (!SQL_SUCCEEDED(SQLNumResultCols(cur->hstmt, &cCols)))
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLNumResultCols(cur->hstmt, &cCols);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     
     if (!PrepareResults(cur, cCols))
@@ -1437,7 +1462,10 @@ Cursor_primaryKeys(PyObject* self, PyObject* args, PyObject* kwargs)
         return RaiseErrorFromHandle("SQLPrimaryKeys", cur->cnxn->hdbc, cur->hstmt);
 
     SQLSMALLINT cCols;
-    if (!SQL_SUCCEEDED(SQLNumResultCols(cur->hstmt, &cCols)))
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLNumResultCols(cur->hstmt, &cCols);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     
     if (!PrepareResults(cur, cCols))
@@ -1507,7 +1535,10 @@ Cursor_foreignKeys(PyObject* self, PyObject* args, PyObject* kwargs)
         return RaiseErrorFromHandle("SQLForeignKeys", cur->cnxn->hdbc, cur->hstmt);
 
     SQLSMALLINT cCols;
-    if (!SQL_SUCCEEDED(SQLNumResultCols(cur->hstmt, &cCols)))
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLNumResultCols(cur->hstmt, &cCols);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     
     if (!PrepareResults(cur, cCols))
@@ -1572,7 +1603,10 @@ Cursor_getTypeInfo(PyObject* self, PyObject* args, PyObject* kwargs)
         return RaiseErrorFromHandle("SQLGetTypeInfo", cur->cnxn->hdbc, cur->hstmt);
 
     SQLSMALLINT cCols;
-    if (!SQL_SUCCEEDED(SQLNumResultCols(cur->hstmt, &cCols)))
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLNumResultCols(cur->hstmt, &cCols);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     
     if (!PrepareResults(cur, cCols))
@@ -1612,7 +1646,10 @@ Cursor_nextset(PyObject* self, PyObject* args)
     }
 
     SQLSMALLINT cCols;
-    if (!SQL_SUCCEEDED(SQLNumResultCols(cur->hstmt, &cCols)))
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLNumResultCols(cur->hstmt, &cCols);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
     {
         // Note: The SQL Server driver sometimes returns HY007 here if multiple statements (separated by ;) were
         // submitted.  This is not documented, but I've seen it with multiple successful inserts.  
@@ -1690,15 +1727,18 @@ Cursor_procedureColumns(PyObject* self, PyObject* args, PyObject* kwargs)
     SQLRETURN ret = 0;
 
     Py_BEGIN_ALLOW_THREADS
-        ret = SQLProcedureColumns(cur->hstmt, (SQLCHAR*)szCatalog, SQL_NTS, (SQLCHAR*)szSchema, SQL_NTS,
-                                  (SQLCHAR*)szProcedure, SQL_NTS, 0, 0);
+    ret = SQLProcedureColumns(cur->hstmt, (SQLCHAR*)szCatalog, SQL_NTS, (SQLCHAR*)szSchema, SQL_NTS,
+                              (SQLCHAR*)szProcedure, SQL_NTS, 0, 0);
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLProcedureColumns", cur->cnxn->hdbc, cur->hstmt);
 
     SQLSMALLINT cCols;
-    if (!SQL_SUCCEEDED(SQLNumResultCols(cur->hstmt, &cCols)))
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLNumResultCols(cur->hstmt, &cCols);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     
     if (!PrepareResults(cur, cCols))
@@ -1754,7 +1794,10 @@ Cursor_procedures(PyObject* self, PyObject* args, PyObject* kwargs)
         return RaiseErrorFromHandle("SQLProcedures", cur->cnxn->hdbc, cur->hstmt);
 
     SQLSMALLINT cCols;
-    if (!SQL_SUCCEEDED(SQLNumResultCols(cur->hstmt, &cCols)))
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLNumResultCols(cur->hstmt, &cCols);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     
     if (!PrepareResults(cur, cCols))
@@ -1823,7 +1866,12 @@ static PyObject* Cursor_getnoscan(PyObject* self, void *closure)
         return 0;
 
     SQLUINTEGER noscan = SQL_NOSCAN_OFF;
-    if (!SQL_SUCCEEDED(SQLGetStmtAttr(cursor->hstmt, SQL_ATTR_NOSCAN, (SQLPOINTER)&noscan, sizeof(SQLUINTEGER), 0)))
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLGetStmtAttr(cursor->hstmt, SQL_ATTR_NOSCAN, (SQLPOINTER)&noscan, sizeof(SQLUINTEGER), 0);
+    Py_END_ALLOW_THREADS
+
+    if (!SQL_SUCCEEDED(ret))
     {
         // Not supported?  We're going to assume 'no'.
         Py_RETURN_FALSE;
@@ -1850,7 +1898,11 @@ static PyObject* Cursor_setnoscan(PyObject* self, PyObject* value, void *closure
     }
 
     SQLUINTEGER noscan = PyObject_IsTrue(value) ? SQL_NOSCAN_ON : SQL_NOSCAN_OFF;
-    if (!SQL_SUCCEEDED(SQLSetStmtAttr(cursor->hstmt, SQL_ATTR_NOSCAN, (SQLPOINTER)noscan, 0)))
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLSetStmtAttr(cursor->hstmt, SQL_ATTR_NOSCAN, (SQLPOINTER)noscan, 0);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
     {
         printf("setattr failed!\n");
         return RaiseErrorFromHandle("SQLSetStmtAttr(SQL_ATTR_NOSCAN)", cursor->cnxn->hdbc, cursor->hstmt);
@@ -2025,7 +2077,12 @@ Cursor_New(Connection* cnxn)
         Py_INCREF(cnxn);
         Py_INCREF(cur->description);
 
-        if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, cnxn->hdbc, &cur->hstmt)))
+        SQLRETURN ret;
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLAllocHandle(SQL_HANDLE_STMT, cnxn->hdbc, &cur->hstmt);
+        Py_END_ALLOW_THREADS
+
+        if (!SQL_SUCCEEDED(ret))
         {
             RaiseErrorFromHandle("SQLAllocHandle", cnxn->hdbc, SQL_NULL_HANDLE);
             Py_DECREF(cur);

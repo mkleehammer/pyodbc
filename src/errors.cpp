@@ -223,8 +223,11 @@ PyObject* GetErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt)
         nNativeError = 0;
         cchMsg       = 0;
 
-        SQLRETURN r = SQLGetDiagRec(nHandleType, h, iRecord, (SQLCHAR*)sqlstateT, &nNativeError, (SQLCHAR*)szMsg, (short)(_countof(szMsg)-1), &cchMsg);
-        if (!SQL_SUCCEEDED(r))
+        SQLRETURN ret;
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLGetDiagRec(nHandleType, h, iRecord, (SQLCHAR*)sqlstateT, &nNativeError, (SQLCHAR*)szMsg, (short)(_countof(szMsg)-1), &cchMsg);
+        Py_END_ALLOW_THREADS
+        if (!SQL_SUCCEEDED(ret))
             break;
 
         // Not always NULL terminated (MS Access)
@@ -286,8 +289,11 @@ static bool GetSqlState(HSTMT hstmt, char* szSqlState)
     SQLSMALLINT cbMsg = (SQLSMALLINT)(_countof(szMsg) - 1);
     SQLINTEGER nNative;
     SQLSMALLINT cchMsg;
+    SQLRETURN ret;
 
-    SQLRETURN ret = SQLGetDiagRec(SQL_HANDLE_STMT, hstmt, 1, (SQLCHAR*)szSqlState, &nNative, szMsg, cbMsg, &cchMsg);
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLGetDiagRec(SQL_HANDLE_STMT, hstmt, 1, (SQLCHAR*)szSqlState, &nNative, szMsg, cbMsg, &cchMsg);
+    Py_END_ALLOW_THREADS
     return SQL_SUCCEEDED(ret);
 }
 
