@@ -5,7 +5,7 @@ Overview
 This project is a Python database module for ODBC that implements the Python DB API 2.0
 specification.
 
-  homepage: http://sourceforge.net/projects/pyodbc
+  homepage: http://code.google.com/p/pyodbc
   source:   http://github.com/mkleehammer/pyodbc
 
 This module requires:
@@ -13,8 +13,9 @@ This module requires:
  * Python 2.4 or greater
  * ODBC 3.0 or greater
 
-On Windows, the easiest way to install is to use the Windows installer program available at
-http://sourceforge.net/projects/pyodbc.
+On Windows, the easiest way to install is to use the Windows installers from:
+
+  http://code.google.com/p/pyodbc/downloads/list
 
 Source can be obtained at
 
