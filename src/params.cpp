@@ -9,21 +9,14 @@
 #include "errors.h"
 #include "dbspecific.h"
 
-struct ParamDesc
-{
-    SQLSMALLINT sql_type;
-    SQLULEN     column_size;
-    SQLSMALLINT decimal_digits;
-};
-
 inline Connection* GetConnection(Cursor* cursor)
 {
     return (Connection*)cursor->cnxn;
 }
 
-static bool CacheParamDesc(Cursor* cur);
 static int GetParamBufferSize(PyObject* param, Py_ssize_t iParam);
-static bool BindParam(Cursor* cur, int iParam, const ParamDesc* pDesc, PyObject* param, byte** ppbParam);
+static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam);
+static SQLSMALLINT GetParamType(Cursor* cur, int iParam);
 
 void FreeParameterData(Cursor* cur)
 {
@@ -43,9 +36,9 @@ void FreeParameterInfo(Cursor* cur)
     // since this information is also freed in the less granular free_results function that clears everything.
 
     Py_XDECREF(cur->pPreparedSQL);
-    free(cur->paramdescs);
+    free(cur->paramtypes);
     cur->pPreparedSQL = 0;
-    cur->paramdescs   = 0;
+    cur->paramtypes   = 0;
     cur->paramcount   = 0;
 }
 
@@ -96,33 +89,33 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
     // Prepare the SQL if necessary.
     //
 
-    if (pSql == cur->pPreparedSQL)
-    {
-        // We've already prepared this SQL, so we don't need to do so again.  We've also cached the parameter
-        // information in cur->paramdescs.
-
-        if (cParams != cur->paramcount)
-        {
-            RaiseErrorV(0, ProgrammingError, "The SQL contains %d parameter markers, but %d parameters were supplied",
-                        cur->paramcount, cParams);
-            return false;
-        }
-    }
-    else
+    if (pSql != cur->pPreparedSQL)
     {
         FreeParameterInfo(cur);
 
         SQLRETURN ret;
+        SQLSMALLINT cParamsT = 0;
+        const char* szErrorFunc = "SQLPrepare";
         if (PyString_Check(pSql))
         {
             Py_BEGIN_ALLOW_THREADS
             ret = SQLPrepare(cur->hstmt, (SQLCHAR*)PyString_AS_STRING(pSql), SQL_NTS);
+            if (SQL_SUCCEEDED(ret))
+            {
+                szErrorFunc = "SQLNumParams";
+                ret = SQLNumParams(cur->hstmt, &cParamsT);
+            }
             Py_END_ALLOW_THREADS
         }
         else
         {
             Py_BEGIN_ALLOW_THREADS
             ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)PyUnicode_AsUnicode(pSql), SQL_NTS);
+            if (SQL_SUCCEEDED(ret))
+            {
+                szErrorFunc = "SQLNumParams";
+                ret = SQLNumParams(cur->hstmt, &cParamsT);
+            }
             Py_END_ALLOW_THREADS
         }
   
@@ -135,34 +128,27 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 
         if (!SQL_SUCCEEDED(ret))
         {
-            RaiseErrorFromHandle("SQLPrepare", GetConnection(cur)->hdbc, cur->hstmt);
+            RaiseErrorFromHandle(szErrorFunc, GetConnection(cur)->hdbc, cur->hstmt);
             return false;
         }
                 
-        if (!CacheParamDesc(cur))
-            return false;
+        cur->paramcount = (int)cParamsT;
 
         cur->pPreparedSQL = pSql;
         Py_INCREF(cur->pPreparedSQL);
     }
         
+    if (cParams != cur->paramcount)
+    {
+        RaiseErrorV(0, ProgrammingError, "The SQL contains %d parameter markers, but %d parameters were supplied",
+                    cur->paramcount, cParams);
+        return false;
+    }
+
     //
     // Convert parameters if necessary
     //
 
-    // If we were able to get the parameter descriptions (the target columns), we'll convert objects being written to
-    // bit/bool columns.  Drivers that don't give us the target descriptions will require users to pass in booleans or
-    // ints, but we hope drivers will add support.
-
-    if (cur->paramdescs)
-    {
-        for (Py_ssize_t i = 0; i < cParams; i++)
-        {
-            if (cur->paramdescs[i].sql_type == SQL_BIT && !PyBool_Check(params[i]))
-                params[i] = PyObject_IsTrue(params[i]) ? Py_True : Py_False;                
-        }
-    }
-    
     // Calculate the amount of memory we need for param_buffer.  We can't allow it to reallocate on the fly since
     // we will bind directly into its memory.  (We only use a vector so its destructor will free the memory.)
     // We'll set aside one SQLLEN for each column to be used as the StrLen_or_IndPtr.
@@ -193,9 +179,7 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 
     for (Py_ssize_t i = 0; i < cParams; i++)
     {
-        ParamDesc* pDesc = (cur->paramdescs != 0) ? &cur->paramdescs[i] : 0;
-
-        if (!BindParam(cur, i + 1, pDesc, params[i], &pbParam))
+        if (!BindParam(cur, i + 1, params[i], &pbParam))
         {
             free(cur->paramdata);
             cur->paramdata = 0;
@@ -206,70 +190,38 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
     return true;
 }
 
-static bool CacheParamDesc(Cursor* cur)
+static SQLSMALLINT GetParamType(Cursor* cur, int iParam)
 {
-    // Called after a SQL statement is prepared to cache the number of parameters and some information about each.
-    //
-    // If successful, true is returned.  Otherwise, the appropriate exception will be registered with the Python system and
-    // false is returned.
+    if (!GetConnection(cur)->supports_describeparam || cur->paramcount == 0)
+        return SQL_UNKNOWN_TYPE;
 
-    cur->paramcount = 0;
-    cur->paramdescs = 0;
-
-    SQLSMALLINT cT;
-    SQLRETURN ret;
-    Py_BEGIN_ALLOW_THREADS
-    ret = SQLNumParams(cur->hstmt, &cT);
-    Py_END_ALLOW_THREADS
-
-    if (!SQL_SUCCEEDED(ret))
+    if (cur->paramtypes == 0)
     {
-        RaiseErrorFromHandle("SQLNumParams", GetConnection(cur)->hdbc, cur->hstmt);
-        return false;
-    }
-    
-    cur->paramcount = (int)cT;
+        cur->paramtypes = reinterpret_cast<SQLSMALLINT*>(malloc(sizeof(SQLSMALLINT) * cur->paramcount));
+        if (cur->paramtypes == 0)
+            return SQL_UNKNOWN_TYPE;
 
-    if (!GetConnection(cur)->supports_describeparam)
-    {
-        // The driver can't describe the parameters to us, so we'll do without.  They are helpful, but are only really
-        // required when binding a None (NULL) since we don't know the required data type.
-        return true;
-    }
-    
-    ParamDesc* pT = reinterpret_cast<ParamDesc*>(malloc(sizeof(ParamDesc) * cT));
-    if (pT == 0)
-    {
-        PyErr_NoMemory();
-        return false;
+        // SQL_UNKNOWN_TYPE is zero, so zero out all columns since we haven't looked any up yet.
+        memset(cur->paramtypes, 0, sizeof(SQLSMALLINT) * cur->paramcount);
     }
 
-    for (SQLSMALLINT i = 0; i < cT; i++)
+    if (cur->paramtypes[iParam-1] == SQL_UNKNOWN_TYPE)
     {
-        SQLSMALLINT Nullable;
+        SQLUINTEGER ParameterSizePtr;
+        SQLSMALLINT DecimalDigitsPtr;
+        SQLSMALLINT NullablePtr;
+        SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLDescribeParam(cur->hstmt, static_cast<SQLUSMALLINT>(i + 1), &pT[i].sql_type, &pT[i].column_size,
-                               &pT[i].decimal_digits, &Nullable);
+        ret = SQLDescribeParam(cur->hstmt, static_cast<SQLUSMALLINT>(iParam), &cur->paramtypes[iParam-1],
+                               &ParameterSizePtr, &DecimalDigitsPtr, &NullablePtr);
         Py_END_ALLOW_THREADS
-
         if (!SQL_SUCCEEDED(ret))
-        {
-            // This used to trigger an error, but SQLDescribeParam just isn't as supported or robust as I had hoped.
-            // There are a couple of old bugs that cause "Invalid Descriptor index" that are supposed to be fixed, but
-            // one also mentions that SQLDescribeParam is not supported for subquery parameters (!).
-            //
-            // Once I find a way to bind None (NULL) consistently, I'll remove SQLDescribeParam completely.
-
-            pT[i].sql_type       = SQL_VARCHAR;
-            pT[i].column_size    = 1;
-            pT[i].decimal_digits = 0;
-        }
+            return SQL_UNKNOWN_TYPE;
     }
-        
-    cur->paramdescs = pT;
 
-    return true;
+    return cur->paramtypes[iParam-1];
 }
+
 
 static int GetParamBufferSize(PyObject* param, Py_ssize_t iParam)
 {
@@ -404,7 +356,7 @@ static const char* CTypeName(SQLSMALLINT n)
 
 #endif
 
-static bool BindParam(Cursor* cur, int iParam, const ParamDesc* pDesc, PyObject* param, byte** ppbParam)
+static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
 {
     // Called to bind a single parameter.
     //
@@ -457,26 +409,12 @@ static bool BindParam(Cursor* cur, int iParam, const ParamDesc* pDesc, PyObject*
     SQLPOINTER  pbValue       = 0; // Set to the data to bind, either into `param` or set to pbParam.
     SQLLEN      cbValueMax    = 0;
 
-    if (pDesc != 0 && pDesc->sql_type == SQL_BIT)
-    {
-        // We know the target type is a Boolean, so we'll use Python semantics and ask the object if it is 'true'.
-        // (When using a database that won't give us the target types (pDesc == 0), users will have to pass a boolean
-        // or an int.  I don't like having different behavior, but we hope all ODBC drivers are improving and will
-        // support the feature.)
-        //
-        // However, unlike Python, a database also supports NULL, so if the value is None, we'll keep it and write a
-        // NULL to the database.
-
-        if (param != Py_None)
-            param = PyObject_IsTrue(param) ? Py_True : Py_False;
-
-        // I'm not going to addref these since we aren't going to decref them either.  Since they are global/singletons
-        // we know they'll be around for the duration of this function.
-    }
-
     if (param == Py_None)
     {
-        fSqlType  = pDesc ? pDesc->sql_type : SQL_VARCHAR;
+        fSqlType  = GetParamType(cur, iParam); // First see if the driver can tell us the target type...
+        if (fSqlType == SQL_UNKNOWN_TYPE)      // ... if it can't
+            fSqlType =  SQL_VARCHAR;           // ... assume varchar (which fails on SQL Server binary fields)
+
         fCType    = SQL_C_DEFAULT;
         *pcbValue = SQL_NULL_DATA;
         cbColDef  = 1;
