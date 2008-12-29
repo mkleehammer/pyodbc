@@ -148,7 +148,7 @@ static void init_locale_info()
         return;
     }
 
-    PyObject* value = PyDict_GetItemString(ldict, "decimal");
+    PyObject* value = PyDict_GetItemString(ldict, "decimal_point");
     if (value && PyString_Check(value) && PyString_Size(value) == 1)
     {
         chDecimal = PyString_AsString(value)[0];

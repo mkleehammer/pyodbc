@@ -25,7 +25,7 @@ extract and run:
   python setup.py build install
 
 Module Specific Behavior
-=======================
+========================
 
 General
 -------
