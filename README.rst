@@ -58,8 +58,8 @@ Data Types
 * Decimal and numeric columns are passed and returned using the Python 2.4 decimal class.
 
 
-Convenience Methods
--------------------
+Convenient Additions
+--------------------
 
 * Cursors are iterable and returns Row objects.
 
@@ -70,71 +70,79 @@ Convenience Methods
         print row
 
 
-* The DB API PEP does not specify the return type for Cursor.execute, so pyodbc tries to be
-  maximally convenient:
+* The DB API specifies that results must be tuple-like, so columns are normally accessed by
+  indexing into the sequence (e.g. row[0]) and pyodbc supports this. However, columns can also
+  be accessed by name::
 
-  1) If a SELECT is executed, the Cursor itself is returned to allow code like the following::
+    cursor.execute("select album_id, photo_id from photos where user_id=1")
+    row = cursor.fetchone()
+    print row.album_id, row.photo_id
+    print row[0], row[1] # same as above, but less readable
 
-       for row in cursor.execute("select a,b from tmp"):
-           print row
+  This makes the code easier to maintain when modifying SQL, more readable, and allows rows to
+  be used where a custom class might otherwise be used. All rows from a single execute share
+  the same dictionary of column names, so using Row objects to hold a large result set may also
+  use less memory than creating a object for each row.
 
-  2) If an UPDATE, INSERT, or DELETE statement is issued, the number of rows affected is
-     returned::
+  The SQL "as" keyword allows the name of a column in the result set to be specified. This is
+  useful if a column name has spaces or if there is no name::
 
-       count = cursor.execute("delete from tmp where a in (1,2,3)")
+    cursor.execute("select count(*) as photo_count from photos where user_id < 100")
+    row = cursor.fetchone()
+    print row.photo_count
 
-  3) Otherwise (CREATE TABLE, etc.), None is returned.
+
+* The DB API specification does not specify the return value of Cursor.execute. Previous
+  versions of pyodbc (2.0.x) returned different values, but the 2.1 versions always return the
+  Cursor itself.
+
+  This allows for compact code such as::
+
+    for row in cursor.execute("select album_id, photo_id from photos where user_id=1"):
+        print row.album_id, row.photo_id
+     
+    row  = cursor.execute("select * from tmp").fetchone()
+    rows = cursor.execute("select * from tmp").fetchall()
+     
+    count = cursor.execute("update photos set processed=1 where user_id=1").rowcount
+    count = cursor.execute("delete from photos where user_id=1").rowcount
 
 
-* An execute method has been added to the Connection class.  It creates a Cursor and returns
-  whatever Cursor.execute returns.  This allows for the following::
+* Though SQL is very powerful, values sometimes need to be modified before they can be
+  used. Rows allow their values to be replaced, which makes them even more convenient ad-hoc
+  data structures.
 
-    for row in cnxn.execute("select a,b from tmp"):
-        print row
+  ::
+
+    # Replace the 'start_date' datetime in each row with one that has a time zone.
+    rows = cursor.fetchall()
+    for row in rows:
+        row.start_date = row.start_date.astimezone(tz)
+
+  Note that columns cannot be added to rows; only values for existing columns can be modified.
+
+
+* As specified in the DB API, Cursor.execute accepts an optional sequence of parameters::
+
+    cursor.execute("select a from tbl where b=? and c=?", (x, y))
+
+  However, this seems complicated for something as simple as passing parameters, so pyodbc also
+  accepts the parameters directly. Note in this example that x & y are not in a tuple::
+
+    cursor.execute("select a from tbl where b=? and c=?", x, y)
+
+* The DB API specifies that connections require a manual commit and pyodbc complies with
+  this. However, connections also support autocommit, using the autocommit keyword of the
+  connection function or the autocommit attribute of the Connection object::
+
+    cnxn = pyodbc.connect(cstring, autocommit=True)
 
   or
 
   ::
 
-    rows = cnxn.execute("select * from tmp where a in (1,2,3)").fetchall()
-
-  Since each call creates a new Cursor, only use this when executing a single statement.
-
-
-* Both Cursor.execute and Connection.execute allow parameters to be passed as additional
-  parameters following the query.
-
-  ::
-
-    cnxn.execute("select a,b from tmp where a=? or a=?", 1, 2)
-
-  The specification is not entirely clear, but most other drivers require parameters to be
-  passed in a sequence.  To ensure compatibility, pyodbc will also accept this format::
-
-    cnxn.execute("select a,b from tmp where a=? or a=?", (1, 2))
-
-
-* Row objects are derived from tuple to match the API specification, but they also support
-  accessing columns by name.
-
-  ::
-
-    for row in cnxn.execute("select A,b from tmp"):
-        print row.a, row.b
-
-
-* The following are not supported or are ignored: nextset, setinputsizes, setoutputsizes.
-
-
-* Values in Row objects can be replaced, either by name or index.  Sometimes it is convenient
-  to "preprocess" values.
-
-  ::
-
-    row = cursor.execute("select a,b from tmp").fetchone()
-
-    row.a  = calc(row.a)
-    row[1] = calc(row.b)
+    cnxn.autocommit = True
+    cnxn.autocommit = False
 
 
 Goals / Design
@@ -152,5 +160,7 @@ Goals / Design
      used the mxDate classes.  Now that Python 2.3 has introduced built-in date/time classes,
      using those modules is more complicated than using the built-ins.
 
-* It should adhere to the DB API specification, but be maximally convenient where possible.
+* It should adhere to the DB API specification, but be more "Pythonic" when convenient.
   The most common usages should be optimized for convenience and speed.
+
+* All ODBC functionality should (eventually) be exposed.
