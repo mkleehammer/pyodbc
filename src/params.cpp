@@ -192,6 +192,14 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 
 static SQLSMALLINT GetParamType(Cursor* cur, int iParam)
 {
+    // Returns the ODBC type of the of given parameter.
+    //
+    // Normally we set the parameter type based on the parameter's Python object type (e.g. str --> SQL_CHAR), so this
+    // is only called when the parameter is None.  In that case, we can't guess the type and have to use
+    // SQLDescribeParam.
+    //
+    // If the database doesn't support SQLDescribeParam, we return SQL_UNKNOWN_TYPE.
+
     if (!GetConnection(cur)->supports_describeparam || cur->paramcount == 0)
         return SQL_UNKNOWN_TYPE;
 
@@ -199,8 +207,14 @@ static SQLSMALLINT GetParamType(Cursor* cur, int iParam)
     {
         cur->paramtypes = reinterpret_cast<SQLSMALLINT*>(malloc(sizeof(SQLSMALLINT) * cur->paramcount));
         if (cur->paramtypes == 0)
+        {
+            // Out of memory.  We *could* define a new return type to indicate this, but since returning
+            // SQL_UNKNOWN_TYPE is allowed, we'll do that instead.  Some other function higher up will eventually try
+            // to allocate memory and fail, so we'll rely on that.
+            
             return SQL_UNKNOWN_TYPE;
-
+        }
+            
         // SQL_UNKNOWN_TYPE is zero, so zero out all columns since we haven't looked any up yet.
         memset(cur->paramtypes, 0, sizeof(SQLSMALLINT) * cur->paramcount);
     }
@@ -215,8 +229,8 @@ static SQLSMALLINT GetParamType(Cursor* cur, int iParam)
         ret = SQLDescribeParam(cur->hstmt, static_cast<SQLUSMALLINT>(iParam), &cur->paramtypes[iParam-1],
                                &ParameterSizePtr, &DecimalDigitsPtr, &NullablePtr);
         Py_END_ALLOW_THREADS
-        if (!SQL_SUCCEEDED(ret))
-            return SQL_UNKNOWN_TYPE;
+
+        // If this fails, the value will still be SQL_UNKNOWN_TYPE, so we drop out below and return it.
     }
 
     return cur->paramtypes[iParam-1];
