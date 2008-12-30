@@ -2067,7 +2067,7 @@ Cursor_New(Connection* cnxn)
         cur->description       = Py_None;
         cur->pPreparedSQL      = 0;
         cur->paramcount        = 0;
-        cur->paramdescs        = 0;
+        cur->paramtypes        = 0;
         cur->paramdata         = 0;
         cur->colinfos          = 0;
         cur->arraysize         = 1;

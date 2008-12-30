@@ -7,3 +7,4 @@ dist
 *.pyo
 tmp
 web/*.cmd
+TAGS

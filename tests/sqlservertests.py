@@ -315,19 +315,6 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(type(v), bool)
         self.assertEqual(v, value)
 
-    def test_bit_string_true(self):
-        self.cursor.execute("create table t1(b bit)")
-        self.cursor.execute("insert into t1 values (?)", "xyzzy")
-        v = self.cursor.execute("select b from t1").fetchone()[0]
-        self.assertEqual(type(v), bool)
-        self.assertEqual(v, True)
-
-    def test_bit_string_false(self):
-        self.cursor.execute("create table t1(b bit)")
-        self.cursor.execute("insert into t1 values (?)", "")
-        v = self.cursor.execute("select b from t1").fetchone()[0]
-        self.assertEqual(type(v), bool)
-        self.assertEqual(v, False)
     #
     # decimal
     #

@@ -15,7 +15,6 @@
 #define CURSOR_H
 
 struct Connection;
-struct ParamDesc;
 
 struct ColumnInfo
 {
@@ -54,13 +53,14 @@ struct Cursor
     // parameter data.
     PyObject* pPreparedSQL;
 
-    // The number of parameter markers in pPreparedSQL and the number of entries in paraminfos.  This will be zero when
-    // pPreparedSQL is zero.
+    // The number of parameter markers in pPreparedSQL.  This will be zero when pPreparedSQL is zero but is set
+    // immediately after preparing the SQL.
     int paramcount;
 
-    // If non-zero, a pointer to an array of ParamDescs, allocated via malloc.  This will be zero when pPreparedSQL is
-    // zero.
-    ParamDesc* paramdescs;
+    // If non-zero, a pointer to an array of SQL type values allocated via malloc.  This is zero until we actually ask
+    // for the type of parameter, which is only when a parameter is None (NULL).  At that point, the entire array is
+    // allocated (length == paramcount) but all entries are set to SQL_UNKNOWN_TYPE.
+    SQLSMALLINT* paramtypes;
 
     // If non-zero, a pointer to a buffer containing the actual parameters bound.  If pPreparedSQL is zero, this should
     // be freed using free and set to zero.
