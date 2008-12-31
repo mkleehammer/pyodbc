@@ -223,7 +223,7 @@ static SQLSMALLINT GetParamType(Cursor* cur, int iParam)
 
     if (cur->paramtypes[iParam-1] == SQL_UNKNOWN_TYPE)
     {
-        SQLUINTEGER ParameterSizePtr;
+        SQLULEN ParameterSizePtr;
         SQLSMALLINT DecimalDigitsPtr;
         SQLSMALLINT NullablePtr;
         SQLRETURN ret;

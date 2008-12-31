@@ -301,7 +301,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
 
         Object unicodeT;            // used to temporarily hold Unicode objects if we have to convert values to unicode
 
-        int pos = 0;
+        Py_ssize_t pos = 0;
         PyObject* key = 0;
         PyObject* value = 0;
 
@@ -947,7 +947,7 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
     if (existing)
         length = PyUnicode_GET_SIZE(existing) + 1; // + 1 to add a trailing 
 
-    int pos = 0;
+    Py_ssize_t pos = 0;
     PyObject* key = 0;
     PyObject* value = 0;
 
