@@ -23,6 +23,8 @@
 #include <time.h>
 #include <stdarg.h>
 
+static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts);
+
 _typeobject* OurDateTimeType = 0;
 _typeobject* OurDateType = 0;
 _typeobject* OurTimeType = 0;
@@ -248,33 +250,130 @@ static bool AllocateEnv()
     return true;
 }
 
-char* connect_kwnames[] = { "connectstring", "autocommit", "ansi", 0 };
+// Map DB API recommended keywords to ODBC keywords.
 
-static PyObject*
-mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
+struct keywordmap
+{
+    const char* oldname;
+    const char* newname;
+    PyObject* newnameObject;    // PyString object version of newname, created as needed.
+};
+
+static keywordmap keywordmaps[] =
+{
+    { "user",     "uid",    0 },
+    { "password", "pwd",    0 },
+    { "host",     "server", 0 },
+};
+
+
+static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
 {
     UNUSED(self);
     
-    PyObject* pConnectString;   // Can be str or unicode.
+    Object pConnectString = 0;
     int fAutoCommit = 0;
     int fAnsi = 0;              // force ansi
-    
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|ii", connect_kwnames, &pConnectString, &fAutoCommit, &fAnsi))
-        return 0;
 
-    if (!PyString_Check(pConnectString) && !PyUnicode_Check(pConnectString))
+    int size = args ? PyTuple_Size(args) : 0;
+
+    if (size > 1)
     {
-        PyErr_SetString(PyExc_TypeError, "argument 1 must be a string or unicode object");
+        PyErr_SetString(PyExc_TypeError, "function takes at most 1 non-keyword argument");
         return 0;
     }
+
+    if (size == 1)
+    {
+        if (!PyString_Check(PyTuple_GET_ITEM(args, 0)) && !PyUnicode_Check(PyTuple_GET_ITEM(args, 0)))
+            return PyErr_Format(PyExc_TypeError, "argument 1 must be a string or unicode object");
+
+        pConnectString.Attach(PyUnicode_FromObject(PyTuple_GetItem(args, 0)));
+        if (!pConnectString.IsValid())
+            return 0;
+    }
+
+    if (kwargs && PyDict_Size(kwargs) > 0)
+    {
+        Object partsdict(PyDict_New());
+        if (!partsdict.IsValid())
+            return 0;
+
+        Object unicodeT;            // used to temporarily hold Unicode objects if we have to convert values to unicode
+
+        int pos = 0;
+        PyObject* key = 0;
+        PyObject* value = 0;
+
+        while (PyDict_Next(kwargs, &pos, &key, &value))
+        {
+            // Note: key and value are *borrowed*.
+
+            // Check for the two non-connection string keywords we accept.  (If we get many more of these, create something
+            // table driven.  Are we sure there isn't a Python function to parse keywords but leave those it doesn't know?)
+            const char* szKey = PyString_AsString(key);
+
+            if (_strcmpi(szKey, "autocommit") == 0)
+            {
+                fAutoCommit = PyObject_IsTrue(value);
+                continue;
+            }
+            if (_strcmpi(szKey, "ansi") == 0)
+            {
+                fAnsi = PyObject_IsTrue(value);
+                continue;
+            }
+        
+            // Anything else must be a string that is appended, along with the keyword to the connection string.
+
+            if (!(PyString_Check(value) || PyUnicode_Check(value)))
+                return PyErr_Format(PyExc_TypeError, "'%s' is not a string or unicode value'", szKey);
+
+            // Map DB API recommended names to ODBC names (e.g. user --> uid).
+            for (int i = 0; i < _countof(keywordmaps); i++)
+            {
+                if (_strcmpi(szKey, keywordmaps[i].oldname) == 0)
+                {
+                    if (keywordmaps[i].newnameObject == 0)
+                    {
+                        keywordmaps[i].newnameObject = PyString_FromString(keywordmaps[i].newname);
+                        if (keywordmaps[i].newnameObject == 0)
+                            return 0;
+                    }
+
+                    key = keywordmaps[i].newnameObject;
+                    break;
+                }
+            }
+
+            if (PyString_Check(value))
+            {
+                unicodeT.Attach(PyUnicode_FromObject(value));
+                if (!unicodeT.IsValid())
+                    return 0;
+                value = unicodeT.Get();
+            }
+
+            if (PyDict_SetItem(partsdict.Get(), key, value) == -1)
+                return 0;
+
+            unicodeT.Detach();
+        }
+
+        if (PyDict_Size(partsdict.Get()))
+            pConnectString.Attach(MakeConnectionString(pConnectString.Get(), partsdict));
+    }
+    
+    if (!pConnectString.IsValid())
+        return PyErr_Format(PyExc_TypeError, "no connection information was passed");
 
     if (henv == SQL_NULL_HANDLE)
     {
         if (!AllocateEnv())
             return 0;
     }
-
-    return (PyObject*)Connection_New(pConnectString, fAutoCommit != 0, fAnsi != 0);
+     
+    return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0);
 }
 
 
@@ -371,41 +470,56 @@ mod_timestampfromticks(PyObject* self, PyObject* args)
 }
 
 static char connect_doc[] =
-    "connect(str, autocommit=False, ansi=False) --> Connection\n"            
-    "\n"                                                                
-    "Accepts an ODBC connection string and returns a new Connection object.\n" 
-    "\n"                                                                
-    "The connection string will be passed to SQLDriverConnect, so a DSN connection\n" 
-    "can be created using:\n"                                           
-    "\n"                                                                
-    "  DSN=DataSourceName;UID=user;PWD=password\n"  
-    "\n"                                                                
-    "To connect without requiring a DSN, specify the driver and connection\n" 
-    "information:\n"                                                    
-    "\n"                                                                
-    "  DRIVER={SQL Server};SERVER=localhost;DATABASE=testdb;UID=user;PWD=password\n" 
-    "\n"                                                                
-    "Note the use of braces when a value contains spaces.  Refer to SQLDriverConnect\n" 
+    "connect(str, autocommit=False, ansi=False, **kwargs) --> Connection\n"
+    "\n"
+    "Accepts an ODBC connection string and returns a new Connection object.\n"
+    "\n"
+    "The connection string will be passed to SQLDriverConnect, so a DSN connection\n"
+    "can be created using:\n"
+    "\n"
+    "  DSN=DataSourceName;UID=user;PWD=password\n"
+    "\n"
+    "To connect without requiring a DSN, specify the driver and connection\n"
+    "information:\n"
+    "\n"
+    "  DRIVER={SQL Server};SERVER=localhost;DATABASE=testdb;UID=user;PWD=password\n"
+    "\n"
+    "Note the use of braces when a value contains spaces.  Refer to SQLDriverConnect\n"
     "documentation or the documentation of your ODBC driver for details.\n"
     "\n"
+    "The connection string can be passed as the string `str`, as a list of keywords,\n"
+    "or a combination of the two.  Any keywords except autocommit and ansi (see\n"
+    "below) are simply added to the connection string.\n"
+    "\n"
+    "  connect('server=localhost;user=me')\n"
+    "  connect(server='localhost', user='me')\n"
+    "  connect('server=localhost', user='me')\n"
+    "\n"
+    "The DB API recommends the keywords 'user', 'password', and 'host', but these are\n"
+    "not valid ODBC keywords, so these will be converted to 'uid', 'pwd', and\n"
+    "'server'.\n"
+    "\n"
     "autocommit\n"
-    "  If False or zero, the default, transactions are created automatically as defined in the \n"
-    "  DB API 2.  If True or non-zero, the connection is put into ODBC autocommit mode and statements\n"
-    "  are committed automatically.\n"
+    "\n"
+    "  If False or zero, the default, transactions are created automatically as\n"
+    "  defined in the DB API 2.  If True or non-zero, the connection is put into ODBC\n"
+    "  autocommit mode and statements are committed automatically.\n"
     "\n"
     "ansi\n"
-    "  By default, pyodbc first attempts to connect using the Unicode version of SQLDriverConnectW.\n"
-    "  If the driver returns IM001 indicating it does not support the Unicode version, the ANSI\n"
-    "  version is tried.  Any other SQLSTATE is turned into an exception.  Setting ansi to true\n"
-    "  skips the Unicode attempt and only connects using the ANSI version.  This is useful for\n"
-    "  drivers that return the wrong SQLSTATE (or if pyodbc is out of date and should support\n"
-    "  other SQLSTATEs).";
-    
+    "\n"
+    "  By default, pyodbc first attempts to connect using the Unicode version of\n"
+    "  SQLDriverConnectW.  If the driver returns IM001 indicating it does not support\n"
+    "  the Unicode version, the ANSI version is tried.  Any other SQLSTATE is turned\n"
+    "  into an exception.  Setting ansi to true skips the Unicode attempt and only\n"
+    "  connects using the ANSI version.  This is useful for drivers that return the\n"
+    "  wrong SQLSTATE (or if pyodbc is out of date and should support other\n"
+    "  SQLSTATEs).";
+        
 static char timefromticks_doc[] = 
-    "TimeFromTicks(ticks) --> datetime.time\n"  \
-    "\n"                                                                \
-    "Returns a time object initialized from the given ticks value (number of seconds\n" \
-    "since the epoch; see the documentation of the standard Python time module for\n" \
+    "TimeFromTicks(ticks) --> datetime.time\n"
+    "\n"
+    "Returns a time object initialized from the given ticks value (number of seconds\n"
+    "since the epoch; see the documentation of the standard Python time module for\n"
     "details).";
 
 static char datefromticks_doc[] = 
@@ -823,3 +937,56 @@ BOOL WINAPI DllMain(
     return TRUE;
 }
 #endif
+
+static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
+{
+    // Creates a connection string from an optional existing connection string plus a dictionary of keyword value
+    // pairs.  The keywords must be String objects and the values must be Unicode objects.
+
+    int length = 0;
+    if (existing)
+        length = PyUnicode_GET_SIZE(existing) + 1; // + 1 to add a trailing 
+
+    int pos = 0;
+    PyObject* key = 0;
+    PyObject* value = 0;
+
+    while (PyDict_Next(parts, &pos, &key, &value))
+    {
+        length += PyString_GET_SIZE(key) + 1 + PyUnicode_GET_SIZE(value) + 1; // key=value;
+    }
+    
+    PyObject* result = PyUnicode_FromUnicode(0, length);
+    if (!result)
+        return 0;
+
+    Py_UNICODE* buffer = PyUnicode_AS_UNICODE(result);
+    int offset = 0;
+
+    if (existing)
+    {
+        memcpy(&buffer[offset], PyUnicode_AS_UNICODE(existing), PyUnicode_GET_SIZE(existing) * sizeof(Py_UNICODE));
+        offset += PyUnicode_GET_SIZE(existing);
+        buffer[offset++] = (Py_UNICODE)';';
+    }
+
+    pos = 0;
+    while (PyDict_Next(parts, &pos, &key, &value))
+    {
+        const char* szKey = PyString_AS_STRING(key);
+        for (int i = 0; i < PyString_GET_SIZE(key); i++)
+            buffer[offset++] = (Py_UNICODE)szKey[i];
+
+        buffer[offset++] = (Py_UNICODE)'=';
+
+        memcpy(&buffer[offset], PyUnicode_AS_UNICODE(value), PyUnicode_GET_SIZE(value) * sizeof(Py_UNICODE));
+        offset += PyUnicode_GET_SIZE(value);
+        
+        buffer[offset++] = (Py_UNICODE)';';
+    }
+
+    I(offset == length);
+
+    return result;
+}
+

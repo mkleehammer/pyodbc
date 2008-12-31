@@ -31,6 +31,12 @@ public:
 
     bool IsValid() const { return p != 0; }
 
+    void Attach(PyObject* _p)
+    {
+        Detach();
+        p = _p;
+    }
+
     PyObject* Detach()
     {
         PyObject* pT = p;

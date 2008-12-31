@@ -26,7 +26,7 @@ typedef unsigned char byte;
 typedef unsigned int UINT;
 typedef long long INT64;
 typedef unsigned long long UINT64;
-#define strcmpi strcasecmp
+#define _strcmpi strcasecmp
 inline int max(int lhs, int rhs) { return (rhs > lhs) ? rhs : lhs; }
 #endif
 
@@ -107,7 +107,6 @@ inline void _strlwr(char* name)
     while (*name) { *name = tolower(*name); name++; }
 }
 #endif
-
 
 // Building an actual debug version of Python is so much of a pain that it never happens.  I'm providing release-build
 // versions of assertions.

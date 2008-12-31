@@ -245,11 +245,8 @@ create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
         SQLSMALLINT cDecimalDigits;
         SQLSMALLINT nullable;
 
-        SQLWCHAR name2[300];
-
         Py_BEGIN_ALLOW_THREADS
 		ret = SQLDescribeCol(cur->hstmt, (SQLUSMALLINT)(i + 1), name, _countof(name), 0, &nDataType, &nColSize, &cDecimalDigits, &nullable);
-		ret = SQLDescribeColW(cur->hstmt, (SQLUSMALLINT)(i + 1), name2, _countof(name), 0, &nDataType, &nColSize, &cDecimalDigits, &nullable);
 		Py_END_ALLOW_THREADS
 
         if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
@@ -716,7 +713,7 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
             }
             else if (PyUnicode_Check(pParam))
             {
-                // REVIEW: This will fail if PyUnicode != wchar_t
+                // REVIEW: This will fail if PyUnicode != wchar_t?
                 Py_UNICODE* p = PyUnicode_AS_UNICODE(pParam);
                 SQLLEN offset = 0;
                 SQLLEN cb = (SQLLEN)PyUnicode_GET_SIZE(pParam);
@@ -1811,6 +1808,35 @@ Cursor_procedures(PyObject* self, PyObject* args, PyObject* kwargs)
     return (PyObject*)cur;
 }
 
+static char skip_doc[] =
+    "skip(count) --> None\n" \
+    "\n" \
+    "Skips the next `count` records by calling SQLFetchScroll with SQL_FETCH_NEXT.\n"
+    "For convenience, skip(0) is accepted and will do nothing.";
+
+static PyObject* Cursor_skip(PyObject* self, PyObject* args)
+{
+    Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
+    if (!cursor)
+        return 0;
+
+    int count;
+    if (!PyArg_ParseTuple(args, "i", &count))
+        return 0;
+    if (count == 0)
+        Py_RETURN_NONE;
+
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLFetchScroll(cursor->hstmt, SQL_FETCH_NEXT, (SQLLEN)count);
+    Py_END_ALLOW_THREADS
+
+    if (!SQL_SUCCEEDED(ret) && ret != SQL_NO_DATA)
+        return RaiseErrorFromHandle("SQLFetchScroll", cursor->cnxn->hdbc, cursor->hstmt);
+
+    Py_RETURN_NONE;
+}
+
 static PyObject*
 Cursor_ignored(PyObject* self, PyObject* args)
 {
@@ -1987,6 +2013,7 @@ static PyMethodDef Cursor_methods[] =
     { "getTypeInfo",      (PyCFunction)Cursor_getTypeInfo,      METH_VARARGS|METH_KEYWORDS, getTypeInfo_doc      },
     { "procedures",       (PyCFunction)Cursor_procedures,       METH_VARARGS|METH_KEYWORDS, procedures_doc       },
     { "procedureColumns", (PyCFunction)Cursor_procedureColumns, METH_VARARGS|METH_KEYWORDS, procedureColumns_doc },
+    { "skip",             (PyCFunction)Cursor_skip,             METH_VARARGS,               skip_doc             },
     { 0, 0, 0, 0 }
 };
 

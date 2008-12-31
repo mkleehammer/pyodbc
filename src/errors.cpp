@@ -98,7 +98,7 @@ bool HasSqlState(PyObject* ex, const char* szSqlState)
             if (s != 0 && PyString_Check(s))
             {
                 const char* sz = PyString_AsString(s);
-                if (sz && strcmpi(sz, szSqlState) == 0)
+                if (sz && _strcmpi(sz, szSqlState) == 0)
                     has = true;
             }
             Py_XDECREF(s);
