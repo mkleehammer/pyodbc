@@ -97,7 +97,7 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi)
         PyObject* error = GetErrorFromHandle("SQLDriverConnectW", hdbc, SQL_NULL_HANDLE);
         if (!HasSqlState(error, "IM001"))
         {
-            PyErr_SetObject(PyObject_Type(error), error);
+            RaiseErrorFromException(error);
             return false;
         }
         Py_XDECREF(error);

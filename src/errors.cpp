@@ -24,6 +24,7 @@ static const struct SqlStateMapping sql_state_mapping[] =
     { "42",    2, &ProgrammingError },
 };
 
+
 static PyObject*
 ExceptionFromSqlState(const char* sqlstate)
 {
@@ -73,7 +74,7 @@ RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* format, ...)
     {
         pError = PyEval_CallObject(exc_class, pAttrs);
         if (pError)
-            PyErr_SetObject(exc_class, pError);
+            RaiseErrorFromException(pError);
     }
     
     Py_DECREF(pMsg);
@@ -159,7 +160,7 @@ PyObject* RaiseErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt)
 
     if (pError)
     {
-        PyErr_SetObject(PyObject_Type(pError), pError);
+        RaiseErrorFromException(pError);
         Py_DECREF(pError);
     }
         
