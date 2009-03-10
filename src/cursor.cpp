@@ -1826,9 +1826,15 @@ static PyObject* Cursor_skip(PyObject* self, PyObject* args)
     if (count == 0)
         Py_RETURN_NONE;
 
-    SQLRETURN ret;
+    // Note: I'm not sure about the performance implications of looping here -- I certainly would rather use
+    // SQLFetchScroll(SQL_FETCH_RELATIVE, count), but it requires scrollable cursors which are often slower.  I would
+    // not expect skip to be used in performance intensive code since different SQL would probably be the "right"
+    // answer instead of skip anyway.
+
+    SQLRETURN ret = SQL_SUCCESS;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLFetchScroll(cursor->hstmt, SQL_FETCH_NEXT, (SQLLEN)count);
+    for (int i = 0; i < count && SQL_SUCCEEDED(ret); i++)
+        ret = SQLFetchScroll(cursor->hstmt, SQL_FETCH_NEXT, 0);
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret) && ret != SQL_NO_DATA)
