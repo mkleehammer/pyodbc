@@ -752,7 +752,8 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
     {
         // Example: A delete statement that did not delete anything.
         cur->rowcount = 0;
-        return PyInt_FromLong(cur->rowcount);
+        Py_INCREF(cur);
+        return (PyObject*)cur;
     }
 
     if (!SQL_SUCCEEDED(ret))
@@ -803,13 +804,10 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
 
         if (!create_name_map(cur, cCols, lowercase()))
             return 0;
-
-        // Return the cursor so the results can be iterated over directly.
-        Py_INCREF(cur);
-        return (PyObject*)cur;
     }
 
-    return PyInt_FromLong(cur->rowcount);
+    Py_INCREF(cur);
+    return (PyObject*)cur;
 }
 
 inline bool
@@ -819,7 +817,7 @@ IsSequence(PyObject* p)
 }
 
 static char execute_doc[] =
-    "C.execute(sql, [params]) --> None | Cursor | count\n"
+    "C.execute(sql, [params]) --> Cursor\n"
     "\n"
     "Prepare and execute a database query or command.\n"
     "\n"
@@ -830,22 +828,7 @@ static char execute_doc[] =
     "\n"
     "    or\n"
     "\n"
-    "  cursor.execute(sql, param1, param2)\n"
-    "\n"
-    "The return value for this method is not specified in the API, so any use is\n"
-    "non-standard.  For convenience, the type depends on the operation performed.\n"
-    "A select statement will return `self` so the results can be iterated\n"
-    "conveniently:\n"
-    "\n"
-    "  for row in cursor.execute('select * from tmp'):\n"
-    "      print row.customer_id\n"
-    "\n"
-    "An update or delete statement will return the number of records affected as an\n"
-    "integer:\n"
-    "\n"
-    "  count = cursor.execute('delete from tmp')\n"
-    "\n"
-    "If any other statement will return None.";
+    "  cursor.execute(sql, param1, param2)\n";
 
 PyObject*
 Cursor_execute(PyObject* self, PyObject* args)

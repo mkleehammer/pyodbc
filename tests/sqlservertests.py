@@ -624,7 +624,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assert_(rows[0][0] == 0)   # 0 years apart
 
     #
-    # misc
+    # rowcount
     #
 
     def test_rowcount_delete(self):
@@ -679,6 +679,42 @@ class SqlServerTestCase(unittest.TestCase):
 
         self.cursor.execute("create table t2(i int)")
         self.assertEquals(self.cursor.rowcount, -1)
+
+    #
+    # always return Cursor
+    #
+
+    # In the 2.0.x branch, Cursor.execute sometimes returned the cursor and sometimes the rowcount.  This proved very
+    # confusing when things went wrong and added very little value even when things went right since users could always
+    # use: cursor.execute("...").rowcount
+
+    def test_retcursor_delete(self):
+        self.cursor.execute("create table t1(i int)")
+        self.cursor.execute("insert into t1 values (1)")
+        v = self.cursor.execute("delete from t1")
+        self.assertEquals(v, self.cursor)
+
+    def test_retcursor_nodata(self):
+        """
+        This represents a different code path than a delete that deleted something.
+
+        The return value is SQL_NO_DATA and code after it was causing an error.  We could use SQL_NO_DATA to step over
+        the code that errors out and drop down to the same SQLRowCount code.
+        """
+        self.cursor.execute("create table t1(i int)")
+        # This is a different code path internally.
+        v = self.cursor.execute("delete from t1")
+        self.assertEquals(v, self.cursor)
+
+    def test_retcursor_select(self):
+        self.cursor.execute("create table t1(i int)")
+        self.cursor.execute("insert into t1 values (1)")
+        v = self.cursor.execute("select * from t1")
+        self.assertEquals(v, self.cursor)
+
+    #
+    # misc
+    #
 
     def test_lower_case(self):
         "Ensure pyodbc.lowercase forces returned column names to lowercase."
