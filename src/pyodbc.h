@@ -27,7 +27,12 @@ typedef unsigned int UINT;
 typedef long long INT64;
 typedef unsigned long long UINT64;
 #define _strcmpi strcasecmp
-inline int max(int lhs, int rhs) { return (rhs > lhs) ? rhs : lhs; }
+#ifdef __MINGW32__
+  #include <windef.h>
+  #include <malloc.h>
+#else
+  inline int max(int lhs, int rhs) { return (rhs > lhs) ? rhs : lhs; }
+#endif
 #endif
 
 #define PY_SSIZE_T_CLEAN 1
@@ -98,7 +103,7 @@ inline void UNUSED(...) { }
 
 #include <stdarg.h>
 
-#ifdef __GNUC__
+#if defined(__GNUC__) && !defined(__MINGW32__)
 #define min(X,Y) ((X) < (Y) ? (X) : (Y))
 #define max(X,Y) ((X) > (Y) ? (X) : (Y))
 #define _alloca alloca

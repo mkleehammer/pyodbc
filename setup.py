@@ -19,10 +19,11 @@ def main():
     extra_link_args    = None
 
     if os.name == 'nt':
-        # Windows native
-        files.append(join('src', 'pyodbc.rc'))
+        if not '--compiler=mingw32' in sys.argv:
+            # Windows native
+            files.append(join('src', 'pyodbc.rc'))
+            extra_compile_args = ['/W4']
         libraries.append('odbc32')
-        extra_compile_args = ['/W4']
 
         # extra_compile_args = ['/W4', '/Zi', '/Od']
         # extra_link_args    = ['/DEBUG']
