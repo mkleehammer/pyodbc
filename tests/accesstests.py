@@ -135,7 +135,7 @@ class AccessTestCase(unittest.TestCase):
         """
         The implementation for string, Unicode, and binary tests.
         """
-        assert colsize is None or (value is None or colsize >= len(value)), 'colsize=%s value=%s' % (colsize, 'none' if value is None else len(value))
+        assert colsize is None or (value is None or colsize >= len(value)), 'colsize=%s value=%s' % (colsize, (value is None) and 'none' or len(value))
 
         if colsize:
             sql = "create table t1(n1 int not null, s1 %s(%s), s2 %s(%s))" % (sqltype, colsize, sqltype, colsize)
