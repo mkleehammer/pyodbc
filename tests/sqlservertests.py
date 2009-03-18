@@ -854,6 +854,20 @@ class SqlServerTestCase(unittest.TestCase):
         othercnxn.autocommit = False
         self.assertEqual(othercnxn.autocommit, False)
 
+    def test_unicode_results(self):
+        "Ensure unicode_results forces Unicode"
+        othercnxn = pyodbc.connect(self.connection_string, unicode_results=True)
+        othercursor = othercnxn.cursor()
+
+        # ANSI data in an ANSI column ...
+        othercursor.execute("create table t1(s varchar(20))")
+        othercursor.execute("insert into t1 values(?)", 'test')
+
+        # ... should be returned as Unicode
+        value = othercursor.execute("select s from t1").fetchone()[0]
+        self.assertEqual(value, u'test')
+
+
     def test_sqlserver_callproc(self):
         try:
             self.cursor.execute("drop procedure pyodbctest")

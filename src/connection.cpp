@@ -136,13 +136,16 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi)
 }
 
 
-PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi)
+PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, bool fUnicodeResults)
 {
     // pConnectString
     //   A string or unicode object.  (This must be checked by the caller.)
     //
     // fAnsi
     //   If true, do not attempt a Unicode connection.
+    //
+    // fUnicodeResults
+    //   If true, return strings in rows as unicode objects.
 
     //
     // Allocate HDBC and connect
@@ -181,9 +184,10 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi)
         return 0;
     }
 
-    cnxn->hdbc         = hdbc;
-    cnxn->nAutoCommit  = fAutoCommit ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
-    cnxn->searchescape = 0;
+    cnxn->hdbc            = hdbc;
+    cnxn->nAutoCommit     = fAutoCommit ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
+    cnxn->searchescape    = 0;
+    cnxn->unicode_results = fUnicodeResults;
 
     //
     // Initialize autocommit mode.

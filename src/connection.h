@@ -39,6 +39,9 @@ struct Connection
 
     // The column size of datetime columns, obtained from SQLGetInfo(), used to determine the datetime precision.
     int datetime_precision;
+
+    // If true, then the strings in the rows are returned as unicode objects.
+    bool unicode_results;
 };
 
 #define Connection_Check(op) PyObject_TypeCheck(op, &ConnectionType)
@@ -48,6 +51,6 @@ struct Connection
  * Used by the module's connect function to create new connection objects.  If unable to connect to the database, an
  * exception is set and zero is returned.
  */
-PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi);
+PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, bool fUnicodeResults);
 
 #endif

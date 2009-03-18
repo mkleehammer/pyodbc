@@ -274,6 +274,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     Object pConnectString = 0;
     int fAutoCommit = 0;
     int fAnsi = 0;              // force ansi
+    int fUnicodeResults = 0;
 
     int size = args ? PyTuple_Size(args) : 0;
 
@@ -321,6 +322,11 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
             if (_strcmpi(szKey, "ansi") == 0)
             {
                 fAnsi = PyObject_IsTrue(value);
+                continue;
+            }
+            if (_strcmpi(szKey, "unicode_results") == 0)
+            {
+                fUnicodeResults = PyObject_IsTrue(value);
                 continue;
             }
         
@@ -373,7 +379,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
             return 0;
     }
      
-    return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0);
+    return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, fUnicodeResults != 0);
 }
 
 

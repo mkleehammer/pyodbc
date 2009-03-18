@@ -252,7 +252,10 @@ GetDataString(Cursor* cur, int iCol)
     case SQL_VARCHAR:
     case SQL_LONGVARCHAR:
     case SQL_GUID:
-        nTargetType  = SQL_C_CHAR;
+        if (cur->cnxn->unicode_results)
+            nTargetType  = SQL_C_WCHAR;
+        else
+            nTargetType  = SQL_C_CHAR;
         break;
 
     case SQL_WCHAR:
