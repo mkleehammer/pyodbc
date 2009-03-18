@@ -1,12 +1,26 @@
 #!/usr/bin/python
 
 import sys, os, re
-from distutils.core import setup
+from distutils.core import setup, Command
 from distutils.extension import Extension
 from distutils.errors import *
 from os.path import exists, abspath, dirname, join, isdir
 
 OFFICIAL_BUILD = 9999
+
+class VersionCommand(Command):
+    user_options = []
+
+    def initialize_options(self):
+        self.verbose = 0
+
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        version_str, version = get_version()
+        print version_str
+    
 
 def main():
 
@@ -93,7 +107,8 @@ def main():
                           ],
 
            url = 'http://code.google.com/p/pyodbc',
-           download_url = 'http://code.google.com/p/pyodbc/downloads/list')
+           download_url = 'http://code.google.com/p/pyodbc/downloads/list',
+           cmdclass = { 'version' : VersionCommand })
 
 
 
