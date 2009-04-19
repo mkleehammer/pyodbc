@@ -157,6 +157,7 @@ PythonTypeFromSqlType(const SQLCHAR* name, SQLSMALLINT type, bool unicode_result
     case SQL_DECIMAL:
     case SQL_NUMERIC:
         pytype = (PyObject*)decimal_type;
+        break;
 
     case SQL_REAL:
     case SQL_FLOAT:

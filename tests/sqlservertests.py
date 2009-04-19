@@ -320,11 +320,11 @@ class SqlServerTestCase(unittest.TestCase):
     #
 
     def test_small_decimal(self):
-        # value = Decimal('1234567890987654321')
         value = Decimal('100010')       # (I use this because the ODBC docs tell us how the bytes should look in the C struct)
         self.cursor.execute("create table t1(d numeric(19))")
         self.cursor.execute("insert into t1 values(?)", value)
         v = self.cursor.execute("select * from t1").fetchone()[0]
+        self.assertEqual(self.cursor.description[0][1], Decimal)
         self.assertEqual(type(v), Decimal)
         self.assertEqual(v, value)
 
