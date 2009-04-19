@@ -622,6 +622,12 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
     //   from Cursor.executemany, in which case the sequences do not contain the SQL statement.)  Ignored if params is
     //   zero.
 
+    if (params)
+    {
+        if (!PyTuple_Check(params) && !PyList_Check(params))
+            return RaiseErrorV(0, PyExc_TypeError, "Params must be in a list or tuple");
+    }
+    
     // Normalize the parameter variables.
 
     int        params_offset = skip_first ? 1 : 0;
@@ -836,9 +842,6 @@ Cursor_execute(PyObject* self, PyObject* args)
 {
     Py_ssize_t cParams = PyTuple_Size(args) - 1;
 
-    bool skip_first = false;
-    PyObject *pSql, *params = 0, *result = 0;
-
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
     if (!cursor)
         return 0;
@@ -846,19 +849,21 @@ Cursor_execute(PyObject* self, PyObject* args)
     if (cParams < 0)
     {
         PyErr_SetString(PyExc_TypeError, "execute() takes at least 1 argument (0 given)");
-        goto done;
+        return 0;
     }
 
-    pSql = PyTuple_GET_ITEM(args, 0);
+    PyObject* pSql = PyTuple_GET_ITEM(args, 0);
 
     if (!PyString_Check(pSql) && !PyUnicode_Check(pSql))
     {
         PyErr_SetString(PyExc_TypeError, "The first argument to execute must be a string or unicode query.");
-        goto done;
+        return 0;
     }
 
     // Figure out if there were parameters and how they were passed.  Our optional parameter passing complicates this slightly.
 
+    bool skip_first = false;
+    PyObject *params = 0;
     if (cParams == 1 && IsSequence(PyTuple_GET_ITEM(args, 1)))
     {
         // There is a single argument and it is a sequence, so we must treat it as a sequence of parameters.  (This is
@@ -875,11 +880,7 @@ Cursor_execute(PyObject* self, PyObject* args)
 
     // Execute.
 
-    result = execute(cursor, pSql, params, skip_first);
-
-  done:
-
-    return result;
+    return execute(cursor, pSql, params, skip_first);
 }
 
 static PyObject*
@@ -1923,7 +1924,6 @@ static PyObject* Cursor_setnoscan(PyObject* self, PyObject* value, void *closure
     Py_END_ALLOW_THREADS
     if (!SQL_SUCCEEDED(ret))
     {
-        printf("setattr failed!\n");
         return RaiseErrorFromHandle("SQLSetStmtAttr(SQL_ATTR_NOSCAN)", cursor->cnxn->hdbc, cursor->hstmt);
     }
     

@@ -954,6 +954,23 @@ class SqlServerTestCase(unittest.TestCase):
         self.cnxn.timeout = 0
         self.assertEqual(self.cnxn.timeout, 0)
 
+    def test_sets_execute(self):
+        # Only lists and tuples are allowed.
+        def f():
+            self.cursor.execute("create table t1 (word varchar (100))")
+            words = set (['a'])
+            self.cursor.execute("insert into t1 (word) VALUES (?)", [words])
+
+        self.assertRaises(pyodbc.NotSupportedError, f)
+
+    def test_sets_executemany(self):
+        # Only lists and tuples are allowed.
+        def f():
+            self.cursor.execute("create table t1 (word varchar (100))")
+            words = set (['a'])
+            self.cursor.executemany("insert into t1 (word) values (?)", [words])
+            
+        self.assertRaises(TypeError, f)
 
 def main():
     from optparse import OptionParser
