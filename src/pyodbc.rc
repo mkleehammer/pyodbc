@@ -31,7 +31,7 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "Copyright",        "Copyright 20008 Michael Kleehammer"
+            VALUE "Copyright",        "Copyright 2009 Michael Kleehammer"
             VALUE "ProductName",      "ODBC DB API 2.0 Module"
             VALUE "ProductVersion",   PRODUCT_VERSION_STRING(PYODBC_MAJOR,PYODBC_MINOR)
             VALUE "FileDescription",  "ODBC DB API 2.0 Module"
