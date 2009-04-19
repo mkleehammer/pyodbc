@@ -187,6 +187,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->hdbc            = hdbc;
     cnxn->nAutoCommit     = fAutoCommit ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
     cnxn->searchescape    = 0;
+    cnxn->timeout         = 0;
     cnxn->unicode_results = fUnicodeResults;
 
     //
@@ -694,7 +695,58 @@ Connection_getsearchescape(Connection* self, void* closure)
     Py_INCREF(self->searchescape);
     return self->searchescape;
 }
-     
+
+
+static PyObject*
+Connection_gettimeout(PyObject* self, void* closure)
+{
+    UNUSED(closure);
+
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
+
+    return PyInt_FromLong(cnxn->timeout);
+}
+
+static int
+Connection_settimeout(PyObject* self, PyObject* value, void* closure)
+{
+    UNUSED(closure);
+
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return -1;
+
+    if (value == 0)
+    {
+        PyErr_SetString(PyExc_TypeError, "Cannot delete the timeout attribute.");
+        return -1;
+    }
+    int timeout = PyInt_AsLong(value);
+    if (timeout == -1 && PyErr_Occurred())
+        return -1;
+    if (timeout < 0)
+    {
+        PyErr_SetString(PyExc_ValueError, "Cannot set a negative timeout.");
+        return -1;
+    }
+
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLSetConnectAttr(cnxn->hdbc, SQL_ATTR_CONNECTION_TIMEOUT, (SQLPOINTER)timeout, SQL_IS_UINTEGER);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
+    {
+        RaiseErrorFromHandle("SQLSetConnectAttr", cnxn->hdbc, SQL_NULL_HANDLE);
+        return -1;
+    }
+
+    cnxn->timeout = timeout;
+
+    return 0;
+}
+
 static struct PyMethodDef Connection_methods[] =
 {
     { "cursor",        (PyCFunction)Connection_cursor,   METH_NOARGS,  cursor_doc    },
@@ -712,6 +764,8 @@ static PyGetSetDef Connection_getseters[] = {
         "SQLGetInfo(SQL_SEARCH_PATTERN_ESCAPE).  These are driver specific.", 0 },
     { "autocommit", Connection_getautocommit, Connection_setautocommit,
       "Returns True if the connection is in autocommit mode; False otherwise.", 0 },
+    { "timeout", Connection_gettimeout, Connection_settimeout,
+      "The timeout in seconds, zero means no timeout.", 0 },
     { 0 }
 };
 

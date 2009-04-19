@@ -945,6 +945,15 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.skip(2)
         self.assertEqual(self.cursor.fetchone()[0], 4)
 
+    def test_timeout(self):
+        self.assertEqual(self.cnxn.timeout, 0) # defaults to zero (off)
+
+        self.cnxn.timeout = 30
+        self.assertEqual(self.cnxn.timeout, 30)
+
+        self.cnxn.timeout = 0
+        self.assertEqual(self.cnxn.timeout, 0)
+
 
 def main():
     from optparse import OptionParser

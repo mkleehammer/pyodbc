@@ -22,6 +22,8 @@ static const struct SqlStateMapping sql_state_mapping[] =
     { "24",    2, &ProgrammingError },
     { "25",    2, &ProgrammingError },
     { "42",    2, &ProgrammingError },
+    { "HYT00", 5, &OperationalError },
+    { "HYT01", 5, &OperationalError },
 };
 
 

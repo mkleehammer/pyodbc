@@ -2109,6 +2109,20 @@ Cursor_New(Connection* cnxn)
             return 0;
         }
 
+        if (cnxn->timeout)
+        {
+            Py_BEGIN_ALLOW_THREADS
+            ret = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_QUERY_TIMEOUT, (SQLPOINTER)cnxn->timeout, 0);
+            Py_END_ALLOW_THREADS
+        
+            if (!SQL_SUCCEEDED(ret))
+            {
+                RaiseErrorFromHandle("SQLSetStmtAttr(SQL_ATTR_QUERY_TIMEOUT)", cnxn->hdbc, cur->hstmt);
+                Py_DECREF(cur);
+                return 0;
+            }
+        }
+
 #ifdef TRACE_ALL
         printf("cursor.new cnxn=%p hdbc=%d cursor=%p hstmt=%d\n", (Connection*)cur->cnxn, ((Connection*)cur->cnxn)->hdbc, cur, cur->hstmt);
 #endif
