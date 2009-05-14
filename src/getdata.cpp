@@ -252,6 +252,7 @@ GetDataString(Cursor* cur, int iCol)
     case SQL_VARCHAR:
     case SQL_LONGVARCHAR:
     case SQL_GUID:
+    case SQL_SS_XML:
         if (cur->cnxn->unicode_results)
             nTargetType  = SQL_C_WCHAR;
         else
@@ -580,6 +581,7 @@ GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_VARCHAR:
     case SQL_LONGVARCHAR:
     case SQL_GUID:
+    case SQL_SS_XML:
         return GetDataString(cur, iCol);
 
     case SQL_BINARY:

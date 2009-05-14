@@ -320,6 +320,7 @@ static const char* SqlTypeName(SQLSMALLINT n)
         _MAKESTR(SQL_TYPE_TIME);
         _MAKESTR(SQL_TYPE_TIMESTAMP);
         _MAKESTR(SQL_SS_TIME2);
+        _MAKESTR(SQL_SS_XML);
     }
     return "unknown";
 }

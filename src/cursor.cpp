@@ -148,6 +148,7 @@ PythonTypeFromSqlType(const SQLCHAR* name, SQLSMALLINT type, bool unicode_result
     case SQL_VARCHAR:
     case SQL_LONGVARCHAR:
     case SQL_GUID:
+    case SQL_SS_XML:
         if (unicode_results)
             pytype = (PyObject*)&PyUnicode_Type;
         else
