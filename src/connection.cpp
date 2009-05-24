@@ -252,15 +252,13 @@ Connection_clear(Connection* cnxn)
 #ifdef TRACE_ALL
         printf("cnxn.clear cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
 #endif
-
+        Py_BEGIN_ALLOW_THREADS
         if (cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF)
-        {
-            Py_BEGIN_ALLOW_THREADS
             SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, SQL_ROLLBACK);
-            SQLDisconnect(cnxn->hdbc);
-            SQLFreeHandle(SQL_HANDLE_DBC, cnxn->hdbc);
-            Py_END_ALLOW_THREADS
-        }
+
+        SQLDisconnect(cnxn->hdbc);
+        SQLFreeHandle(SQL_HANDLE_DBC, cnxn->hdbc);
+        Py_END_ALLOW_THREADS
         
         cnxn->hdbc = SQL_NULL_HANDLE;
     }
