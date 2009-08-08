@@ -30,5 +30,9 @@ Row* Row_New(PyObject* description, PyObject* map_name_to_index, Py_ssize_t cVal
  */
 void FreeRowValues(int cValues, PyObject** apValues);
 
+extern PyTypeObject RowType;
+#define Row_Check(op) PyObject_TypeCheck(op, &RowType)
+#define Row_CheckExact(op) ((op)->ob_type == &RowType)
+
 #endif
 

@@ -625,8 +625,8 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
 
     if (params)
     {
-        if (!PyTuple_Check(params) && !PyList_Check(params))
-            return RaiseErrorV(0, PyExc_TypeError, "Params must be in a list or tuple");
+        if (!PyTuple_Check(params) && !PyList_Check(params) && !Row_Check(params))
+            return RaiseErrorV(0, PyExc_TypeError, "Params must be in a list, tuple, or Row");
     }
     
     // Normalize the parameter variables.
