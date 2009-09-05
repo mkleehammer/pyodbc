@@ -745,6 +745,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values(1, 'abc')")
 
         row = self.cursor.execute("select * from t1").fetchone()
+
         self.assertEquals(self.cursor.description, row.cursor_description)
         
 
@@ -995,8 +996,40 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t2(n int, s varchar(10))")
         self.cursor.executemany("insert into t2 values (?, ?)", rows)
         
+    def test_description(self):
+        "Ensure cursor.description is correct"
 
+        self.cursor.execute("create table t1(n int, s varchar(8), d decimal(5,2))")
+        self.cursor.execute("insert into t1 values (1, 'abc', '1.23')")
+        self.cursor.execute("select * from t1")
 
+        # (I'm not sure the precision of an int is constant across different versions, bits, so I'm hand checking the
+        # items I do know.
+
+        # int
+        t = self.cursor.description[0]
+        self.assertEqual(t[0], 'n')
+        self.assertEqual(t[1], int)
+        self.assertEqual(t[5], 0)       # scale
+        self.assertEqual(t[6], True)    # nullable
+
+        # varchar(8)
+        t = self.cursor.description[1]
+        self.assertEqual(t[0], 's')
+        self.assertEqual(t[1], str)
+        self.assertEqual(t[4], 8)       # precision
+        self.assertEqual(t[5], 0)       # scale
+        self.assertEqual(t[6], True)    # nullable
+
+        # decimal(5, 2)
+        t = self.cursor.description[2]
+        self.assertEqual(t[0], 'd')
+        self.assertEqual(t[1], Decimal)
+        self.assertEqual(t[4], 5)       # precision
+        self.assertEqual(t[5], 2)       # scale
+        self.assertEqual(t[6], True)    # nullable
+
+        
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage=usage)

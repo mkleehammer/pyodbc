@@ -246,8 +246,8 @@ create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
     {
         SQLCHAR name[300];
         SQLSMALLINT nDataType;
-        SQLULEN nColSize;
-        SQLSMALLINT cDecimalDigits;
+        SQLULEN nColSize;           // precision
+        SQLSMALLINT cDecimalDigits; // scale
         SQLSMALLINT nullable;
 
         Py_BEGIN_ALLOW_THREADS
@@ -312,14 +312,14 @@ create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
             }
         }
         
-        colinfo = Py_BuildValue("(sOOiOOO)",
+        colinfo = Py_BuildValue("(sOOiiiO)",
                                 (char*)name,
-                                type,          // type_code
-                                Py_None,       // display size
-                                (int)nColSize, // internal_size
-                                Py_None,       // precision
-                                Py_None,       // scale
-                                nullable_obj); // null_ok
+                                type,           // type_code
+                                Py_None,        // display size
+                                (int)nColSize,  // internal_size
+                                nColSize,       // precision
+                                cDecimalDigits, // scale
+                                nullable_obj);  // null_ok
         if (!colinfo)
             goto done;
 
