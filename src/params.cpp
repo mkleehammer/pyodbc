@@ -174,6 +174,19 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
         return false;
     }
 
+    // If any parameters are None/NULL, we need to know the target type.  Unfortunately, some versions of SQL Server or
+    // its drivers will not allow SQLDescribeCol once we start binding, so we must do this separately.
+
+    for (Py_ssize_t i = 0; i < cParams; i++)
+    {
+        if (params[i] == Py_None)
+        {
+            GetParamType(cur, i+1);
+            if (PyErr_Occurred())
+                return false;
+        }
+    }
+
     // Bind each parameter.  If possible, items will be bound directly into the Python object.  Otherwise,
     // param_buffer will be used and ibNext will be updated.
 
@@ -227,12 +240,16 @@ static SQLSMALLINT GetParamType(Cursor* cur, int iParam)
         SQLSMALLINT DecimalDigitsPtr;
         SQLSMALLINT NullablePtr;
         SQLRETURN ret;
+
         Py_BEGIN_ALLOW_THREADS
         ret = SQLDescribeParam(cur->hstmt, static_cast<SQLUSMALLINT>(iParam), &cur->paramtypes[iParam-1],
                                &ParameterSizePtr, &DecimalDigitsPtr, &NullablePtr);
         Py_END_ALLOW_THREADS
 
         // If this fails, the value will still be SQL_UNKNOWN_TYPE, so we drop out below and return it.
+
+        if (!SQL_SUCCEEDED(ret))
+            RaiseErrorFromHandle("SQLDescribeParam", GetConnection(cur)->hdbc, cur->hstmt);
     }
 
     return cur->paramtypes[iParam-1];
@@ -431,7 +448,7 @@ static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
         fSqlType  = GetParamType(cur, iParam); // First see if the driver can tell us the target type...
         if (fSqlType == SQL_UNKNOWN_TYPE)      // ... if it can't
             fSqlType =  SQL_VARCHAR;           // ... assume varchar (which fails on SQL Server binary fields)
-
+        
         fCType    = SQL_C_DEFAULT;
         *pcbValue = SQL_NULL_DATA;
         cbColDef  = 1;

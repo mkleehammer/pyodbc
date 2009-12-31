@@ -1030,6 +1030,28 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(t[6], True)    # nullable
 
         
+    def test_none_param(self):
+        "Ensure None can be used for params other than the first"
+        # Some driver/db versions would fail if NULL was not the first parameter because SQLDescribeParam (only used
+        # with NULL) could not be used after the first call to SQLBindParameter.  This means None always worked for the
+        # first column, but did not work for later columns.
+        #
+        # If SQLDescribeParam doesn't work, pyodbc would use VARCHAR which almost always worked.  However,
+        # binary/varbinary won't allow an implicit conversion.
+
+        self.cursor.execute("create table t1(n int, blob varbinary(max))")
+        self.cursor.execute("insert into t1 values (1, newid())")
+        row = self.cursor.execute("select * from t1").fetchone()
+        self.assertEqual(row.n, 1)
+        self.assertEqual(type(row.blob), buffer)
+
+        self.cursor.execute("update t1 set n=?, blob=?", 2, None)
+        row = self.cursor.execute("select * from t1").fetchone()
+        self.assertEqual(row.n, 2)
+        self.assertEqual(row.blob, None)
+
+
+
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage=usage)
