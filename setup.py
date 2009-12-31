@@ -1,10 +1,16 @@
 #!/usr/bin/python
 
 import sys, os, re
-from distutils.core import setup, Command
+from os.path import exists, abspath, dirname, join, isdir
+
+try:
+    # Allow use of setuptools so eggs can be built.
+    from setuptools.core import setup, Command
+except ImportError:
+    from distutils.core import setup, Command
+
 from distutils.extension import Extension
 from distutils.errors import *
-from os.path import exists, abspath, dirname, join, isdir
 
 OFFICIAL_BUILD = 9999
 
