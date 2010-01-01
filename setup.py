@@ -15,6 +15,9 @@ from distutils.errors import *
 OFFICIAL_BUILD = 9999
 
 class VersionCommand(Command):
+
+    description = "Prints the pyodbc version, determined from git"
+
     user_options = []
 
     def initialize_options(self):
