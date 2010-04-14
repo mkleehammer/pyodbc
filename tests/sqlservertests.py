@@ -632,6 +632,27 @@ class SqlServerTestCase(unittest.TestCase):
         self.assert_(rows is not None)
         self.assert_(rows[0][0] == 0)   # 0 years apart
 
+    def test_sp_with_none(self):
+        # Reported in the forums that passing None caused an error.
+        self.cursor.execute(
+            """
+            if exists (select * from dbo.sysobjects where id = object_id(N'[test_sp]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+              drop procedure [dbo].[test_sp]
+            """)
+        self.cursor.execute(
+            """
+            create procedure test_sp(@x varchar(20))
+            AS
+              declare @y varchar(20)
+              set @y = @x
+              select @y
+            """)
+        self.cursor.execute("exec test_sp ?", None)
+        rows = self.cursor.fetchall()
+        self.assert_(rows is not None)
+        self.assert_(rows[0][0] == None)   # 0 years apart
+        
+
     #
     # rowcount
     #
