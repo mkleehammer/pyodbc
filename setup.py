@@ -172,14 +172,15 @@ def _get_version_pkginfo():
             match = re_ver.search(line)
             if match:
                 name    = line.split(':', 1)[1].strip()
-                numbers = [int(n or 0) for n in match.groups()]
+                numbers = [int(n or 0) for n in match.groups()[:3]]
+                numbers.append(int(match.group(4) or OFFICIAL_BUILD)) # don't use 0 as a default for build
                 return name, numbers
 
     return None, None
 
 
 def _get_version_git():
-    n, result = getoutput('git describe --tags')
+    n, result = getoutput('git describe --tags --match 2.*')
     if n:
         print 'WARNING: git describe failed with: %s %s' % (n, result)
         return None, None
