@@ -43,8 +43,13 @@ struct Connection
     // If true, then the strings in the rows are returned as unicode objects.
     bool unicode_results;
 
-     // The connection timeout in seconds.
-     int timeout;
+    // The connection timeout in seconds.
+    int timeout;
+
+    // These are copied from cnxn info for performance and convenience.
+
+    int varchar_maxlength;
+    int binary_maxlength;
 };
 
 #define Connection_Check(op) PyObject_TypeCheck(op, &ConnectionType)

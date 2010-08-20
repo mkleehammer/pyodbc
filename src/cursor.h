@@ -102,12 +102,4 @@ void Cursor_init();
 Cursor* Cursor_New(Connection* cnxn);
 PyObject* Cursor_execute(PyObject* self, PyObject* args);
 
-enum
-{
-    // The  parameter size we'll try to bind.  If a buffer is larger than this, we'll use SQLPutData.
-
-    MAX_VARCHAR_BUFFER   = 255, // MS Access
-    MAX_VARBINARY_BUFFER = 510, // MS Access
-};
-
 #endif

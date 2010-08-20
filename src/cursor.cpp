@@ -730,7 +730,7 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
                 SQLLEN cb = (SQLLEN)PyUnicode_GET_SIZE(pParam);
                 while (offset < cb)
                 {
-                    SQLLEN remaining = min(MAX_VARCHAR_BUFFER, cb - offset);
+                    SQLLEN remaining = min(cur->cnxn->varchar_maxlength, cb - offset);
                     Py_BEGIN_ALLOW_THREADS
                     SQLPutData(cur->hstmt, &p[offset], remaining * 2);
                     Py_END_ALLOW_THREADS
@@ -744,7 +744,7 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
                 SQLLEN cb = (SQLLEN)PyString_GET_SIZE(pParam);
                 while (offset < cb)
                 {
-                    SQLLEN remaining = min(MAX_VARCHAR_BUFFER, cb - offset);
+                    SQLLEN remaining = min(cur->cnxn->varchar_maxlength, cb - offset);
                     Py_BEGIN_ALLOW_THREADS
                     SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
                     Py_END_ALLOW_THREADS

@@ -234,6 +234,8 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->odbc_minor             = p->odbc_minor;
     cnxn->supports_describeparam = p->supports_describeparam;
     cnxn->datetime_precision     = p->datetime_precision;
+    cnxn->varchar_maxlength      = p->varchar_maxlength;
+    cnxn->binary_maxlength       = p->binary_maxlength;
 
     return reinterpret_cast<PyObject*>(cnxn);
 }

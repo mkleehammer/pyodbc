@@ -26,6 +26,9 @@ struct CnxnInfo
 
     bool supports_describeparam;
     int datetime_precision;
+
+    int varchar_maxlength;
+    int binary_maxlength;
 };
 
 void CnxnInfo_init();

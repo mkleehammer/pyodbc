@@ -8,3 +8,4 @@ dist
 tmp
 web/*.cmd
 TAGS
+pyodbc.egg-info

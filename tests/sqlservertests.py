@@ -227,6 +227,15 @@ class SqlServerTestCase(unittest.TestCase):
     def test_varchar_upperlatin(self):
         self._test_strtype('varchar', 'á')
 
+    def test_varchar_mismatch(self):
+        # Reported by Andy Hochhaus in the pyodbc group: In 2.1.7 and earlier, a hardcoded length of 255 was used to
+        # determine whether a parameter was bound as a SQL_VARCHAR or SQL_LONGVARCHAR.  Apparently SQL Server chokes if
+        # we bind as a SQL_LONGVARCHAR and the target column size is 8000 or less, which is considers just SQL_VARCHAR.
+        # This means binding a 256 character value would cause problems if compared with a VARCHAR column under
+        # 8001. We now use SQLGetTypeInfo to determine the time to switch.
+        self.cursor.execute("create table t1(c varchar(300))")
+        self.cursor.execute("select * from t1 where c=?", 'a' * 300)
+
     #
     # unicode
     #
@@ -1049,7 +1058,6 @@ class SqlServerTestCase(unittest.TestCase):
         row = self.cursor.execute("select * from t1").fetchone()
         self.assertEqual(row.n, 2)
         self.assertEqual(row.blob, None)
-
 
 
 def main():

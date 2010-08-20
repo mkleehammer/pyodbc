@@ -104,21 +104,37 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
         p->supports_describeparam = szYN[0] == 'Y';
     }
 
-    // What is the datetime precision?  This unfortunately requires a cursor (HSTMT).
+    // These defaults are tiny, but are necessary for Access.
+    p->varchar_maxlength = 255;
+    p->binary_maxlength  = 510;
 
     HSTMT hstmt = 0;
     if (SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, cnxn->hdbc, &hstmt)))
     {
+        SQLINTEGER columnsize;
         if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_TYPE_TIMESTAMP)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
         {
-            SQLINTEGER columnsize;
             if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
-            {
                 p->datetime_precision = columnsize;
-            }
+
+            SQLFreeStmt(hstmt, SQL_CLOSE);
         }
 
-        SQLFreeStmt(hstmt, SQL_CLOSE);
+        if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_VARCHAR)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
+        {
+            if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
+                p->varchar_maxlength = (int)columnsize;
+        
+            SQLFreeStmt(hstmt, SQL_CLOSE);
+        }
+        
+        if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_BINARY)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
+        {
+            if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
+                p->binary_maxlength = (int)columnsize;
+        
+            SQLFreeStmt(hstmt, SQL_CLOSE);
+        }
     }
 
     Py_END_ALLOW_THREADS

@@ -463,7 +463,7 @@ static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
         char* pch = PyString_AS_STRING(param); 
         int   len = PyString_GET_SIZE(param);
 
-        if (len <= MAX_VARCHAR_BUFFER)
+        if (len <= cur->cnxn->varchar_maxlength)
         {
             fSqlType  = SQL_VARCHAR;
             fCType    = SQL_C_CHAR;
@@ -487,7 +487,7 @@ static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
         Py_UNICODE* pch = PyUnicode_AsUnicode(param); 
         int      len = PyUnicode_GET_SIZE(param);
 
-        if (len <= MAX_VARCHAR_BUFFER)
+        if (len <= cur->cnxn->varchar_maxlength)
         {
             fSqlType   = SQL_WVARCHAR;
             fCType     = SQL_C_WCHAR;
@@ -659,7 +659,7 @@ static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
         const char* pb;
         int cb = PyBuffer_GetMemory(param, &pb);
 
-        if (cb != -1 && cb <= MAX_VARBINARY_BUFFER)
+        if (cb != -1 && cb <= cur->cnxn->binary_maxlength)
         {
             // There is one segment, so we can bind directly into the buffer object.
 
