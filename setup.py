@@ -42,12 +42,8 @@ def main():
     extra_link_args    = None
 
     if os.name == 'nt':
-        # if not '--compiler=mingw32' in sys.argv:
-        #     # Windows native
-        #     files.append(join('src', 'pyodbc.rc'))
-        #     extra_compile_args = ['/W4']
         libraries.append('odbc32')
-
+        # extra_compile_args = ['/W4']
         # extra_compile_args = ['/W4', '/Zi', '/Od']
         # extra_link_args    = ['/DEBUG']
 
@@ -69,7 +65,7 @@ def main():
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
         libraries.append('odbc')
 
-    macros = [('PYODBC_%s' % name, value) for name,value in zip(['MAJOR', 'MINOR', 'MICRO', 'BUILD'], version)]
+    macros = [ ('PYODBC_VERSION', version_str) ]
 
     # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
     # command.
@@ -81,7 +77,7 @@ def main():
 
     try:
         sys.argv.remove('--trace')
-        macros.append(('TRACE_ALL', 1))
+        macros.append(('PYODBC_TRACE', 1))
     except ValueError:
         pass
 
@@ -195,7 +191,13 @@ def _get_version_git():
     if numbers[-1] != OFFICIAL_BUILD:
         # This is a beta of the next micro release, so increment the micro number to reflect this.
         numbers[-2] += 1
-        name = '%s.%s.%s-beta%s' % tuple(numbers)
+        name = '%s.%s.%s-beta%02d' % tuple(numbers)
+
+    n, result = getoutput('git branch')
+    branch = re.search(r'\* (\w+)', result).group(1)
+    if branch != 'master' and not re.match('^v\d+$', branch):
+        name = branch + '-' + name
+
     return name, numbers
 
 

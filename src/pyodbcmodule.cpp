@@ -32,7 +32,7 @@ _typeobject* OurTimeType = 0;
 PyObject* pModule = 0;
 
 static char module_doc[] =
-    "A DB API 2.0 module for ODBC databases.\n"
+    "A database module for accessing databases via ODBC.\n"
     "\n"
     "This module conforms to the DB API 2.0 specification while providing\n"
     "non-standard convenience features.  Only standard Python data types are used\n"
@@ -40,7 +40,11 @@ static char module_doc[] =
     "\n"
     "Static Variables:\n\n"
     "version\n"
-    "  The module version string in the format major.minor.revision\n"
+    "  The module version string.  Official builds will have a version in the format\n"
+    "  `major.minor.revision`, such as 2.1.7.  Beta versions will have -beta appended,\n"
+    "  such as 2.1.8-beta03.  (This would be a build before the official 2.1.8 release.)\n"
+    "  Some special test builds will have a test name (the git branch name) prepended,\n"
+    "  such as fixissue90-2.1.8-beta03.\n"
     "\n"
     "apilevel\n"
     "  The string constant '2.0' indicating this module supports DB API level 2.0.\n"
@@ -50,6 +54,7 @@ static char module_doc[] =
     "  This can be changed any time and affects queries executed after the change.\n"
     "  The default is False.  This can be useful when database columns have\n"
     "  inconsistent capitalization.\n"
+    "\n"
     "pooling\n"
     "  A Boolean indicating whether connection pooling is enabled.  This is a\n"
     "  global (HENV) setting, so it can only be modified before the first\n"
@@ -276,7 +281,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     int fAnsi = 0;              // force ansi
     int fUnicodeResults = 0;
 
-    int size = args ? PyTuple_Size(args) : 0;
+    Py_ssize_t size = args ? PyTuple_Size(args) : 0;
 
     if (size > 1)
     {
@@ -879,17 +884,8 @@ initpyodbc()
     if (!CreateExceptions())
         return;
 
-    // The 'build' version number is a beta identifier.  For example, if it is 7, then we are on beta7 of the
-    // (major,minor.micro) version.  On Windows, we poke these values into the DLL's version resource, so when we make
-    // an official build (which come *after* the betas), we set the BUILD to 9999 so installers will know that it
-    // should replace any installed betas.  However, we obviously don't want to see these.
-
-    PyObject* pVersion;
-    if (PYODBC_BUILD == 9999)
-        pVersion = PyString_FromFormat("%d.%d.%d", PYODBC_MAJOR, PYODBC_MINOR, PYODBC_MICRO);
-    else
-        pVersion = PyString_FromFormat("%d.%d.%d-beta%d", PYODBC_MAJOR, PYODBC_MINOR, PYODBC_MICRO, PYODBC_BUILD);
-    PyModule_AddObject(pModule, "version", pVersion);
+    const char* szVersion = TOSTRING(PYODBC_VERSION);
+    PyModule_AddStringConstant(pModule, "version", szVersion);
 
     PyModule_AddIntConstant(pModule, "threadsafety", 1);
     PyModule_AddStringConstant(pModule, "apilevel", "2.0");
@@ -950,7 +946,7 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
     // Creates a connection string from an optional existing connection string plus a dictionary of keyword value
     // pairs.  The keywords must be String objects and the values must be Unicode objects.
 
-    int length = 0;
+    Py_ssize_t length = 0;
     if (existing)
         length = PyUnicode_GET_SIZE(existing) + 1; // + 1 to add a trailing 
 
@@ -968,7 +964,7 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
         return 0;
 
     Py_UNICODE* buffer = PyUnicode_AS_UNICODE(result);
-    int offset = 0;
+    Py_ssize_t offset = 0;
 
     if (existing)
     {

@@ -75,14 +75,14 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi)
         if (PyUnicode_Check(pConnectString))
         {
             Py_UNICODE* p = PyUnicode_AS_UNICODE(pConnectString);
-            for (int i = 0, c = PyUnicode_GET_SIZE(pConnectString); i <= c; i++)
-                szConnectW[i] = (wchar_t)p[i];
+            for (Py_ssize_t i = 0, c = PyUnicode_GET_SIZE(pConnectString); i <= c; i++)
+                szConnectW[i] = (SQLWCHAR)p[i];
         }
         else
         {
             const char* p = PyString_AS_STRING(pConnectString);
-            for (int i = 0, c = PyString_GET_SIZE(pConnectString); i <= c; i++)
-                szConnectW[i] = (wchar_t)p[i];
+            for (Py_ssize_t i = 0, c = PyString_GET_SIZE(pConnectString); i <= c; i++)
+                szConnectW[i] = (SQLWCHAR)p[i];
         }
 
         Py_BEGIN_ALLOW_THREADS
@@ -107,7 +107,7 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi)
     if (PyUnicode_Check(pConnectString))
     {
         Py_UNICODE* p = PyUnicode_AS_UNICODE(pConnectString);
-        for (int i = 0, c = PyUnicode_GET_SIZE(pConnectString); i <= c; i++)
+        for (Py_ssize_t i = 0, c = PyUnicode_GET_SIZE(pConnectString); i <= c; i++)
         {
             if (p[i] > 0xFF)
             {
@@ -213,9 +213,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
         }
     }
     
-#ifdef TRACE_ALL
-    printf("cnxn.new cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
-#endif
+    TRACE("cnxn.new cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
 
     //
     // Gather connection-level information we'll need later.
@@ -235,6 +233,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->supports_describeparam = p->supports_describeparam;
     cnxn->datetime_precision     = p->datetime_precision;
     cnxn->varchar_maxlength      = p->varchar_maxlength;
+    cnxn->wvarchar_maxlength     = p->wvarchar_maxlength;
     cnxn->binary_maxlength       = p->binary_maxlength;
 
     return reinterpret_cast<PyObject*>(cnxn);
@@ -251,9 +250,8 @@ Connection_clear(Connection* cnxn)
     {
         // REVIEW: Release threads? (But make sure you zero out hdbc *first*!
 
-#ifdef TRACE_ALL
-        printf("cnxn.clear cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
-#endif
+        TRACE("cnxn.clear cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
+
         Py_BEGIN_ALLOW_THREADS
         if (cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF)
             SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, SQL_ROLLBACK);
@@ -571,9 +569,7 @@ Connection_endtrans(PyObject* self, PyObject* args, SQLSMALLINT type)
     if (!cnxn)
         return 0;
     
-#ifdef TRACE_ALL
-    printf("%s: cnxn=%p hdbc=%d\n", (type == SQL_COMMIT) ? "commit" : "rollback", cnxn, cnxn->hdbc);
-#endif
+    TRACE("%s: cnxn=%p hdbc=%d\n", (type == SQL_COMMIT) ? "commit" : "rollback", cnxn, cnxn->hdbc);
 
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS

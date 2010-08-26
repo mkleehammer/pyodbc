@@ -171,9 +171,8 @@ PyObject* RaiseErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt)
 
 PyObject* GetErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt)
 {
-#ifdef TRACE_ALL
-    printf("In RaiseError!\n");
-#endif
+    TRACE("In RaiseError(%s)!\n", szFunction);
+
     // Creates and returns an exception from ODBC error information.
     // 
     // ODBC can generate a chain of errors which we concatenate into one error message.  We use the SQLSTATE from the

@@ -113,12 +113,11 @@ inline void _strlwr(char* name)
 }
 #endif
 
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+
 // Building an actual debug version of Python is so much of a pain that it never happens.  I'm providing release-build
 // versions of assertions.
-
-// REVIEW: Put these into the setup script command line (or setup.cfg)
-// #define PYODBC_ASSERT 1
-// #define TRACE_ALL 1
 
 #ifdef PYODBC_ASSERT
   #ifdef _MSC_VER
@@ -138,5 +137,12 @@ inline void _strlwr(char* name)
   #define I(expr)
   #define N(expr)
 #endif
+
+#ifdef PYODBC_TRACE
+void __cdecl DebugTrace(const char* szFmt, ...);
+#else  
+inline void __cdecl DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
+#endif
+#define TRACE DebugTrace
 
 #endif // pyodbc_h

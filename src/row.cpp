@@ -39,7 +39,7 @@ struct Row
 #define Row_CheckExact(op) ((op)->ob_type == &RowType)
 
 void
-FreeRowValues(int cValues, PyObject** apValues)
+FreeRowValues(Py_ssize_t cValues, PyObject** apValues)
 {
     if (apValues)
     {

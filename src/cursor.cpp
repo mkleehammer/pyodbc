@@ -23,6 +23,7 @@
 #include "errors.h"
 #include "getdata.h"
 #include "dbspecific.h"
+#include "sqlwchar.h"
 
 enum
 {
@@ -267,9 +268,8 @@ create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
             goto done;
         }
 
-#ifdef TRACE_ALL
-        printf("Col %d: type=%d colsize=%d\n", (i+1), (int)nDataType, (int)nColSize);
-#endif
+        TRACE("Col %d: type=%d colsize=%d\n", (i+1), (int)nDataType, (int)nColSize);
+
         if (lower)
             _strlwr((char*)name);
         
@@ -695,14 +695,16 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
     
     while (ret == SQL_NEED_DATA)
     {
-        // We have bound a `buffer` object using SQL_DATA_AT_EXEC, so ODBC is asking us for the data now.  We gave the
-        // buffer pointer to ODBC in SQLBindParameter -- SQLParamData below gives the pointer back to us.
+        // We have bound a PyObject* using SQL_LEN_DATA_AT_EXEC, so ODBC is asking us for the data now.  We gave the
+        // PyObject pointer to ODBC in SQLBindParameter -- SQLParamData below gives the pointer back to us.
 
         szLastFunction = "SQLParamData";
         PyObject* pParam;
         Py_BEGIN_ALLOW_THREADS
         ret = SQLParamData(cur->hstmt, (SQLPOINTER*)&pParam);
         Py_END_ALLOW_THREADS
+
+        TRACE("SQLParamData() --> %d\n", ret);
 
         if (ret == SQL_NEED_DATA)
         {
@@ -718,22 +720,27 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
                 while (it.Next(pb, cb))
                 {
                     Py_BEGIN_ALLOW_THREADS
-                    SQLPutData(cur->hstmt, pb, cb);
+                    ret = SQLPutData(cur->hstmt, pb, cb);
                     Py_END_ALLOW_THREADS
+                    if (!SQL_SUCCEEDED(ret))
+                        return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
                 }
             }
             else if (PyUnicode_Check(pParam))
             {
-                // REVIEW: This will fail if PyUnicode != wchar_t?
-                Py_UNICODE* p = PyUnicode_AS_UNICODE(pParam);
-                SQLLEN offset = 0;
-                SQLLEN cb = (SQLLEN)PyUnicode_GET_SIZE(pParam);
-                while (offset < cb)
+                SQLWChar wchar(pParam); // Will convert to SQLWCHAR if necessary.
+
+                Py_ssize_t offset = 0;            // in characters
+                Py_ssize_t length = wchar.size(); // in characters
+
+                while (offset < length)
                 {
-                    SQLLEN remaining = min(cur->cnxn->varchar_maxlength, cb - offset);
+                    SQLLEN remaining = min(cur->cnxn->varchar_maxlength, length - offset);
                     Py_BEGIN_ALLOW_THREADS
-                    SQLPutData(cur->hstmt, &p[offset], remaining * 2);
+                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)wchar[offset], remaining * sizeof(SQLWCHAR));
                     Py_END_ALLOW_THREADS
+                    if (!SQL_SUCCEEDED(ret))
+                        return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
                     offset += remaining;
                 }
             }
@@ -745,12 +752,17 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
                 while (offset < cb)
                 {
                     SQLLEN remaining = min(cur->cnxn->varchar_maxlength, cb - offset);
+                    TRACE("SQLPutData [%d] (%d) %s\n", offset, remaining, &p[offset]);
                     Py_BEGIN_ALLOW_THREADS
-                    SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
+                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
                     Py_END_ALLOW_THREADS
+                    if (!SQL_SUCCEEDED(ret))
+                        return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
                     offset += remaining;
                 }
             }
+
+            ret = SQL_NEED_DATA;
         }
     }
 
@@ -771,12 +783,12 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
     Py_BEGIN_ALLOW_THREADS
     ret = SQLRowCount(cur->hstmt, &cRows);
     Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle("SQLRowCount", cur->cnxn->hdbc, cur->hstmt);
 
     cur->rowcount = (int)cRows;
 
-#ifdef TRACE_ALL
-    printf("SQLRowCount: %d\n", cRows);
-#endif
+    TRACE("SQLRowCount: %d\n", cRows);
 
     SQLSMALLINT cCols = 0;
     Py_BEGIN_ALLOW_THREADS
@@ -790,9 +802,7 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     }
 
-#ifdef TRACE_ALL
-    printf("SQLNumResultCols: %d\n", cCols);
-#endif
+    TRACE("SQLNumResultCols: %d\n", cCols);
         
     if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
     {
@@ -946,7 +956,7 @@ Cursor_fetch(Cursor* cur)
     // exception is set and zero is returned.  (To differentiate between the last two, use PyErr_Occurred.)
 
     SQLRETURN ret = 0;
-    int field_count, i;
+    Py_ssize_t field_count, i;
     PyObject** apValues;
 
     Py_BEGIN_ALLOW_THREADS
@@ -1624,9 +1634,6 @@ Cursor_nextset(PyObject* self, PyObject* args)
 
     if (ret == SQL_NO_DATA)
     {
-        //#ifdef TRACE_ALL
-        //printf("Cursor_nextset: SQL_NO_DATA\r\n");
-        //#endif
         free_results(cur, FREE_STATEMENT);
         Py_RETURN_FALSE;
     }
@@ -2124,9 +2131,7 @@ Cursor_New(Connection* cnxn)
             }
         }
 
-#ifdef TRACE_ALL
-        printf("cursor.new cnxn=%p hdbc=%d cursor=%p hstmt=%d\n", (Connection*)cur->cnxn, ((Connection*)cur->cnxn)->hdbc, cur, cur->hstmt);
-#endif
+        TRACE("cursor.new cnxn=%p hdbc=%d cursor=%p hstmt=%d\n", (Connection*)cur->cnxn, ((Connection*)cur->cnxn)->hdbc, cur, cur->hstmt);
     }
 
     return cur;

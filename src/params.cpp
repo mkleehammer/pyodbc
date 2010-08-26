@@ -8,15 +8,16 @@
 #include "wrapper.h"
 #include "errors.h"
 #include "dbspecific.h"
+#include "sqlwchar.h"
 
 inline Connection* GetConnection(Cursor* cursor)
 {
     return (Connection*)cursor->cnxn;
 }
 
-static int GetParamBufferSize(PyObject* param, Py_ssize_t iParam);
-static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam);
-static SQLSMALLINT GetParamType(Cursor* cur, int iParam);
+static Py_ssize_t GetParamBufferSize(Cursor* cur, PyObject* param, Py_ssize_t iParam);
+static bool BindParam(Cursor* cur, Py_ssize_t iParam, PyObject* param, byte** ppbParam);
+static SQLSMALLINT GetParamType(Cursor* cur, Py_ssize_t iParam);
 
 static Py_ssize_t GetDecimalColumnSize(PyObject *p)
 {
@@ -167,8 +168,9 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
         }
         else
         {
+            SQLWChar sql(pSql);
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)PyUnicode_AsUnicode(pSql), SQL_NTS);
+            ret = SQLPrepareW(cur->hstmt, sql, SQL_NTS);
             if (SQL_SUCCEEDED(ret))
             {
                 szErrorFunc = "SQLNumParams";
@@ -211,19 +213,21 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
     // we will bind directly into its memory.  (We only use a vector so its destructor will free the memory.)
     // We'll set aside one SQLLEN for each column to be used as the StrLen_or_IndPtr.
 
-    int cb = 0;
+    Py_ssize_t cbParams = 0;
 
     for (Py_ssize_t i = 0; i < cParams; i++)
     {
-        int cbT = GetParamBufferSize(params[i], i + 1) + sizeof(SQLLEN); // +1 to map to ODBC one-based index
+        Py_ssize_t cbT = GetParamBufferSize(cur, params[i], i + 1) + sizeof(SQLLEN); // +1 to map to ODBC one-based index
 
         if (cbT < 0)
             return 0;
 
-        cb += cbT;
+        TRACE("* size(%d): %d\n", (i + 1), cbT);
+
+        cbParams += cbT;
     }
 
-    cur->paramdata = reinterpret_cast<byte*>(malloc(cb));
+    cur->paramdata = reinterpret_cast<byte*>(malloc(cbParams));
     if (cur->paramdata == 0)
     {
         PyErr_NoMemory();
@@ -250,18 +254,29 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 
     for (Py_ssize_t i = 0; i < cParams; i++)
     {
+        #ifdef PYODBC_TRACE
+        byte* pbBefore = pbParam;
+        #endif
+
         if (!BindParam(cur, i + 1, params[i], &pbParam))
         {
             free(cur->paramdata);
             cur->paramdata = 0;
             return false;
         }
+
+        #ifdef PYODBC_TRACE
+        TRACE("* used(%d): %d\n", (i + 1), (pbParam - pbBefore));
+        #endif
     }
+
+    // We didn't use exactly the amount of memory allocated?  GetParamBufferSize and BindParam are not in sync!
+    I(pbParam == cur->paramdata + cbParams);
 
     return true;
 }
 
-static SQLSMALLINT GetParamType(Cursor* cur, int iParam)
+static SQLSMALLINT GetParamType(Cursor* cur, Py_ssize_t iParam)
 {
     // Returns the ODBC type of the of given parameter.
     //
@@ -312,20 +327,39 @@ static SQLSMALLINT GetParamType(Cursor* cur, int iParam)
 }
 
 
-static int GetParamBufferSize(PyObject* param, Py_ssize_t iParam)
+static Py_ssize_t GetParamBufferSize(Cursor* cur, PyObject* param, Py_ssize_t iParam)
 {
     // Returns the size in bytes needed to hold the parameter in a format for binding, used to allocate the parameter
     // buffer.  (The value is not passed to ODBC.  Values passed to ODBC are in BindParam.)
     //
     // If we can bind directly into the Python object (e.g., using PyString_AsString), zero is returned since no extra
-    // memory is required.  If the data will be provided at execution time (e.g. SQL_DATA_AT_EXEC), zero is returned
+    // memory is required.  If the data will be provided at execution time (e.g. SQL_LEN_DATA_AT_EXEC), zero is returned
     // since the parameter value is not stored at all.  If the data type is not recognized, -1 is returned.
 
     if (param == Py_None)
         return 0;
 
-    if (PyString_Check(param) || PyUnicode_Check(param))
+    if (PyString_Check(param))
         return 0;
+
+    if (PyUnicode_Check(param))
+    {
+        if (sizeof(SQLWCHAR) == Py_UNICODE_SIZE)
+        {
+            // We can bind directly into the parameter itself.            
+            return 0;
+        }
+
+        if (PyUnicode_GET_SIZE(param) > cur->cnxn->wvarchar_maxlength)
+        {
+            // This is too long to pass, so we'll use SQLPutData to pass in chunks.  We'll need to store the pointer to
+            // the object.
+            return 0;
+        }
+
+        // We are going to need to copy this buffer to convert from PyUNICODE to SQLWCHAR.
+        return PyUnicode_GET_SIZE(param) * sizeof(SQLWCHAR);
+    }
 
     if (param == Py_True || param == Py_False)
         return 1;
@@ -345,7 +379,7 @@ static int GetParamBufferSize(PyObject* param, Py_ssize_t iParam)
     if (PyBuffer_Check(param))
     {
         // If the buffer has a single segment, we can bind directly to it, so we need 0 bytes.  Otherwise, we'll use
-        // SQL_DATA_AT_EXEC, so we still need 0 bytes.
+        // SQL_LEN_DATA_AT_EXEC, so we still need 0 bytes.
         return 0;
     }
 
@@ -363,7 +397,6 @@ static int GetParamBufferSize(PyObject* param, Py_ssize_t iParam)
     return -1;
 }
 
-#ifdef TRACE_ALL
 #define _MAKESTR(n) case n: return #n
 static const char* SqlTypeName(SQLSMALLINT n)
 {
@@ -371,6 +404,8 @@ static const char* SqlTypeName(SQLSMALLINT n)
     {
         _MAKESTR(SQL_UNKNOWN_TYPE);
         _MAKESTR(SQL_CHAR);
+        _MAKESTR(SQL_VARCHAR);
+        _MAKESTR(SQL_LONGVARCHAR);
         _MAKESTR(SQL_NUMERIC);
         _MAKESTR(SQL_DECIMAL);
         _MAKESTR(SQL_INTEGER);
@@ -379,12 +414,17 @@ static const char* SqlTypeName(SQLSMALLINT n)
         _MAKESTR(SQL_REAL);
         _MAKESTR(SQL_DOUBLE);
         _MAKESTR(SQL_DATETIME);
-        _MAKESTR(SQL_VARCHAR);
+        _MAKESTR(SQL_WCHAR);
+        _MAKESTR(SQL_WVARCHAR);
+        _MAKESTR(SQL_WLONGVARCHAR);
         _MAKESTR(SQL_TYPE_DATE);
         _MAKESTR(SQL_TYPE_TIME);
         _MAKESTR(SQL_TYPE_TIMESTAMP);
         _MAKESTR(SQL_SS_TIME2);
         _MAKESTR(SQL_SS_XML);
+        _MAKESTR(SQL_BINARY);
+        _MAKESTR(SQL_VARBINARY);
+        _MAKESTR(SQL_LONGVARBINARY);
     }
     return "unknown";
 }
@@ -394,6 +434,7 @@ static const char* CTypeName(SQLSMALLINT n)
     switch (n)
     {
         _MAKESTR(SQL_C_CHAR);
+        _MAKESTR(SQL_C_WCHAR);
         _MAKESTR(SQL_C_LONG);
         _MAKESTR(SQL_C_SHORT);
         _MAKESTR(SQL_C_FLOAT);
@@ -435,9 +476,7 @@ static const char* CTypeName(SQLSMALLINT n)
     return "unknown";
 }
 
-#endif
-
-static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
+static bool BindParam(Cursor* cur, Py_ssize_t iParam, PyObject* param, byte** ppbParam)
 {
     // Called to bind a single parameter.
     //
@@ -502,8 +541,8 @@ static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
     }
     else if (PyString_Check(param))
     {
-        char* pch = PyString_AS_STRING(param); 
-        int   len = PyString_GET_SIZE(param);
+        char*      pch = PyString_AS_STRING(param); 
+        Py_ssize_t len = PyString_GET_SIZE(param);
 
         if (len <= cur->cnxn->varchar_maxlength)
         {
@@ -527,7 +566,7 @@ static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
     else if (PyUnicode_Check(param))
     {
         Py_UNICODE* pch = PyUnicode_AsUnicode(param); 
-        int      len = PyUnicode_GET_SIZE(param);
+        Py_ssize_t  len = PyUnicode_GET_SIZE(param);
 
         if (len <= cur->cnxn->wvarchar_maxlength)
         {
@@ -673,8 +712,8 @@ static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
         if (!str)
             return false;
          
-        char* pch = PyString_AS_STRING(str.Get());
-        int   len = PyString_GET_SIZE(str.Get());
+        char*      pch = PyString_AS_STRING(str.Get());
+        Py_ssize_t len = PyString_GET_SIZE(str.Get());
 
         *pcbValue = (SQLLEN)len;
          
@@ -699,7 +738,7 @@ static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
     else if (PyBuffer_Check(param))
     {
         const char* pb;
-        int cb = PyBuffer_GetMemory(param, &pb);
+        Py_ssize_t  cb = PyBuffer_GetMemory(param, &pb);
 
         if (cb != -1 && cb <= cur->cnxn->binary_maxlength)
         {
@@ -734,10 +773,7 @@ static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
         return false;
     }
 
-    #ifdef TRACE_ALL
-    printf("BIND: param=%d fCType=%d (%s) fSqlType=%d (%s) cbColDef=%d DecimalDigits=%d cbValueMax=%d *pcb=%d\n", iParam,
-           fCType, CTypeName(fCType), fSqlType, SqlTypeName(fSqlType), cbColDef, decimalDigits, cbValueMax, pcbValue ? *pcbValue : 0);
-    #endif
+    TRACE("BIND: param=%d fCType=%d (%s) fSqlType=%d (%s) cbColDef=%d DecimalDigits=%d cbValueMax=%d *pcb=%d\n", iParam, fCType, CTypeName(fCType), fSqlType, SqlTypeName(fSqlType), cbColDef, decimalDigits, cbValueMax, pcbValue ? *pcbValue : 0);
 
     SQLRETURN ret = -1;
     Py_BEGIN_ALLOW_THREADS

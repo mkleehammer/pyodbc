@@ -27,7 +27,9 @@ struct CnxnInfo
     bool supports_describeparam;
     int datetime_precision;
 
+    // These are from SQLGetTypeInfo.column_size, so the char ones are in characters, not bytes.
     int varchar_maxlength;
+    int wvarchar_maxlength;
     int binary_maxlength;
 };
 

@@ -28,7 +28,7 @@ Row* Row_New(PyObject* description, PyObject* map_name_to_index, Py_ssize_t cVal
  *
  * apValues: The array of values.  This can be NULL.
  */
-void FreeRowValues(int cValues, PyObject** apValues);
+void FreeRowValues(Py_ssize_t cValues, PyObject** apValues);
 
 extern PyTypeObject RowType;
 #define Row_Check(op) PyObject_TypeCheck(op, &RowType)

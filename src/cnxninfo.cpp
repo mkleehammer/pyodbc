@@ -106,6 +106,7 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
 
     // These defaults are tiny, but are necessary for Access.
     p->varchar_maxlength = 255;
+    p->wvarchar_maxlength = 255;
     p->binary_maxlength  = 510;
 
     HSTMT hstmt = 0;
@@ -124,6 +125,14 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
         {
             if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
                 p->varchar_maxlength = (int)columnsize;
+        
+            SQLFreeStmt(hstmt, SQL_CLOSE);
+        }
+        
+        if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_WVARCHAR)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
+        {
+            if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
+                p->wvarchar_maxlength = (int)columnsize;
         
             SQLFreeStmt(hstmt, SQL_CLOSE);
         }

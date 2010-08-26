@@ -49,6 +49,7 @@ struct Connection
     // These are copied from cnxn info for performance and convenience.
 
     int varchar_maxlength;
+    int wvarchar_maxlength;
     int binary_maxlength;
 };
 
