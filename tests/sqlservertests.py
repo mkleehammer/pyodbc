@@ -36,7 +36,7 @@ _TESTSTR = '0123456789-abcdefghijklmnopqrstuvwxyz-'
 
 def _generate_test_string(length):
     """
-    Returns a string of composed of `seed` to make a string `length` characters long.
+    Returns a string of `length` characters, constructed by repeating _TESTSTR as necessary.
 
     To enhance performance, there are 3 ways data is read, based on the length of the value, so most data types are
     tested with 3 lengths.  This function helps us generate the test data.
@@ -66,7 +66,7 @@ class SqlServerTestCase(unittest.TestCase):
 
     def get_sqlserver_version(self):
         """
-        Returns the major version: 8-->2000, 9==2005, 10 == SS2008
+        Returns the major version: 8-->2000, 9-->2005, 10-->2008
         """
         self.cursor.execute("exec master..xp_msver 'ProductVersion'")
         row = self.cursor.fetchone()
@@ -195,6 +195,41 @@ class SqlServerTestCase(unittest.TestCase):
 
         self.assertEqual(v, value)
 
+        # Reported by Andy Hochhaus in the pyodbc group: In 2.1.7 and earlier, a hardcoded length of 255 was used to
+        # determine whether a parameter was bound as a SQL_VARCHAR or SQL_LONGVARCHAR.  Apparently SQL Server chokes if
+        # we bind as a SQL_LONGVARCHAR and the target column size is 8000 or less, which is considers just SQL_VARCHAR.
+        # This means binding a 256 character value would cause problems if compared with a VARCHAR column under
+        # 8001. We now use SQLGetTypeInfo to determine the time to switch.
+        #
+        # [42000] [Microsoft][SQL Server Native Client 10.0][SQL Server]The data types varchar and text are incompatible in the equal to operator.
+
+        self.cursor.execute("select * from t1 where s=?", value)
+
+
+    def _test_strliketype(self, sqltype, value, colsize=None):
+        """
+        The implementation for text, image, ntext, and binary.
+
+        These types do not support comparison operators.
+        """
+        assert colsize is None or (value is None or colsize >= len(value))
+
+        if colsize:
+            sql = "create table t1(s %s(%s))" % (sqltype, colsize)
+        else:
+            sql = "create table t1(s %s)" % sqltype
+
+        self.cursor.execute(sql)
+        self.cursor.execute("insert into t1 values(?)", value)
+        v = self.cursor.execute("select * from t1").fetchone()[0]
+        self.assertEqual(type(v), type(value))
+
+        if value is not None:
+            self.assertEqual(len(v), len(value))
+
+        self.assertEqual(v, value)
+
+
     #
     # varchar
     #
@@ -226,15 +261,6 @@ class SqlServerTestCase(unittest.TestCase):
 
     def test_varchar_upperlatin(self):
         self._test_strtype('varchar', 'á')
-
-    def test_varchar_mismatch(self):
-        # Reported by Andy Hochhaus in the pyodbc group: In 2.1.7 and earlier, a hardcoded length of 255 was used to
-        # determine whether a parameter was bound as a SQL_VARCHAR or SQL_LONGVARCHAR.  Apparently SQL Server chokes if
-        # we bind as a SQL_LONGVARCHAR and the target column size is 8000 or less, which is considers just SQL_VARCHAR.
-        # This means binding a 256 character value would cause problems if compared with a VARCHAR column under
-        # 8001. We now use SQLGetTypeInfo to determine the time to switch.
-        self.cursor.execute("create table t1(c varchar(300))")
-        self.cursor.execute("select * from t1 where c=?", 'a' * 300)
 
     #
     # unicode
@@ -278,39 +304,39 @@ class SqlServerTestCase(unittest.TestCase):
     #
 
     def test_image_null(self):
-        self._test_strtype('image', None)
+        self._test_strliketype('image', None)
 
     # Generate a test for each fencepost size: test_unicode_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('image', buffer(value))
+            self._test_strliketype('image', buffer(value))
         return t
     for value in IMAGE_FENCEPOSTS:
         locals()['test_image_%s' % len(value)] = _maketest(value)
 
     def test_image_upperlatin(self):
-        self._test_strtype('image', buffer('á'))
+        self._test_strliketype('image', buffer('á'))
 
     #
     # text
     #
 
     # def test_empty_text(self):
-    #     self._test_strtype('text', buffer(''))
+    #     self._test_strliketype('text', buffer(''))
 
     def test_null_text(self):
-        self._test_strtype('text', None)
+        self._test_strliketype('text', None)
 
     # Generate a test for each fencepost size: test_unicode_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('text', value)
+            self._test_strliketype('text', value)
         return t
     for value in ANSI_FENCEPOSTS:
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strtype('text', 'á')
+        self._test_strliketype('text', 'á')
 
     #
     # bit

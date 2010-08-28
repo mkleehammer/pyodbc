@@ -18,6 +18,57 @@ static int GetParamBufferSize(PyObject* param, Py_ssize_t iParam);
 static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam);
 static SQLSMALLINT GetParamType(Cursor* cur, int iParam);
 
+static Py_ssize_t GetDecimalColumnSize(PyObject *p)
+{
+    // Returns the column size for a Python decimal to be used with SQLBindParameter.  Since we bind as a string, we'll
+    // add 1 for the terminating NULL.
+    //
+    // Returns -1 if an error occurs.
+
+    Object t = PyObject_CallMethod(p, "as_tuple", 0);
+    if (!t)
+    {
+        return -1;
+    }
+
+    long       sign   = PyInt_AsLong(PyTuple_GET_ITEM(t.Get(), 0));
+    Py_ssize_t digits = PyTuple_GET_SIZE(PyTuple_GET_ITEM(t.Get(), 1));
+    long       exp    = PyInt_AsLong(PyTuple_GET_ITEM(t.Get(), 2));
+
+    Py_ssize_t length = digits + 1; // +1 for NULL
+
+    if (sign == 1)
+    {
+        // Value is negative, so we'll need a sign.
+        length += 1;
+    }
+
+    if (exp >= 0)
+    {
+        // Larger than the number of digits, so we'll add zeros at the end.
+        length += exp;
+    }
+    else
+    {
+        exp = -exp;
+        if (exp < digits)
+        {
+            // The decimal point is somewhere in the existing digits, so we simply need room for a decimal point.
+            length += 1;
+        }
+        else
+        {
+            // The decimal point is either exactly at the beginning of the digits (exp == 0) or we need to prepend
+            // zeros before.  Either way, add space for a leading "0.".
+            length += 2;
+            length += exp - digits;
+        }
+    }
+
+    return length;
+}
+
+
 void FreeParameterData(Cursor* cur)
 {
     // Unbinds the parameters and frees the parameter buffer.
@@ -289,16 +340,7 @@ static int GetParamBufferSize(PyObject* param, Py_ssize_t iParam)
         return sizeof(double);
 
     if (PyDecimal_Check(param))
-    {
-        // There isn't an efficient way of getting the precision, but it's there and it's obvious.
-
-        Object digits = PyObject_GetAttrString(param, "_int");
-        if (digits)
-            return PySequence_Length(digits) + 3;  // sign, decimal, null
-        
-        // _int doesn't exist any more?
-        return 42;
-    }
+        return GetDecimalColumnSize(param);
     
     if (PyBuffer_Check(param))
     {
@@ -487,7 +529,7 @@ static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
         Py_UNICODE* pch = PyUnicode_AsUnicode(param); 
         int      len = PyUnicode_GET_SIZE(param);
 
-        if (len <= cur->cnxn->varchar_maxlength)
+        if (len <= cur->cnxn->wvarchar_maxlength)
         {
             fSqlType   = SQL_WVARCHAR;
             fCType     = SQL_C_WCHAR;
@@ -643,7 +685,7 @@ static bool BindParam(Cursor* cur, int iParam, PyObject* param, byte** ppbParam)
         pbValue = pbParam;
         cbColDef = len;
         memcpy(pbValue, pch, len + 1);
-        cbValueMax = len + 1;
+        cbValueMax = len + 1; // +1 for NULL
 
         char* pchDecimal = strchr((char*)pbValue, '.');
         if (pchDecimal)
