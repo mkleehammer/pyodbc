@@ -41,12 +41,13 @@ class PGTestCase(unittest.TestCase):
     SMALL_STRING = _generate_test_string(SMALL_READ)
     LARGE_STRING = _generate_test_string(LARGE_READ)
 
-    def __init__(self, connection_string, method_name):
+    def __init__(self, connection_string, ansi, method_name):
         unittest.TestCase.__init__(self, method_name)
         self.connection_string = connection_string
+        self.ansi = ansi
 
     def setUp(self):
-        self.cnxn   = pyodbc.connect(self.connection_string)
+        self.cnxn   = pyodbc.connect(self.connection_string, ansi=self.ansi)
         self.cursor = self.cnxn.cursor()
 
         for i in range(3):
@@ -372,6 +373,7 @@ def main():
     parser.add_option("-v", "--verbose", action="count", help="Increment test verbosity (can be used multiple times)")
     parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
     parser.add_option("-t", "--test", help="Run only the named test")
+    parser.add_option('-a', '--ansi', help='ANSI only', default=False, action='store_true')
 
     (options, args) = parser.parse_args()
 
@@ -388,12 +390,12 @@ def main():
         connection_string = args[0]
 
     if options.verbose:
-        cnxn = pyodbc.connect(connection_string)
-
+        cnxn = pyodbc.connect(connection_string, ansi=options.ansi)
         print 'library:', os.path.abspath(pyodbc.__file__)
         print 'odbc:    %s' % cnxn.getinfo(pyodbc.SQL_ODBC_VER)
         print 'driver:  %s %s' % (cnxn.getinfo(pyodbc.SQL_DRIVER_NAME), cnxn.getinfo(pyodbc.SQL_DRIVER_VER))
         print 'driver supports ODBC version %s' % cnxn.getinfo(pyodbc.SQL_DRIVER_ODBC_VER)
+        print 'unicode:', pyodbc.UNICODE_SIZE, 'sqlwchar:', pyodbc.SQLWCHAR_SIZE
         cnxn.close()
 
     if options.test:
@@ -401,13 +403,13 @@ def main():
         if not options.test.startswith('test_'):
             options.test = 'test_%s' % (options.test)
 
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.test) ])
+        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.test) ])
     else:
         # Run all tests in the class
 
         methods = [ m for m in dir(PGTestCase) if m.startswith('test_') ]
         methods.sort()
-        s = unittest.TestSuite([ PGTestCase(connection_string, m) for m in methods ])
+        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, m) for m in methods ])
 
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
     result = testRunner.run(s)

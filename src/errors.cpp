@@ -244,14 +244,14 @@ PyObject* GetErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt)
 
                 memcpy(sqlstate, sqlstateT, sizeof(sqlstate[0]) * _countof(sqlstate));
                 
-                pMsg = PyString_FromFormat("[%s] %s (%ld) (%s)", sqlstateT, szMsg, nNativeError, szFunction);
+                pMsg = PyString_FromFormat("[%s] %s (%ld) (%s)", sqlstateT, szMsg, (long)nNativeError, szFunction);
                 if (pMsg == 0)
                     return 0;
             }
             else
             {
                 // This is not the first error message, so append to the existing one.
-                pMsgPart = PyString_FromFormat("; [%s] %s (%ld)", sqlstateT, szMsg, nNativeError);
+                pMsgPart = PyString_FromFormat("; [%s] %s (%ld)", sqlstateT, szMsg, (long)nNativeError);
                 if (pMsgPart == 0)
                 {
                     Py_XDECREF(pMsg);

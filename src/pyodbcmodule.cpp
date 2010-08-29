@@ -341,7 +341,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                 return PyErr_Format(PyExc_TypeError, "'%s' is not a string or unicode value'", szKey);
 
             // Map DB API recommended names to ODBC names (e.g. user --> uid).
-            for (int i = 0; i < _countof(keywordmaps); i++)
+            for (size_t i = 0; i < _countof(keywordmaps); i++)
             {
                 if (_strcmpi(szKey, keywordmaps[i].oldname) == 0)
                 {
@@ -925,6 +925,9 @@ initpyodbc()
     PyModule_AddObject(pModule, "Binary", (PyObject*)&PyBuffer_Type);
     Py_INCREF((PyObject*)&PyBuffer_Type);
     
+    PyModule_AddIntConstant(pModule, "UNICODE_SIZE", sizeof(Py_UNICODE));
+    PyModule_AddIntConstant(pModule, "SQLWCHAR_SIZE", sizeof(SQLWCHAR));
+
     if (PyErr_Occurred())
         ErrorCleanup();
 }

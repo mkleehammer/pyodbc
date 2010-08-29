@@ -37,7 +37,7 @@ bool SQLWChar::Convert(PyObject* o)
         return false;
     }
 
-    Py_UNICODE* pU   = (SQLWCHAR*)PyUnicode_AS_UNICODE(o);
+    Py_UNICODE* pU   = (Py_UNICODE*)PyUnicode_AS_UNICODE(o);
     Py_ssize_t  lenT = PyUnicode_GET_SIZE(o);
 
     if (sizeof(SQLWCHAR) == Py_UNICODE_SIZE)
@@ -88,7 +88,7 @@ bool sqlwchar_copy(SQLWCHAR* pdest, const Py_UNICODE* psrc, Py_ssize_t len)
 PyObject* PyUnicode_FromSQLWCHAR(const SQLWCHAR* sz, Py_ssize_t cch)
 {
     if (sizeof(SQLWCHAR) == Py_UNICODE_SIZE)
-        return PyUnicode_FromUnicode(sz, cch);
+        return PyUnicode_FromUnicode((const Py_UNICODE*)sz, cch);
 
 #if HAVE_WCHAR_H
     if (sizeof(wchar_t) == sizeof(SQLWCHAR))
@@ -115,4 +115,36 @@ PyObject* PyUnicode_FromSQLWCHAR(const SQLWCHAR* sz, Py_ssize_t cch)
     }
     
     return result.Detach();
+}
+
+void SQLWChar::dump()
+{
+    printf("sqlwchar=%ld pch=%p len=%ld owns=%d\n", sizeof(SQLWCHAR), pch, len, (int)owns_memory);
+    if (pch && len)
+    {
+        int i = 0;
+        while (i < len)
+        {
+            int stop = min(i + 10, len);
+
+            for (int x = i; x < stop; x++)
+            {
+                for (int byteindex = (int)sizeof(SQLWCHAR)-1; byteindex >= 0; byteindex--)
+                {
+                    int byte = (pch[x] >> (byteindex * 8)) & 0xFF;
+                    printf("%02x", byte);
+                }
+                printf(" ");
+            }
+
+            for (int x = i; x < stop; x++)
+                printf("%c", (char)pch[x]);
+                
+            printf("\n");
+
+            i += 10;
+        }
+
+        printf("\n\n");
+    }
 }

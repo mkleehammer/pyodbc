@@ -28,6 +28,8 @@ public:
         Free();
     }
 
+    void dump();
+
     operator SQLWCHAR*() { return pch; }
     operator const SQLWCHAR*() const { return pch; }
     operator bool() const { return pch != 0; }

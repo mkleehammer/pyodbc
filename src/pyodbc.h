@@ -141,7 +141,7 @@ inline void _strlwr(char* name)
 #ifdef PYODBC_TRACE
 void __cdecl DebugTrace(const char* szFmt, ...);
 #else  
-inline void __cdecl DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
+inline void DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
 #endif
 #define TRACE DebugTrace
 

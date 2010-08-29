@@ -16,6 +16,7 @@
 #include "errors.h"
 #include "wrapper.h"
 #include "cnxninfo.h"
+#include "sqlwchar.h"
 
 static char connection_doc[] =
     "Connection objects manage connections to the database.\n"
@@ -71,22 +72,9 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi)
 
     if (!fAnsi)
     {
-        SQLWCHAR szConnectW[cchMax];
-        if (PyUnicode_Check(pConnectString))
-        {
-            Py_UNICODE* p = PyUnicode_AS_UNICODE(pConnectString);
-            for (Py_ssize_t i = 0, c = PyUnicode_GET_SIZE(pConnectString); i <= c; i++)
-                szConnectW[i] = (SQLWCHAR)p[i];
-        }
-        else
-        {
-            const char* p = PyString_AS_STRING(pConnectString);
-            for (Py_ssize_t i = 0, c = PyString_GET_SIZE(pConnectString); i <= c; i++)
-                szConnectW[i] = (SQLWCHAR)p[i];
-        }
-
+        SQLWChar connectString(pConnectString);
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLDriverConnectW(hdbc, 0, szConnectW, SQL_NTS, 0, 0, 0, SQL_DRIVER_NOPROMPT);
+        ret = SQLDriverConnectW(hdbc, 0, connectString, connectString.size(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
         Py_END_ALLOW_THREADS
         if (SQL_SUCCEEDED(ret))
             return true;
