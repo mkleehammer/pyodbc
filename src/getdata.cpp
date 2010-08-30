@@ -347,6 +347,23 @@ GetDataString(Cursor* cur, Py_ssize_t iCol)
     return 0;
 }
 
+
+static PyObject*
+GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
+{
+    // conv
+    //   The index into the connection's user-defined conversions `conv_types`.
+
+    PyObject* value = GetDataString(cur, iCol);
+    if (value == 0)
+        return 0;
+
+    PyObject* result = PyObject_CallFunction(cur->cnxn->conv_funcs[conv], "(O)", value);
+    Py_DECREF(value);
+    return result;
+}
+
+
 static PyObject*
 GetDataBuffer(Cursor* cur, Py_ssize_t iCol)
 {
@@ -568,6 +585,17 @@ GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
     return PyDateTime_FromDateAndTime(value.year, value.month, value.day, value.hour, value.minute, value.second, micros);
 }
 
+int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
+{
+    // If this sql type has a user-defined conversion, the index into the connection's `conv_funcs` array is returned.
+    // Otherwise -1 is returned.
+    
+    for (int i = 0; i < cur->cnxn->conv_count; i++)
+        if (cur->cnxn->conv_types[i] == sql_type)
+            return i;
+    return -1;
+}
+
 
 PyObject*
 GetData(Cursor* cur, Py_ssize_t iCol)
@@ -577,6 +605,12 @@ GetData(Cursor* cur, Py_ssize_t iCol)
     // The data is assumed to be the default C type for the column's SQL type.
 
     ColumnInfo* pinfo = &cur->colinfos[iCol];
+
+    // First see if there is a user-defined conversion.
+
+    int conv_index = GetUserConvIndex(cur, pinfo->sql_type);
+    if (conv_index != -1)
+        return GetDataUser(cur, iCol, conv_index);
 
     switch (pinfo->sql_type)
     {

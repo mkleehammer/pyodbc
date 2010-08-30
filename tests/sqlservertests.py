@@ -1107,6 +1107,34 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(row.blob, None)
 
 
+    def test_output_conversion(self):
+        def convert(value):
+            # `value` will be a string.  We'll simply add an X at the beginning at the end.
+            return 'X' + value + 'X'
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert)
+        self.cursor.execute("create table t1(n int, v varchar(10))")
+        self.cursor.execute("insert into t1 values (1, '123.45')")
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'X123.45X')
+
+        # Now clear the conversions and try again.  There should be no Xs this time.
+        self.cnxn.clear_output_converters()
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, '123.45')
+
+
+    def test_geometry_null_insert(self):
+        def convert(value):
+            return value
+
+        self.cnxn.add_output_converter(-151, convert) # -151 is SQL Server's geometry
+        self.cursor.execute("create table t1(n int, v geometry)")
+        self.cursor.execute("insert into t1 values (?, ?)", 1, None)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, None)
+        self.cnxn.clear_output_converters()
+
+
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage=usage)

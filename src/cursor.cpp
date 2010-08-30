@@ -128,7 +128,7 @@ inline bool IsNumericType(SQLSMALLINT sqltype)
 
 
 PyObject*
-PythonTypeFromSqlType(const SQLCHAR* name, SQLSMALLINT type, bool unicode_results)
+PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMALLINT type, bool unicode_results)
 {
     // Returns a type object ('int', 'str', etc.) for the given ODBC C type.  This is used to populate
     // Cursor.description with the type of Python object that will be returned for each column.
@@ -140,6 +140,10 @@ PythonTypeFromSqlType(const SQLCHAR* name, SQLSMALLINT type, bool unicode_result
     //   The ODBC C type (SQL_C_CHAR, etc.) of the column.
     //
     // The returned object does not have its reference count incremented!
+
+    int conv_index = GetUserConvIndex(cur, type);
+    if (conv_index != -1)
+        return (PyObject*)&PyString_Type;
 
     PyObject* pytype = 0;
 
@@ -273,7 +277,7 @@ create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
         if (lower)
             _strlwr((char*)name);
         
-        type = PythonTypeFromSqlType(name, nDataType, cur->cnxn->unicode_results);
+        type = PythonTypeFromSqlType(cur, name, nDataType, cur->cnxn->unicode_results);
         if (!type)
             goto done;
 

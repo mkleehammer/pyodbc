@@ -177,6 +177,9 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->searchescape    = 0;
     cnxn->timeout         = 0;
     cnxn->unicode_results = fUnicodeResults;
+    cnxn->conv_count      = 0;
+    cnxn->conv_types      = 0;
+    cnxn->conv_funcs      = 0;
 
     //
     // Initialize autocommit mode.
@@ -227,6 +230,33 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     return reinterpret_cast<PyObject*>(cnxn);
 }
 
+static void _clear_conv(Connection* cnxn)
+{
+    if (cnxn->conv_count != 0)
+    {
+        free(cnxn->conv_types);
+        cnxn->conv_types = 0;
+        
+        for (int i = 0; i < cnxn->conv_count; i++)
+            Py_XDECREF(cnxn->conv_funcs[i]);
+        free(cnxn->conv_funcs);
+        cnxn->conv_funcs = 0;
+
+        cnxn->conv_count = 0;
+    }
+}
+
+static char conv_clear_doc[] =
+    "clear_output_converters() --> None\n\n"
+    "Remove all output converter functions.";
+
+static PyObject*
+Connection_conv_clear(Connection* cnxn)
+{
+    _clear_conv(cnxn);
+
+    Py_RETURN_NONE;
+}
 
 static int
 Connection_clear(Connection* cnxn)
@@ -254,6 +284,8 @@ Connection_clear(Connection* cnxn)
     Py_XDECREF(cnxn->searchescape);
     cnxn->searchescape = 0;
     
+    _clear_conv(cnxn);
+
     return 0;
 }
 
@@ -585,17 +617,16 @@ Connection_rollback(PyObject* self, PyObject* args)
 }
 
 static char cursor_doc[] = 
-    "Return a new Cursor Object using the connection.";
+    "Return a new Cursor object using the connection.";
     
 static char execute_doc[] =
-    "execute(sql, [params]) --> None | Cursor | count\n" \
-    "\n" \
-    "Creates a new Cursor object, calls its execute method, and returns its return\n" \
-    "value.  See Cursor.execute for a description of the parameter formats and\n" \
-    "return values.\n" \
-    "\n" \
-    "This is a convenience method that is not part of the DB API.  Since a new\n" \
-    "Cursor is allocated by each call, this should not be used if more than one SQL\n" \
+    "execute(sql, [params]) --> Cursor\n"
+    "\n"
+    "Create a new Cursor object, call its execute method, and return it.  See\n"
+    "Cursor.execute for more details.\n"
+    "\n"
+    "This is a convenience method that is not part of the DB API.  Since a new\n"
+    "Cursor is allocated by each call, this should not be used if more than one SQL\n"
     "statement needs to be executed.";
 
 static char commit_doc[] =
@@ -731,14 +762,103 @@ Connection_settimeout(PyObject* self, PyObject* value, void* closure)
     return 0;
 }
 
+static bool _add_converter(Connection* cnxn, int sqltype, PyObject* func)
+{
+    if (cnxn->conv_count)
+    {
+        // If the sqltype is already registered, replace the old conversion function with the new.
+        for (int i = 0; i < cnxn->conv_count; i++)
+        {
+            if (cnxn->conv_types[i] == sqltype)
+            {
+                Py_XDECREF(cnxn->conv_funcs[i]);
+                cnxn->conv_funcs[i] = func;
+                Py_INCREF(func);
+                return true;
+            }
+        }
+    }
+    
+    int          oldcount = cnxn->conv_count;
+    SQLSMALLINT* oldtypes = cnxn->conv_types;
+    PyObject**   oldfuncs = cnxn->conv_funcs;
+
+    int          newcount = oldcount + 1;
+    SQLSMALLINT* newtypes = (SQLSMALLINT*)malloc(sizeof(SQLSMALLINT) * newcount);
+    PyObject**   newfuncs = (PyObject**)malloc(sizeof(PyObject*) * newcount);
+
+    if (newtypes == 0 || newfuncs == 0)
+    {
+        if (newtypes)
+            free(newtypes);
+        if (newfuncs)
+            free(newfuncs);
+        PyErr_NoMemory();
+        return false;
+    }
+
+    newtypes[0] = sqltype;
+    newfuncs[0] = func;
+    Py_INCREF(func);
+
+    cnxn->conv_count = newcount;
+    cnxn->conv_types = newtypes;
+    cnxn->conv_funcs = newfuncs;
+
+    if (oldcount != 0)
+    {
+        // copy old items
+        memcpy(&newtypes[1], oldtypes, sizeof(int) * oldcount);
+        memcpy(&newfuncs[1], oldfuncs, sizeof(PyObject*) * oldcount);
+
+        free(oldtypes);
+        free(oldfuncs);
+    }
+
+    return true;
+}
+
+static char conv_add_doc[] =
+    "add_output_converter(sqltype, func) --> None\n"
+    "\n"
+    "Register an output converter function that will be called whenever a value with\n"
+    "the given SQL type is read from the database.\n"
+    "\n"
+    "sqltype\n"
+    "  The integer SQL type value to convert, which can be one of the defined\n"
+    "  standard constants (e.g. pyodbc.SQL_VARCHAR) or a database-specific value\n"
+    "  (e.g. -151 for the SQL Server 2008 geometry data type).\n"
+    "\n"
+    "func\n"
+    "  The converter function which will be called with a single parameter, the\n"
+    "  value, and should return the converted value.  If the value is NULL, the\n"
+    "  parameter will be None.  Otherwise it will be a Python string.";
+
+
+static PyObject*
+Connection_conv_add(Connection* cnxn, PyObject* args)
+{
+    int sqltype;
+    PyObject* func;
+    if (!PyArg_ParseTuple(args, "iO", &sqltype, &func))
+        return 0;
+
+    if (!_add_converter(cnxn, sqltype, func))
+        return 0;
+
+    Py_RETURN_NONE;
+}
+
 static struct PyMethodDef Connection_methods[] =
 {
-    { "cursor",        (PyCFunction)Connection_cursor,   METH_NOARGS,  cursor_doc    },
-    { "close",         (PyCFunction)Connection_close,    METH_NOARGS,  close_doc     },
-    { "execute",       (PyCFunction)Connection_execute,  METH_VARARGS, execute_doc   },
-    { "commit",        (PyCFunction)Connection_commit,   METH_NOARGS,  commit_doc    },
-    { "rollback",      (PyCFunction)Connection_rollback, METH_NOARGS,  rollback_doc  },
-    { "getinfo",       (PyCFunction)Connection_getinfo,  METH_VARARGS, getinfo_doc   },
+    { "cursor",                  (PyCFunction)Connection_cursor,     METH_NOARGS,  cursor_doc     },
+    { "close",                   (PyCFunction)Connection_close,      METH_NOARGS,  close_doc      },
+    { "execute",                 (PyCFunction)Connection_execute,    METH_VARARGS, execute_doc    },
+    { "commit",                  (PyCFunction)Connection_commit,     METH_NOARGS,  commit_doc     },
+    { "rollback",                (PyCFunction)Connection_rollback,   METH_NOARGS,  rollback_doc   },
+    { "getinfo",                 (PyCFunction)Connection_getinfo,    METH_VARARGS, getinfo_doc    },
+    { "add_output_converter",    (PyCFunction)Connection_conv_add,   METH_VARARGS, conv_add_doc   },
+    { "clear_output_converters", (PyCFunction)Connection_conv_clear, METH_NOARGS,  conv_clear_doc },
     { 0, 0, 0, 0 }
 };
 

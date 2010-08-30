@@ -51,6 +51,17 @@ struct Connection
     int varchar_maxlength;
     int wvarchar_maxlength;
     int binary_maxlength;
+
+    // Output conversions.  Maps from SQL type in conv_types to the converter function in conv_funcs.
+    //
+    // If conv_count is zero, conv_types and conv_funcs will also be zero.
+    //
+    // pyodbc uses this manual mapping for speed and portability.  The STL collection classes use the new operator and
+    // throw exceptions when out of memory.  pyodbc does not use any exceptions.
+
+    int conv_count;             // how many items are in conv_types and conv_funcs.
+    SQLSMALLINT* conv_types;            // array of SQL_TYPEs to convert
+    PyObject** conv_funcs;      // array of Python functions
 };
 
 #define Connection_Check(op) PyObject_TypeCheck(op, &ConnectionType)
