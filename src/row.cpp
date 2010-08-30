@@ -244,7 +244,55 @@ Row_repr(PyObject* o)
     return result.Detach();
 }
 
+static PyObject* Row_richcompare(PyObject* olhs, PyObject* orhs, int op)
+{
+    if (!Row_Check(olhs) || !Row_Check(orhs))
+    {
+        Py_INCREF(Py_NotImplemented);
+        return Py_NotImplemented;
+    }
 
+    Row* lhs = (Row*)olhs;
+    Row* rhs = (Row*)orhs;
+
+    if (lhs->cValues != rhs->cValues)
+    {
+        // Different sizes, so use the same rules as the tuple class.
+        bool result;
+		switch (op)
+        {
+		case Py_EQ: result = (lhs->cValues == rhs->cValues); break;
+		case Py_GE: result = (lhs->cValues >= rhs->cValues); break;
+		case Py_GT: result = (lhs->cValues >  rhs->cValues); break;
+		case Py_LE: result = (lhs->cValues <= rhs->cValues); break;
+		case Py_LT: result = (lhs->cValues <  rhs->cValues); break;
+		case Py_NE: result = (lhs->cValues != rhs->cValues); break;
+		}
+        PyObject* p = result ? Py_True : Py_False;
+        Py_INCREF(p);
+        return p;
+    }
+
+    for (Py_ssize_t i = 0, c = lhs->cValues; i < c; i++)
+        if (!PyObject_RichCompareBool(lhs->apValues[i], rhs->apValues[i], Py_EQ))
+            return PyObject_RichCompare(lhs->apValues[i], rhs->apValues[i], op);
+
+    // All items are equal.
+    switch (op)
+    {
+    case Py_EQ:
+    case Py_GE:
+    case Py_LE:
+        Py_RETURN_TRUE;
+
+    case Py_GT:
+    case Py_LT:
+    case Py_NE:
+        break;
+    }
+
+    Py_RETURN_FALSE;
+}
 
 static PySequenceMethods row_as_sequence =
 {
@@ -318,7 +366,7 @@ PyTypeObject RowType =
     row_doc,                                                // tp_doc
     0,                                                      // tp_traverse
     0,                                                      // tp_clear
-    0,                                                      // tp_richcompare
+    Row_richcompare,                                        // tp_richcompare
     0,                                                      // tp_weaklistoffset
     0,                                                      // tp_iter
     0,                                                      // tp_iternext
