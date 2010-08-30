@@ -530,8 +530,8 @@ Connection_getinfo(PyObject* self, PyObject* args)
     if (!cnxn)
         return 0;
 
-    SQLUSMALLINT infotype;
-    if (!PyArg_ParseTuple(args, "l", &infotype))
+    unsigned long infotype;
+    if (!PyArg_ParseTuple(args, "k", &infotype))
         return 0;
 
     unsigned int i = 0;
@@ -549,7 +549,7 @@ Connection_getinfo(PyObject* self, PyObject* args)
 
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetInfo(cnxn->hdbc, infotype, szBuffer, sizeof(szBuffer), &cch);
+    ret = SQLGetInfo(cnxn->hdbc, (SQLUSMALLINT)infotype, szBuffer, sizeof(szBuffer), &cch);
     Py_END_ALLOW_THREADS
     if (!SQL_SUCCEEDED(ret))
     {
