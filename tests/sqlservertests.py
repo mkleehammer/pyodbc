@@ -354,35 +354,42 @@ class SqlServerTestCase(unittest.TestCase):
     # decimal
     #
 
-    def test_small_decimal(self):
-        value = Decimal('100010')       # (I use this because the ODBC docs tell us how the bytes should look in the C struct)
-        self.cursor.execute("create table t1(d numeric(19))")
+    def _decimal(self, precision, scale, negative):
+        # From test provided by planders (thanks!) in Issue 91
+
+        self.cursor.execute("create table t1(d decimal(%s, %s))" % (precision, scale))
+
+        # Construct a decimal that uses the maximum precision and scale.
+        decStr = '9' * (precision - scale)
+        if scale:
+            decStr = decStr + "." + '9' * scale
+        if negative:
+            decStr = "-" + decStr
+        value = Decimal(decStr)
+
         self.cursor.execute("insert into t1 values(?)", value)
-        v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(self.cursor.description[0][1], Decimal)
-        self.assertEqual(type(v), Decimal)
+
+        v = self.cursor.execute("select d from t1").fetchone()[0]
         self.assertEqual(v, value)
 
+    def _maketest(p, s, n):
+        def t(self):
+            self._decimal(p, s, n)
+        return t
+    for (p, s, n) in [ (1,  0,  False),
+                       (1,  0,  True),
+                       (6,  0,  False),
+                       (6,  2,  False),
+                       (6,  4,  True),
+                       (6,  6,  True),
+                       (38, 0,  False),
+                       (38, 10, False),
+                       (38, 38, False),
+                       (38, 0,  True),
+                       (38, 10, True),
+                       (38, 38, True) ]:
+        locals()['test_decimal_%s_%s_%s' % (p, s, n and 'n' or 'p')] = _maketest(p, s, n)
 
-    def test_small_decimal_scale(self):
-        # The same as small_decimal, except with a different scale.  This value exactly matches the ODBC documentation
-        # example in the C Data Types appendix.
-        value = '1000.10'
-        value = Decimal(value)
-        self.cursor.execute("create table t1(d numeric(20,6))")
-        self.cursor.execute("insert into t1 values(?)", value)
-        v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), Decimal)
-        self.assertEqual(v, value)
-
-
-    def test_negative_decimal_scale(self):
-        value = Decimal('-10.0010')
-        self.cursor.execute("create table t1(d numeric(19,4))")
-        self.cursor.execute("insert into t1 values(?)", value)
-        v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), Decimal)
-        self.assertEqual(v, value)
 
     def test_subquery_params(self):
         """Ensure parameter markers work in a subquery"""
