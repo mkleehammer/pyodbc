@@ -1135,6 +1135,11 @@ class SqlServerTestCase(unittest.TestCase):
         self.cnxn.clear_output_converters()
 
 
+    def test_login_timeout(self):
+        # This can only test setting since there isn't a way to cause it to block on the server side.
+        cnxns = pyodbc.connect(self.connection_string, timeout=2)
+
+
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage=usage)

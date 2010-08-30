@@ -45,7 +45,7 @@ Connection_Validate(PyObject* self)
     return cnxn;
 }
 
-static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi)
+static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeout)
 {
     // This should have been checked by the global connect function.
     I(PyString_Check(pConnectString) || PyUnicode_Check(pConnectString));
@@ -69,6 +69,15 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi)
     // this more.
 
     SQLRETURN ret;
+
+    if (timeout > 0)
+    {
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLSetConnectAttr(hdbc, SQL_ATTR_LOGIN_TIMEOUT, (SQLPOINTER)timeout, SQL_IS_UINTEGER);
+        Py_END_ALLOW_THREADS
+        if (!SQL_SUCCEEDED(ret))
+            RaiseErrorFromHandle("SQLSetConnectAttr(SQL_ATTR_LOGIN_TIMEOUT)", hdbc, SQL_NULL_HANDLE);
+    }
 
     if (!fAnsi)
     {
@@ -124,7 +133,7 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi)
 }
 
 
-PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, bool fUnicodeResults)
+PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, bool fUnicodeResults, long timeout)
 {
     // pConnectString
     //   A string or unicode object.  (This must be checked by the caller.)
@@ -147,7 +156,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLAllocHandle", SQL_NULL_HANDLE, SQL_NULL_HANDLE);
 
-    if (!Connect(pConnectString, hdbc, fAnsi))
+    if (!Connect(pConnectString, hdbc, fAnsi, timeout))
     {
         // Connect has already set an exception.
         Py_BEGIN_ALLOW_THREADS

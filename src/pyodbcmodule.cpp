@@ -280,6 +280,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     int fAutoCommit = 0;
     int fAnsi = 0;              // force ansi
     int fUnicodeResults = 0;
+    long timeout = 0;
 
     Py_ssize_t size = args ? PyTuple_Size(args) : 0;
 
@@ -334,6 +335,13 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                 fUnicodeResults = PyObject_IsTrue(value);
                 continue;
             }
+            if (_strcmpi(szKey, "timeout") == 0)
+            {
+                timeout = PyInt_AsLong(value);
+                if (PyErr_Occurred())
+                    return 0;
+                continue;
+            }
         
             // Anything else must be a string that is appended, along with the keyword to the connection string.
 
@@ -384,7 +392,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
             return 0;
     }
      
-    return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, fUnicodeResults != 0);
+    return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, fUnicodeResults != 0, timeout);
 }
 
 
@@ -481,14 +489,14 @@ mod_timestampfromticks(PyObject* self, PyObject* args)
 }
 
 static char connect_doc[] =
-    "connect(str, autocommit=False, ansi=False, **kwargs) --> Connection\n"
+    "connect(str, autocommit=False, ansi=False, timeout=0, **kwargs) --> Connection\n"
     "\n"
     "Accepts an ODBC connection string and returns a new Connection object.\n"
     "\n"
     "The connection string will be passed to SQLDriverConnect, so a DSN connection\n"
     "can be created using:\n"
     "\n"
-    "  DSN=DataSourceName;UID=user;PWD=password\n"
+    "  cnxn = pyodbc.connect('DSN=DataSourceName;UID=user;PWD=password')\n"
     "\n"
     "To connect without requiring a DSN, specify the driver and connection\n"
     "information:\n"
@@ -499,33 +507,42 @@ static char connect_doc[] =
     "documentation or the documentation of your ODBC driver for details.\n"
     "\n"
     "The connection string can be passed as the string `str`, as a list of keywords,\n"
-    "or a combination of the two.  Any keywords except autocommit and ansi (see\n"
-    "below) are simply added to the connection string.\n"
+    "or a combination of the two.  Any keywords except autocommit, ansi, and timeout\n"
+    "(see below) are simply added to the connection string.\n"
     "\n"
     "  connect('server=localhost;user=me')\n"
     "  connect(server='localhost', user='me')\n"
     "  connect('server=localhost', user='me')\n"
     "\n"
-    "The DB API recommends the keywords 'user', 'password', and 'host', but these are\n"
-    "not valid ODBC keywords, so these will be converted to 'uid', 'pwd', and\n"
+    "The DB API recommends the keywords 'user', 'password', and 'host', but these\n"
+    "are not valid ODBC keywords, so these will be converted to 'uid', 'pwd', and\n"
     "'server'.\n"
     "\n"
-    "autocommit\n"
+    "Special Keywords\n"
     "\n"
-    "  If False or zero, the default, transactions are created automatically as\n"
-    "  defined in the DB API 2.  If True or non-zero, the connection is put into ODBC\n"
-    "  autocommit mode and statements are committed automatically.\n"
+    "The following specal keywords are processed by pyodbc and are not added to the\n"
+    "connection string.  (If you must use these in your connection string, pass them\n"
+    "as a string, not as keywords.)\n"
     "\n"
-    "ansi\n"
-    "\n"
-    "  By default, pyodbc first attempts to connect using the Unicode version of\n"
-    "  SQLDriverConnectW.  If the driver returns IM001 indicating it does not support\n"
-    "  the Unicode version, the ANSI version is tried.  Any other SQLSTATE is turned\n"
-    "  into an exception.  Setting ansi to true skips the Unicode attempt and only\n"
-    "  connects using the ANSI version.  This is useful for drivers that return the\n"
-    "  wrong SQLSTATE (or if pyodbc is out of date and should support other\n"
-    "  SQLSTATEs).";
-        
+    "  autocommit\n"
+    "    If False or zero, the default, transactions are created automatically as\n"
+    "    defined in the DB API 2.  If True or non-zero, the connection is put into\n"
+    "    ODBC autocommit mode and statements are committed automatically.\n"
+    "   \n"
+    "  ansi\n"
+    "    By default, pyodbc first attempts to connect using the Unicode version of\n"
+    "    SQLDriverConnectW.  If the driver returns IM001 indicating it does not\n"
+    "    support the Unicode version, the ANSI version is tried.  Any other SQLSTATE\n"
+    "    is turned into an exception.  Setting ansi to true skips the Unicode\n"
+    "    attempt and only connects using the ANSI version.  This is useful for\n"
+    "    drivers that return the wrong SQLSTATE (or if pyodbc is out of date and\n"
+    "    should support other SQLSTATEs).\n"
+    "   \n"
+    "  timeout\n"
+    "    An integer login timeout in seconds, used to set the SQL_ATTR_LOGIN_TIMEOUT\n"
+    "    attribute of the connection.  The default is 0 which means the database's\n"
+    "    default timeout, if any, is used.\n";
+
 static char timefromticks_doc[] = 
     "TimeFromTicks(ticks) --> datetime.time\n"
     "\n"
