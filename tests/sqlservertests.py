@@ -1160,6 +1160,15 @@ class SqlServerTestCase(unittest.TestCase):
         rows = list(rows)
         rows.sort() # uses <
         
+    def test_context_manager(self):
+        with pyodbc.connect(self.connection_string) as cnxn:
+            cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
+
+        # The connection should be closed now.
+        def test():
+            cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
+        self.assertRaises(pyodbc.ProgrammingError, test)
+
 
 def main():
     from optparse import OptionParser

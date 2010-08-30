@@ -858,16 +858,34 @@ Connection_conv_add(Connection* cnxn, PyObject* args)
     Py_RETURN_NONE;
 }
 
+static char enter_doc[] = "__enter__() -> self.";
+static PyObject* Connection_enter(PyObject* self)
+{
+    Py_INCREF(self);
+    return self;
+}
+
+static char exit_doc[] = "__exit__(*excinfo) -> None.  Closes the connection.";
+static PyObject* Connection_exit(Connection* cnxn, PyObject* args)
+{
+    Connection_clear(cnxn);
+    Py_RETURN_NONE;
+}
+
+
 static struct PyMethodDef Connection_methods[] =
 {
-    { "cursor",                  (PyCFunction)Connection_cursor,     METH_NOARGS,  cursor_doc     },
-    { "close",                   (PyCFunction)Connection_close,      METH_NOARGS,  close_doc      },
-    { "execute",                 (PyCFunction)Connection_execute,    METH_VARARGS, execute_doc    },
-    { "commit",                  (PyCFunction)Connection_commit,     METH_NOARGS,  commit_doc     },
-    { "rollback",                (PyCFunction)Connection_rollback,   METH_NOARGS,  rollback_doc   },
-    { "getinfo",                 (PyCFunction)Connection_getinfo,    METH_VARARGS, getinfo_doc    },
-    { "add_output_converter",    (PyCFunction)Connection_conv_add,   METH_VARARGS, conv_add_doc   },
-    { "clear_output_converters", (PyCFunction)Connection_conv_clear, METH_NOARGS,  conv_clear_doc },
+    { "cursor",                  (PyCFunction)Connection_cursor,          METH_NOARGS,  cursor_doc     },
+    { "close",                   (PyCFunction)Connection_close,           METH_NOARGS,  close_doc      },
+    { "execute",                 (PyCFunction)Connection_execute,         METH_VARARGS, execute_doc    },
+    { "commit",                  (PyCFunction)Connection_commit,          METH_NOARGS,  commit_doc     },
+    { "rollback",                (PyCFunction)Connection_rollback,        METH_NOARGS,  rollback_doc   },
+    { "getinfo",                 (PyCFunction)Connection_getinfo,         METH_VARARGS, getinfo_doc    },
+    { "add_output_converter",    (PyCFunction)Connection_conv_add,        METH_VARARGS, conv_add_doc   },
+    { "clear_output_converters", (PyCFunction)Connection_conv_clear,      METH_NOARGS,  conv_clear_doc },
+    { "__enter__",               (PyCFunction)Connection_enter,           METH_NOARGS,  enter_doc      },
+    { "__exit__",                (PyCFunction)Connection_exit,            METH_VARARGS, exit_doc       },
+    
     { 0, 0, 0, 0 }
 };
 
