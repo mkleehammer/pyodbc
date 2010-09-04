@@ -83,7 +83,7 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
     {
         SQLWChar connectString(pConnectString);
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLDriverConnectW(hdbc, 0, connectString, connectString.size(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
+        ret = SQLDriverConnectW(hdbc, 0, connectString, (SQLSMALLINT)connectString.size(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
         Py_END_ALLOW_THREADS
         if (SQL_SUCCEEDED(ret))
             return true;

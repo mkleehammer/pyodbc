@@ -122,12 +122,12 @@ void SQLWChar::dump()
     printf("sqlwchar=%ld pch=%p len=%ld owns=%d\n", sizeof(SQLWCHAR), pch, len, (int)owns_memory);
     if (pch && len)
     {
-        int i = 0;
+        Py_ssize_t i = 0;
         while (i < len)
         {
-            int stop = min(i + 10, len);
+            Py_ssize_t stop = min(i + 10, len);
 
-            for (int x = i; x < stop; x++)
+            for (Py_ssize_t x = i; x < stop; x++)
             {
                 for (int byteindex = (int)sizeof(SQLWCHAR)-1; byteindex >= 0; byteindex--)
                 {
@@ -137,7 +137,7 @@ void SQLWChar::dump()
                 printf(" ");
             }
 
-            for (int x = i; x < stop; x++)
+            for (Py_ssize_t x = i; x < stop; x++)
                 printf("%c", (char)pch[x]);
                 
             printf("\n");
