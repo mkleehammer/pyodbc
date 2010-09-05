@@ -377,7 +377,7 @@ free_results(Cursor* self, free_results_type free_statement)
 
     if (self->colinfos)
     {
-        free(self->colinfos);
+        pyodbc_free(self->colinfos);
         self->colinfos = 0;
     }
     
@@ -589,7 +589,7 @@ PrepareResults(Cursor* cur, int cCols)
     int i;
     I(cur->colinfos == 0);
 
-    cur->colinfos = (ColumnInfo*)malloc(sizeof(ColumnInfo) * cCols);
+    cur->colinfos = (ColumnInfo*)pyodbc_malloc(sizeof(ColumnInfo) * cCols);
     if (cur->colinfos == 0)
     {
         PyErr_NoMemory();
@@ -600,7 +600,7 @@ PrepareResults(Cursor* cur, int cCols)
     {
         if (!InitColumnInfo(cur, (SQLSMALLINT)(i + 1), &cur->colinfos[i]))
         {
-            free(cur->colinfos);
+            pyodbc_free(cur->colinfos);
             cur->colinfos = 0;
             return false;
         }
@@ -981,7 +981,7 @@ Cursor_fetch(Cursor* cur)
 
     field_count = PyTuple_GET_SIZE(cur->description);
 
-    apValues = (PyObject**)malloc(sizeof(PyObject*) * field_count);
+    apValues = (PyObject**)pyodbc_malloc(sizeof(PyObject*) * field_count);
 
     if (apValues == 0)
         return PyErr_NoMemory();
@@ -2100,7 +2100,7 @@ Cursor_New(Connection* cnxn)
         cur->pPreparedSQL      = 0;
         cur->paramcount        = 0;
         cur->paramtypes        = 0;
-        cur->paramdata         = 0;
+        cur->paramInfos        = 0;
         cur->colinfos          = 0;
         cur->arraysize         = 1;
         cur->rowcount          = -1;

@@ -943,7 +943,6 @@ class SqlServerTestCase(unittest.TestCase):
         rows = self.cursor.fetchall()
         self.assert_(rows is not None)
         self.assert_(len(rows) == 3)
-        
 
     def test_autocommit(self):
         self.assertEqual(self.cnxn.autocommit, False)
@@ -1025,7 +1024,7 @@ class SqlServerTestCase(unittest.TestCase):
             words = set (['a'])
             self.cursor.execute("insert into t1 (word) VALUES (?)", [words])
 
-        self.assertRaises(pyodbc.NotSupportedError, f)
+        self.assertRaises(pyodbc.ProgrammingError, f)
 
     def test_sets_executemany(self):
         # Only lists and tuples are allowed.

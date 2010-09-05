@@ -243,12 +243,12 @@ static void _clear_conv(Connection* cnxn)
 {
     if (cnxn->conv_count != 0)
     {
-        free(cnxn->conv_types);
+        pyodbc_free(cnxn->conv_types);
         cnxn->conv_types = 0;
         
         for (int i = 0; i < cnxn->conv_count; i++)
             Py_XDECREF(cnxn->conv_funcs[i]);
-        free(cnxn->conv_funcs);
+        pyodbc_free(cnxn->conv_funcs);
         cnxn->conv_funcs = 0;
 
         cnxn->conv_count = 0;
@@ -793,15 +793,15 @@ static bool _add_converter(Connection* cnxn, int sqltype, PyObject* func)
     PyObject**   oldfuncs = cnxn->conv_funcs;
 
     int          newcount = oldcount + 1;
-    SQLSMALLINT* newtypes = (SQLSMALLINT*)malloc(sizeof(SQLSMALLINT) * newcount);
-    PyObject**   newfuncs = (PyObject**)malloc(sizeof(PyObject*) * newcount);
+    SQLSMALLINT* newtypes = (SQLSMALLINT*)pyodbc_malloc(sizeof(SQLSMALLINT) * newcount);
+    PyObject**   newfuncs = (PyObject**)pyodbc_malloc(sizeof(PyObject*) * newcount);
 
     if (newtypes == 0 || newfuncs == 0)
     {
         if (newtypes)
-            free(newtypes);
+            pyodbc_free(newtypes);
         if (newfuncs)
-            free(newfuncs);
+            pyodbc_free(newfuncs);
         PyErr_NoMemory();
         return false;
     }
@@ -820,8 +820,8 @@ static bool _add_converter(Connection* cnxn, int sqltype, PyObject* func)
         memcpy(&newtypes[1], oldtypes, sizeof(int) * oldcount);
         memcpy(&newfuncs[1], oldfuncs, sizeof(PyObject*) * oldcount);
 
-        free(oldtypes);
-        free(oldfuncs);
+        pyodbc_free(oldtypes);
+        pyodbc_free(oldfuncs);
     }
 
     return true;

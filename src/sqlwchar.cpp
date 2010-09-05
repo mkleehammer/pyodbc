@@ -21,7 +21,7 @@ SQLWChar::SQLWChar(PyObject* o)
 void SQLWChar::Free()
 {
     if (pch && owns_memory)
-        free(pch);
+        pyodbc_free(pch);
     pch = 0;
     len = 0;
     owns_memory = false;
@@ -50,7 +50,7 @@ bool SQLWChar::Convert(PyObject* o)
         return true;
     }
 
-    SQLWCHAR* pchT = (SQLWCHAR*)malloc(sizeof(SQLWCHAR) * (lenT + 1));
+    SQLWCHAR* pchT = (SQLWCHAR*)pyodbc_malloc(sizeof(SQLWCHAR) * (lenT + 1));
     if (pchT == 0)
     {
         PyErr_NoMemory();
@@ -59,7 +59,7 @@ bool SQLWChar::Convert(PyObject* o)
 
     if (!sqlwchar_copy(pchT, pU, lenT))
     {
-        free(pchT);
+        pyodbc_free(pchT);
         return false;
     }
     
@@ -148,3 +148,18 @@ void SQLWChar::dump()
         printf("\n\n");
     }
 }
+
+SQLWCHAR* SQLWCHAR_FromUnicode(const Py_UNICODE* pch, Py_ssize_t len)
+{
+    SQLWCHAR* p = (SQLWCHAR*)pyodbc_malloc(sizeof(SQLWCHAR) * len);
+    if (p != 0)
+    {
+        if (!sqlwchar_copy(p, pch, len))
+        {
+            pyodbc_free(p);
+            p = 0;
+        }
+    }
+    return p;
+}
+

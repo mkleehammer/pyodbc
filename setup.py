@@ -81,6 +81,12 @@ def main():
     except ValueError:
         pass
 
+    try:
+        sys.argv.remove('--leak-check')
+        macros.append(('PYODBC_LEAK_CHECK', 1))
+    except ValueError:
+        pass
+
     if exists('MANIFEST'):
         os.remove('MANIFEST')
 

@@ -570,6 +570,15 @@ static char datasources_doc[] =
     "Returns a dictionary mapping available DSNs to their descriptions.";
 
 
+#ifdef PYODBC_LEAK_CHECK
+static PyObject* mod_leakcheck(PyObject* self, PyObject* args)
+{
+    UNUSED(self, args);
+    pyodbc_leak_check();
+    Py_RETURN_NONE;
+}
+#endif
+
 static PyMethodDef pyodbc_methods[] =
 {
     { "connect",            (PyCFunction)mod_connect,            METH_VARARGS|METH_KEYWORDS, connect_doc },
@@ -577,6 +586,11 @@ static PyMethodDef pyodbc_methods[] =
     { "DateFromTicks",      (PyCFunction)mod_datefromticks,      METH_VARARGS,               datefromticks_doc },
     { "TimestampFromTicks", (PyCFunction)mod_timestampfromticks, METH_VARARGS,               timestampfromticks_doc },
     { "dataSources",        (PyCFunction)mod_datasources,        METH_NOARGS,                datasources_doc },
+
+#ifdef PYODBC_LEAK_CHECK
+    { "leakcheck", (PyCFunction)mod_leakcheck, METH_NOARGS, 0 },
+#endif
+
     { 0, 0, 0, 0 }
 };
 

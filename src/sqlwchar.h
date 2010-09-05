@@ -52,5 +52,11 @@ PyObject* PyUnicode_FromSQLWCHAR(const SQLWCHAR* sz, Py_ssize_t cch);
 
 bool sqlwchar_copy(SQLWCHAR* pdest, const Py_UNICODE* psrc, Py_ssize_t len);
 
+SQLWCHAR* SQLWCHAR_FromUnicode(const Py_UNICODE* pch, Py_ssize_t len);
+
+inline bool UnicodeSizesDiffer() 
+{
+    return sizeof(SQLWCHAR) == sizeof(Py_UNICODE);
+}
 
 #endif // _PYODBCSQLWCHAR_H

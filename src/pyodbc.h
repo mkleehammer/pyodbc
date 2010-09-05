@@ -145,4 +145,14 @@ inline void DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
 #endif
 #define TRACE DebugTrace
 
+#ifdef PYODBC_LEAK_CHECK
+#define pyodbc_malloc(len) _pyodbc_malloc(__FILE__, __LINE__, len)
+void* _pyodbc_malloc(const char* filename, int lineno, size_t len);
+void pyodbc_free(void* p);
+void pyodbc_leak_check();
+#else
+#define pyodbc_malloc malloc
+#define pyodbc_free free
+#endif
+
 #endif // pyodbc_h

@@ -34,6 +34,42 @@ struct ColumnInfo
     bool is_unsigned;
 };
 
+struct ParamInfo
+{
+    // The following correspond to the SQLBindParameter parameters.
+    SQLSMALLINT ValueType;
+    SQLSMALLINT ParameterType;
+    SQLULEN     ColumnSize;
+    SQLSMALLINT DecimalDigits;
+
+    // If it is possible to bind into the parameter itself (ANSI string), this points into the Python object and must
+    // not be modified or freed.  Otherwise, this is memory allocated with 'malloc' specifically for this parameter and
+    // should be freed after the call.
+    SQLPOINTER ParameterValuePtr;
+
+    SQLLEN BufferLength;
+    SQLLEN StrLen_or_Ind;
+
+    // Optional Python object if we converted from the original parameter to one (e.g. Decimal to String).  If
+    // non-zero, ParameterValuePtr will point into this and allocated will be zero.
+    PyObject* temp;
+
+    // The amount of memory allocated (bytes) if binding into the original parameter or a temporary Python object was
+    // not posssible.  Otherwise zero.
+    Py_ssize_t allocated;
+
+    // Optional data.  If used, ParameterValuePtr will point into this.
+    union
+    {
+        unsigned char ch;
+        long l;
+        INT64 i64;
+        double dbl;
+        TIMESTAMP_STRUCT timestamp;
+        DATE_STRUCT date;
+        TIME_STRUCT time;
+    } Data;
+};
 
 struct Cursor
 {
@@ -67,7 +103,7 @@ struct Cursor
     //
     // Even if the same SQL statement is executed twice, the parameter bindings are redone from scratch since we try to
     // bind into the Python objects directly.
-    byte* paramdata;
+    ParamInfo* paramInfos;
 
     //
     // Result Information

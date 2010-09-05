@@ -79,7 +79,7 @@ public:
             }
             else
             {
-                free(buffer);
+                pyodbc_free(buffer);
             }
         }
     }
@@ -135,7 +135,7 @@ public:
             else
             {
                 // We're Unicode, but SQLWCHAR and Py_UNICODE don't match, so maintain our own SQLWCHAR buffer.
-                buffer = (char*)malloc(newSize);
+                buffer = (char*)pyodbc_malloc(newSize);
             }
 
             if (buffer == 0)
@@ -215,7 +215,7 @@ public:
         PyObject* result = PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, bytesUsed / element_size);
         if (result == 0)
             return false;
-        free(buffer);
+        pyodbc_free(buffer);
         buffer = 0;
         return result;
     }

@@ -38,19 +38,17 @@ struct Row
 #define Row_Check(op) PyObject_TypeCheck(op, &RowType)
 #define Row_CheckExact(op) ((op)->ob_type == &RowType)
 
-void
-FreeRowValues(Py_ssize_t cValues, PyObject** apValues)
+void FreeRowValues(Py_ssize_t cValues, PyObject** apValues)
 {
     if (apValues)
     {
         for (Py_ssize_t i = 0; i < cValues; i++)
             Py_XDECREF(apValues[i]);
-        free(apValues);
+        pyodbc_free(apValues);
     }
 }
 
-static void
-Row_dealloc(Row* self)
+static void Row_dealloc(Row* self)
 {
     // Note: Now that __newobj__ is available, our variables could be zero...
 
@@ -60,8 +58,7 @@ Row_dealloc(Row* self)
     PyObject_Del(self);
 }
 
-Row*
-Row_New(PyObject* description, PyObject* map_name_to_index, Py_ssize_t cValues, PyObject** apValues)
+Row* Row_New(PyObject* description, PyObject* map_name_to_index, Py_ssize_t cValues, PyObject** apValues)
 {
     // Called by other modules to create rows.  Takes ownership of apValues.
 
