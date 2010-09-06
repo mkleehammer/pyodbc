@@ -391,6 +391,14 @@ class SqlServerTestCase(unittest.TestCase):
         locals()['test_decimal_%s_%s_%s' % (p, s, n and 'n' or 'p')] = _maketest(p, s, n)
 
 
+    def test_decimal_e(self):
+        """Ensure exponential notation decimals are properly handled"""
+        value = Decimal((0, (1, 2, 3), 5)) # prints as 1.23E+7
+        self.cursor.execute("create table t1(d decimal(10, 2))")
+        self.cursor.execute("insert into t1 values (?)", value)
+        result = self.cursor.execute("select * from t1").fetchone()[0]
+        self.assertEqual(result, value)
+
     def test_subquery_params(self):
         """Ensure parameter markers work in a subquery"""
         self.cursor.execute("create table t1(id integer, s varchar(20))")

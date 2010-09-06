@@ -42,21 +42,15 @@ struct ParamInfo
     SQLULEN     ColumnSize;
     SQLSMALLINT DecimalDigits;
 
-    // If it is possible to bind into the parameter itself (ANSI string), this points into the Python object and must
-    // not be modified or freed.  Otherwise, this is memory allocated with 'malloc' specifically for this parameter and
-    // should be freed after the call.
+    // The value pointer that will be bound.  If `alloc` is true, this was allocated with malloc and must be freed.
+    // Otherwise it is zero or points into memory owned by the original Python parameter.
     SQLPOINTER ParameterValuePtr;
 
     SQLLEN BufferLength;
     SQLLEN StrLen_or_Ind;
 
-    // Optional Python object if we converted from the original parameter to one (e.g. Decimal to String).  If
-    // non-zero, ParameterValuePtr will point into this and allocated will be zero.
-    PyObject* temp;
-
-    // The amount of memory allocated (bytes) if binding into the original parameter or a temporary Python object was
-    // not posssible.  Otherwise zero.
-    Py_ssize_t allocated;
+    // If true, the memory in ParameterValuePtr was allocated via malloc and must be freed.
+    bool allocated;
 
     // Optional data.  If used, ParameterValuePtr will point into this.
     union
