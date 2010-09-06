@@ -1,6 +1,15 @@
 
 #include "pyodbc.h"
 
+void PrintBytes(void* p, size_t len)
+{
+    unsigned char* pch = (unsigned char*)p;
+    for (size_t i = 0; i < len; i++)
+        printf("%02x ", (int)pch[i]);
+    printf("\n");
+}
+
+
 #ifdef PYODBC_TRACE
 void DebugTrace(const char* szFmt, ...)
 {

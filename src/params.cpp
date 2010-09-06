@@ -272,6 +272,8 @@ static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
 static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
 {
     // TODO: Overflow?
+    long long value = PyLong_AsLongLong(param);
+
     info.Data.i64 = (INT64)PyLong_AsLongLong(param);
 
     info.ValueType         = SQL_C_SBIGINT;
@@ -298,7 +300,6 @@ static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     if (!t)
         return false;
 
-    long       sign   = PyInt_AsLong(PyTuple_GET_ITEM(t.Get(), 0));     // 0 == positive; 1 == negative
     Py_ssize_t digits = PyTuple_GET_SIZE(PyTuple_GET_ITEM(t.Get(), 1));
     long       exp    = PyInt_AsLong(PyTuple_GET_ITEM(t.Get(), 2));
 
@@ -573,7 +574,6 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 
     for (Py_ssize_t i = 0; i < cParams; i++)
     {
-        PyObject* param = PySequence_GetItem(original_params, i + params_offset);
         if (!BindParameter(cur, i, cur->paramInfos[i]))
         {
             FreeInfos(cur->paramInfos, cParams);

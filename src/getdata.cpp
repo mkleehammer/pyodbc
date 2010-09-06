@@ -12,7 +12,7 @@
 
 void GetData_init()
 {
-    PyDateTime_IMPORT;    
+    PyDateTime_IMPORT;
 }
 
 class DataBuffer
@@ -108,7 +108,7 @@ public:
     {
         // cbAdd
         //   The number of bytes (cb --> count of bytes) to add.
-        
+
         if (cbAdd == 0)
             return true;
 
@@ -118,7 +118,7 @@ public:
         {
             // This is the first call and `buffer` points to stack memory.  Allocate a new object and copy the stack
             // data into it.
-            
+
             char* stackBuffer = buffer;
 
             if (dataType == SQL_C_CHAR || dataType == SQL_C_BINARY)
@@ -270,7 +270,7 @@ GetDataString(Cursor* cur, Py_ssize_t iCol)
     case SQL_WLONGVARCHAR:
         nTargetType  = SQL_C_WCHAR;
         break;
-        
+
     default:
         nTargetType  = SQL_C_BINARY;
         break;
@@ -338,7 +338,7 @@ GetDataString(Cursor* cur, Py_ssize_t iCol)
             // For some reason, the NULL terminator is used in intermediate buffers but not in this final one.
             buffer.AddUsed(cbData);
         }
-        
+
         if (ret == SQL_SUCCESS || ret == SQL_NO_DATA)
             return buffer.DetachValue();
     }
@@ -464,7 +464,7 @@ GetDataLong(Cursor* cur, Py_ssize_t iCol)
 {
     ColumnInfo* pinfo = &cur->colinfos[iCol];
 
-    SQLINTEGER value = 0;
+    long value = 0;
     SQLLEN cbFetched = 0;
     SQLRETURN ret;
 
@@ -485,16 +485,14 @@ GetDataLong(Cursor* cur, Py_ssize_t iCol)
     return PyInt_FromLong(value);
 }
 
-static PyObject*
-GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
+static PyObject* GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
 {
     ColumnInfo* pinfo = &cur->colinfos[iCol];
 
-    INT64 value = 0;
-    SQLLEN cbFetched = 0;
-    SQLRETURN ret;
-
     SQLSMALLINT nCType = pinfo->is_unsigned ? SQL_C_UBIGINT : SQL_C_SBIGINT;
+    SQLBIGINT   value;
+    SQLLEN      cbFetched;
+    SQLRETURN   ret;
 
     Py_BEGIN_ALLOW_THREADS
     ret = SQLGetData(cur->hstmt, (SQLSMALLINT)(iCol+1), nCType, &value, sizeof(value), &cbFetched);
@@ -507,9 +505,9 @@ GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
 
     if (pinfo->is_unsigned)
-        return PyLong_FromLongLong(*(UINT64*)&value);
+        return PyLong_FromUnsignedLongLong((PY_LONG_LONG)value);
 
-    return PyLong_FromLongLong(*(INT64*)&value);
+    return PyLong_FromLongLong((PY_LONG_LONG)value);
 }
 
 static PyObject*
@@ -535,7 +533,7 @@ static PyObject*
 GetSqlServerTime(Cursor* cur, Py_ssize_t iCol)
 {
     SQL_SS_TIME2_STRUCT value;
-    
+
     SQLLEN cbFetched = 0;
     SQLRETURN ret;
 
@@ -576,7 +574,7 @@ GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
         int micros = value.fraction / 1000; // nanos --> micros
         return PyTime_FromTime(value.hour, value.minute, value.second, micros);
     }
-    
+
     case SQL_TYPE_DATE:
         return PyDate_FromDate(value.year, value.month, value.day);
     }
@@ -589,7 +587,7 @@ int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
 {
     // If this sql type has a user-defined conversion, the index into the connection's `conv_funcs` array is returned.
     // Otherwise -1 is returned.
-    
+
     for (int i = 0; i < cur->cnxn->conv_count; i++)
         if (cur->cnxn->conv_types[i] == sql_type)
             return i;

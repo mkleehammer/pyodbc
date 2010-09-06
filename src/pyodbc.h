@@ -104,6 +104,7 @@ inline void UNUSED(...) { }
 #include <stdarg.h>
 
 #if defined(__GNUC__) && !defined(__MINGW32__)
+#define CDECL cdecl
 #define min(X,Y) ((X) < (Y) ? (X) : (Y))
 #define max(X,Y) ((X) > (Y) ? (X) : (Y))
 #define _alloca alloca
@@ -111,6 +112,8 @@ inline void _strlwr(char* name)
 {
     while (*name) { *name = tolower(*name); name++; }
 }
+#else
+#define CDECL
 #endif
 
 #define STRINGIFY(x) #x
@@ -139,7 +142,7 @@ inline void _strlwr(char* name)
 #endif
 
 #ifdef PYODBC_TRACE
-void __cdecl DebugTrace(const char* szFmt, ...);
+void CDECL DebugTrace(const char* szFmt, ...);
 #else  
 inline void DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
 #endif
@@ -154,5 +157,7 @@ void pyodbc_leak_check();
 #define pyodbc_malloc malloc
 #define pyodbc_free free
 #endif
+
+void PrintBytes(void* p, size_t len);
 
 #endif // pyodbc_h

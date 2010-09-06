@@ -675,8 +675,11 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
         }
         else
         {
+            SQLWChar query(pSql);
+            if (!query)
+                return 0;
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)PyUnicode_AsUnicode(pSql), SQL_NTS);
+            ret = SQLExecDirectW(cur->hstmt, query, SQL_NTS);
             Py_END_ALLOW_THREADS
         }
     }
