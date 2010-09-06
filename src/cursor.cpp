@@ -711,6 +711,9 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
         ret = SQLParamData(cur->hstmt, (SQLPOINTER*)&pParam);
         Py_END_ALLOW_THREADS
 
+        if (ret != SQL_NEED_DATA && !SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle("SQLParamData", cur->cnxn->hdbc, cur->hstmt);
+        
         TRACE("SQLParamData() --> %d\n", ret);
 
         if (ret == SQL_NEED_DATA)

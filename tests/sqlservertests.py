@@ -1137,6 +1137,14 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(value, '123.45')
 
 
+    def test_too_large(self):
+        """Ensure error raised if insert fails due to truncation"""
+        value = 'x' * 1000
+        self.cursor.execute("create table t1(s varchar(800))")
+        def test():
+            self.cursor.execute("insert into t1 values (?)", value)
+        self.assertRaises(pyodbc.DataError, test)
+
     def test_geometry_null_insert(self):
         def convert(value):
             return value
