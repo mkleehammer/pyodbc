@@ -35,6 +35,10 @@ typedef unsigned long long UINT64;
 #endif
 #endif
 
+#ifdef __SUN__
+#include <alloca.h>
+#endif
+
 #define PY_SSIZE_T_CLEAN 1
 
 #include <Python.h>
