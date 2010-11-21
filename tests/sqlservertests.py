@@ -1196,6 +1196,11 @@ class SqlServerTestCase(unittest.TestCase):
         value = self.cursor.execute("select ?", None).fetchone()[0]
         self.assertEqual(value, None)
         
+    def test_large_update_nodata(self):
+        self.cursor.execute('create table t1(a varbinary(max))')
+        hundredkb = buffer('x'*100*1024)
+        self.cursor.execute('update t1 set a=? where 1=0', (hundredkb,))
+
 
 def main():
     from optparse import OptionParser
