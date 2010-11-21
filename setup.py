@@ -16,7 +16,7 @@ OFFICIAL_BUILD = 9999
 
 class VersionCommand(Command):
 
-    description = "Prints the pyodbc version, determined from git"
+    description = "prints the pyodbc version, determined from git"
 
     user_options = []
 
@@ -29,6 +29,22 @@ class VersionCommand(Command):
     def run(self):
         version_str, version = get_version()
         print version_str
+    
+
+class TagsCommand(Command):
+    description = 'runs etags'
+    user_options = []
+    def initialize_options(self):
+        pass
+    def finalize_options(self):
+        pass
+
+    def run(self):
+        # Windows versions of etag do not seem to expand wildcards (which Unix shells normally do for Unix utilities),
+        # so find all of the files ourselves.
+        files = [ join('src', f) for f in os.listdir('src') if f.endswith(('.h', '.cpp')) ]
+        cmd = 'etags %s' % ' '.join(files)
+        return os.system(cmd)
     
 
 def main():
@@ -119,7 +135,8 @@ def main():
 
            url = 'http://code.google.com/p/pyodbc',
            download_url = 'http://code.google.com/p/pyodbc/downloads/list',
-           cmdclass = { 'version' : VersionCommand })
+           cmdclass = { 'version' : VersionCommand,
+                        'tags'    : TagsCommand })
 
 
 
