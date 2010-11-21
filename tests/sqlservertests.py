@@ -1191,6 +1191,11 @@ class SqlServerTestCase(unittest.TestCase):
             cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
         self.assertRaises(pyodbc.ProgrammingError, test)
 
+    def test_untyped_none(self):
+        # From issue 129
+        value = self.cursor.execute("select ?", None).fetchone()[0]
+        self.assertEqual(value, None)
+        
 
 def main():
     from optparse import OptionParser

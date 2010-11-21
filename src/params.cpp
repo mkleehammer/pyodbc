@@ -702,12 +702,10 @@ static bool GetParamType(Cursor* cur, Py_ssize_t index, SQLSMALLINT& type)
         ret = SQLDescribeParam(cur->hstmt, (SQLUSMALLINT)(index + 1), &cur->paramtypes[index], &ParameterSizePtr, &DecimalDigitsPtr, &NullablePtr);
         Py_END_ALLOW_THREADS
 
-        // If this fails, the value will still be SQL_UNKNOWN_TYPE, so we drop out below and return it.
-
         if (!SQL_SUCCEEDED(ret))
         {
-            RaiseErrorFromHandle("SQLDescribeParam", GetConnection(cur)->hdbc, cur->hstmt);
-            return false;
+            // This can happen with ("select ?", None).  We'll default to VARCHAR which works with most types.
+            cur->paramtypes[index] = SQL_VARCHAR;
         }
     }
 
