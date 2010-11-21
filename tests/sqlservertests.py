@@ -1222,6 +1222,13 @@ class SqlServerTestCase(unittest.TestCase):
         value = self.cursor.execute("select * from func1(?)", 'test').fetchone()[0]
         self.assertEquals(value, 'test')
         
+    def test_no_fetch(self):
+        # Issue 89 with FreeTDS: Multiple selects (or catalog functions that issue selects) without fetches seem to
+        # confuse the driver.
+        self.cursor.execute('select 1')
+        self.cursor.execute('select 1')
+        self.cursor.execute('select 1')
+
 
 def main():
     from optparse import OptionParser
