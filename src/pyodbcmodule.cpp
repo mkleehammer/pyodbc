@@ -916,7 +916,7 @@ initpyodbc()
         return;
 
     const char* szVersion = TOSTRING(PYODBC_VERSION);
-    PyModule_AddStringConstant(pModule, "version", szVersion);
+    PyModule_AddStringConstant(pModule, "version", (char*)szVersion);
 
     PyModule_AddIntConstant(pModule, "threadsafety", 1);
     PyModule_AddStringConstant(pModule, "apilevel", "2.0");
