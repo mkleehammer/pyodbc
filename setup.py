@@ -1,7 +1,8 @@
 #!/usr/bin/python
 
-import sys, os, re
+import sys, os, re, platform
 from os.path import exists, abspath, dirname, join, isdir
+from ConfigParser import SafeConfigParser
 
 try:
     # Allow use of setuptools so eggs can be built.
@@ -13,6 +14,7 @@ from distutils.extension import Extension
 from distutils.errors import *
 
 OFFICIAL_BUILD = 9999
+
 
 class VersionCommand(Command):
 
@@ -32,10 +34,14 @@ class VersionCommand(Command):
     
 
 class TagsCommand(Command):
+
     description = 'runs etags'
+
     user_options = []
+
     def initialize_options(self):
         pass
+
     def finalize_options(self):
         pass
 
@@ -47,61 +53,14 @@ class TagsCommand(Command):
         return os.system(cmd)
     
 
+
 def main():
 
     version_str, version = get_version()
 
+    settings = get_compiler_settings(version_str)
+
     files = [ abspath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
-    libraries = []
-
-    extra_compile_args = None
-    extra_link_args    = None
-
-    if os.name == 'nt':
-        libraries.append('odbc32')
-        # extra_compile_args = ['/W4']
-        # extra_compile_args = ['/W4', '/Zi', '/Od']
-        # extra_link_args    = ['/DEBUG']
-
-    elif os.environ.get("OS", '').lower().startswith('windows'):
-        # Windows Cygwin (posix on windows)
-        # OS name not windows, but still on Windows
-        libraries.append('odbc32')
-
-    elif sys.platform == 'darwin':
-        # OS/X now ships with iODBC.
-        libraries.append('iodbc')
-
-    else:
-        # Other posix-like: Linux, Solaris, etc.
-
-        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
-        extra_compile_args = ['-Wno-write-strings']
-
-        # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
-        libraries.append('odbc')
-
-    macros = [ ('PYODBC_VERSION', version_str) ]
-
-    # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
-    # command.
-    try:
-        sys.argv.remove('--assert')
-        macros.append(('PYODBC_ASSERT', 1))
-    except ValueError:
-        pass
-
-    try:
-        sys.argv.remove('--trace')
-        macros.append(('PYODBC_TRACE', 1))
-    except ValueError:
-        pass
-
-    try:
-        sys.argv.remove('--leak-check')
-        macros.append(('PYODBC_LEAK_CHECK', 1))
-    except ValueError:
-        pass
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
@@ -116,12 +75,7 @@ def main():
            maintainer       = "Michael Kleehammer",
            maintainer_email = "michael@kleehammer.com",
 
-           ext_modules = [Extension('pyodbc', files,
-                                     libraries=libraries,
-                                     define_macros = macros,
-                                     extra_compile_args=extra_compile_args,
-                                     extra_link_args=extra_link_args
-                                     )],
+           ext_modules = [Extension('pyodbc', files, **settings)],
 
            classifiers = ['Development Status :: 5 - Production/Stable',
                            'Intended Audience :: Developers',
@@ -138,6 +92,128 @@ def main():
            cmdclass = { 'version' : VersionCommand,
                         'tags'    : TagsCommand })
 
+
+
+def get_compiler_settings(version_str):
+
+    settings = { 'libraries': [],
+                 'define_macros' : [ ('PYODBC_VERSION', version_str) ] }
+
+    # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
+    # command.
+    for option in ['assert', 'trace', 'leak-check']:
+        try:
+            sys.argv.remove('--%s' % option)
+            settings['define_macros'].append(('PYODBC_%s' % option.replace('-', '_'), 1))
+        except ValueError:
+            pass
+
+    if os.name == 'nt':
+        settings['libraries'].append('odbc32')
+
+    elif os.environ.get("OS", '').lower().startswith('windows'):
+        # Windows Cygwin (posix on windows)
+        # OS name not windows, but still on Windows
+        settings['libraries'].append('odbc32')
+
+    elif sys.platform == 'darwin':
+        # OS/X now ships with iODBC.
+        settings['libraries'].append('iodbc')
+
+    else:
+        # Other posix-like: Linux, Solaris, etc.
+
+        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
+        settings['extra_compile_args'] = ['-Wno-write-strings']
+
+        # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
+        settings['libraries'].append('odbc')
+
+    get_config(settings, version_str)
+
+    return settings
+
+
+def get_config(settings, version_str):
+    """
+    Adds configuration macros from pyodbc.conf to the compiler settings dictionary.
+
+    If pyodbc.conf does not exist, it will compile and run the pyodbcconf utility.
+
+    This is similar to what autoconf provides, but only uses the infrastructure provided by Python, which is important
+    for building on *nix and Windows.
+    """
+    filename = 'pyodbc.conf'
+
+    # If the file exists, make sure that the version in it is the same as the version we are compiling.  Otherwise we
+    # might have added configuration items that aren't there.
+    if exists(filename):
+        try:
+            config = SafeConfigParser()
+            config.read(filename)
+
+            if (not config.has_option('define_macros', 'pyodbc_version') or
+                config.get('define_macros', 'pyodbc_version') != version_str):
+                print 'Recreating pyodbc.conf for new version'
+                os.remove(filename)
+
+        except:
+            config = None
+            # Assume the file has been corrupted.  Delete and recreate
+            print 'Unable to read %s.  Recreating' % filename
+            os.remove(filename)
+
+    if not exists('pyodbc.conf'):
+        # Doesn't exist, so build the pyodbcconf module and use it.
+
+        oldargv = sys.argv
+        sys.argv = [ oldargv[0], 'build' ]
+
+        setup(name="pyodbcconf",
+              ext_modules = [ Extension('pyodbcconf',
+                                        [join('utils', 'pyodbcconf', 'pyodbcconf.cpp')],
+                                        **settings) ])
+
+        sys.argv = oldargv
+
+        add_to_path()
+
+        import pyodbcconf
+        pyodbcconf.configure()
+
+    config = SafeConfigParser()
+    config.read(filename)
+
+    for section in config.sections():
+        for key, value in config.items(section):
+            settings[section].append( (key.upper(), value) )
+
+
+
+def add_to_path():
+    """
+    Prepends the build directory to the path so pyodbcconf can be imported without installing it.
+    """
+    # Now run the utility
+  
+    import imp
+    library_exts  = [ t[0] for t in imp.get_suffixes() if t[-1] == imp.C_EXTENSION ]
+    library_names = [ 'pyodbcconf%s' % ext for ext in library_exts ]
+     
+    # Only go into directories that match our version number. 
+     
+    dir_suffix = '-%s.%s' % (sys.version_info[0], sys.version_info[1])
+     
+    build = join(dirname(abspath(__file__)), 'build')
+
+    for top, dirs, files in os.walk(build):
+        dirs = [ d for d in dirs if d.endswith(dir_suffix) ]
+        for name in library_names:
+            if name in files:
+                sys.path.insert(0, top)
+                return
+  
+    raise SystemExit('Did not find pyodbcconf')
 
 
 def get_version():

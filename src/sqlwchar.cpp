@@ -3,9 +3,20 @@
 #include "sqlwchar.h"
 #include "wrapper.h"
 
-// We could eliminate a lot of trouble if we had a define for the size of a SQLWCHAR.  Unfortunately, I can't think of
-// a way to do this with the preprocessor.  Python's setup.cfg files aren't really making it easy either.  For now
-// we'll use C code and revisit this later.
+
+static bool sqlwchar_copy(SQLWCHAR* pdest, const Py_UNICODE* psrc, Py_ssize_t len)
+{
+    for (int i = 0; i <= len; i++) // ('<=' to include the NULL)
+    {
+        pdest[i] = (SQLWCHAR)psrc[i];
+        if ((Py_UNICODE)pdest[i] < psrc[i])
+        {
+            PyErr_Format(PyExc_ValueError, "Cannot convert from Unicode %zd to SQLWCHAR.  Value is too large.", (Py_ssize_t)psrc[i]);
+            return false;
+        }
+    }
+    return true;
+}
 
 SQLWChar::SQLWChar(PyObject* o)
 {
@@ -40,16 +51,14 @@ bool SQLWChar::Convert(PyObject* o)
     Py_UNICODE* pU   = (Py_UNICODE*)PyUnicode_AS_UNICODE(o);
     Py_ssize_t  lenT = PyUnicode_GET_SIZE(o);
 
-    if (sizeof(SQLWCHAR) == Py_UNICODE_SIZE)
-    {
-        // The ideal case - SQLWCHAR and Py_UNICODE are the same, so we point into the Unicode object.
+#if SQLWCHAR_SIZE == Py_UNICODE_SIZE
+    // The ideal case - SQLWCHAR and Py_UNICODE are the same, so we point into the Unicode object.
 
-        pch         = (SQLWCHAR*)pU;
-        len         = lenT;
-        owns_memory = false;
-        return true;
-    }
-
+    pch         = (SQLWCHAR*)pU;
+    len         = lenT;
+    owns_memory = false;
+    return true;
+#else
     SQLWCHAR* pchT = (SQLWCHAR*)pyodbc_malloc(sizeof(SQLWCHAR) * (lenT + 1));
     if (pchT == 0)
     {
@@ -67,37 +76,23 @@ bool SQLWChar::Convert(PyObject* o)
     len = lenT;
     owns_memory = true;
     return true;
-}
-
-
-bool sqlwchar_copy(SQLWCHAR* pdest, const Py_UNICODE* psrc, Py_ssize_t len)
-{
-    for (int i = 0; i <= len; i++) // ('<=' to include the NULL)
-    {
-        pdest[i] = (SQLWCHAR)psrc[i];
-        if ((Py_UNICODE)pdest[i] < psrc[i])
-        {
-            PyErr_Format(PyExc_ValueError, "Cannot convert from Unicode %zd to SQLWCHAR.  Value is too large.", (Py_ssize_t)psrc[i]);
-            return false;
-        }
-    }
-    return true;
+#endif
 }
 
 
 PyObject* PyUnicode_FromSQLWCHAR(const SQLWCHAR* sz, Py_ssize_t cch)
 {
-    if (sizeof(SQLWCHAR) == Py_UNICODE_SIZE)
-        return PyUnicode_FromUnicode((const Py_UNICODE*)sz, cch);
+#if SQLWCHAR_SIZE == Py_UNICODE_SIZE
 
-#if HAVE_WCHAR_H
-    if (sizeof(wchar_t) == sizeof(SQLWCHAR))
-    {
-        // Python provides a function to map from wchar_t to Unicode.  Since wchar_t and SQLWCHAR are the same size, we can
-        // use it.
-        return PyUnicode_FromWideChar((const wchar_t*)sz, cch);
-    }
-#endif
+    return PyUnicode_FromUnicode((const Py_UNICODE*)sz, cch);
+
+#elif HAVE_WCHAR_H && (WCHAR_T_SIZE == SQLWCHAR_SIZE)
+
+    // Python provides a function to map from wchar_t to Unicode.  Since wchar_t and SQLWCHAR are the same size, we can
+    // use it.
+    return PyUnicode_FromWideChar((const wchar_t*)sz, cch);
+
+#else
 
     Object result(PyUnicode_FromUnicode(0, cch));
     if (!result)
@@ -115,6 +110,8 @@ PyObject* PyUnicode_FromSQLWCHAR(const SQLWCHAR* sz, Py_ssize_t cch)
     }
     
     return result.Detach();
+
+#endif
 }
 
 void SQLWChar::dump()
@@ -149,6 +146,7 @@ void SQLWChar::dump()
     }
 }
 
+
 SQLWCHAR* SQLWCHAR_FromUnicode(const Py_UNICODE* pch, Py_ssize_t len)
 {
     SQLWCHAR* p = (SQLWCHAR*)pyodbc_malloc(sizeof(SQLWCHAR) * len);
@@ -162,4 +160,3 @@ SQLWCHAR* SQLWCHAR_FromUnicode(const Py_UNICODE* pch, Py_ssize_t len)
     }
     return p;
 }
-

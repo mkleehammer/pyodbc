@@ -149,8 +149,11 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
 
     if (len <= cur->cnxn->wvarchar_maxlength)
     {
-        // If SQLWCHAR and Py_UNICODE are not the same size, we need to allocate and copy a buffer.
-        if (len > 0 && UnicodeSizesDiffer())
+#if SQLWCHAR_SIZE == Py_UNICODE_SIZE
+        info.ParameterValuePtr = pch;
+#else
+        // SQLWCHAR and Py_UNICODE are not the same size, so we need to allocate and copy a buffer.
+        if (len > 0)
         {
             info.ParameterValuePtr = SQLWCHAR_FromUnicode(pch, len);
             if (info.ParameterValuePtr == 0)
@@ -161,7 +164,8 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
         {
             info.ParameterValuePtr = pch;
         }
-
+#endif
+        
         info.ParameterType = SQL_WVARCHAR;
         info.StrLen_or_Ind = len * sizeof(SQLWCHAR);
     }

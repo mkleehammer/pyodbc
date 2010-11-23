@@ -902,6 +902,17 @@ initpyodbc()
 
     ErrorInit();
 
+    // Make sure that this was built correctly.  Unfortunately, the lack of good static assertions leads to compiler
+    // warnings...
+    int n1 = sizeof(SQLWCHAR);
+    int n2 = SQLWCHAR_SIZE;
+    if (n1 != n2)
+    {
+        PyErr_Format(PyExc_RuntimeError, "The pyodbc module was built with incorrect SQLWCHAR_SIZE: actual-size=%d  compiled-size=%d  version=%s",
+                     n1, n2, TOSTRING(PYODBC_VERSION));
+        return;
+    }
+
     if (PyType_Ready(&ConnectionType) < 0 || PyType_Ready(&CursorType) < 0 || PyType_Ready(&RowType) < 0 || PyType_Ready(&CnxnInfoType) < 0)
         return;
 

@@ -4,6 +4,9 @@
 
 class SQLWChar
 {
+    // An object designed to convert strings and Unicode objects to SQLWCHAR, hold the temporary buffer, and delete it
+    // in the destructor.
+
 private:
     SQLWCHAR* pch;
     Py_ssize_t len;
@@ -48,15 +51,11 @@ public:
     }
 };
 
+// Allocate a new Unicode object, initialized from the given SQLWCHAR string.
 PyObject* PyUnicode_FromSQLWCHAR(const SQLWCHAR* sz, Py_ssize_t cch);
 
-bool sqlwchar_copy(SQLWCHAR* pdest, const Py_UNICODE* psrc, Py_ssize_t len);
-
+#if SQLWCHAR_SIZE != Py_UNCODE_SIZE
 SQLWCHAR* SQLWCHAR_FromUnicode(const Py_UNICODE* pch, Py_ssize_t len);
-
-inline bool UnicodeSizesDiffer() 
-{
-    return sizeof(SQLWCHAR) != sizeof(Py_UNICODE);
-}
+#endif
 
 #endif // _PYODBCSQLWCHAR_H
