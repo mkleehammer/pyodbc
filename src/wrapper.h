@@ -55,4 +55,25 @@ public:
     }
 };
 
+
+#ifdef WINVER
+struct RegKey
+{
+    HKEY hkey;
+
+    RegKey()
+    {
+        hkey = 0;
+    }
+
+    ~RegKey()
+    {
+        if (hkey != 0)
+            RegCloseKey(hkey);
+    }
+
+    operator HKEY() { return hkey; }
+};
+#endif
+
 #endif // _WRAPPER_H_

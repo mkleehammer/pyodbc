@@ -579,6 +579,44 @@ static PyObject* mod_leakcheck(PyObject* self, PyObject* args)
 }
 #endif
 
+#ifdef WINVER
+static char drivers_doc[] = "drivers() -> [ driver, ... ]\n\nReturns a list of installed drivers";
+
+static PyObject* mod_drivers(PyObject* self, PyObject* args)
+{
+    UNUSED(self, args);
+
+    RegKey key;
+    long ret = RegOpenKeyEx(HKEY_LOCAL_MACHINE, "SOFTWARE\\ODBC\\ODBCINST.INI\\ODBC Drivers", 0, KEY_QUERY_VALUE, &key.hkey);
+    if (ret != ERROR_SUCCESS)
+        return PyErr_Format(PyExc_RuntimeError, "Unable to access the driver list in the registry.  error=%ld", ret);
+ 
+    Object results(PyList_New(0));
+    DWORD index = 0;
+    char name[255];
+    DWORD length = _countof(name);
+
+    while (RegEnumValue(key, index++, name, &length, 0, 0, 0, 0) == ERROR_SUCCESS)
+    {
+        if (ret != ERROR_SUCCESS)
+            return PyErr_Format(PyExc_RuntimeError, "RegEnumKeyEx failed with error %ld\n", ret);
+
+        PyObject* oname = PyString_FromStringAndSize(name, length);
+        if (!oname)
+            return 0;
+        
+        if (PyList_Append(results.Get(), oname) != 0)
+        {
+            Py_DECREF(oname);
+            return 0;
+        }
+        length = _countof(name);
+    }
+
+    return results.Detach();
+}
+#endif
+
 static PyMethodDef pyodbc_methods[] =
 {
     { "connect",            (PyCFunction)mod_connect,            METH_VARARGS|METH_KEYWORDS, connect_doc },
@@ -586,6 +624,10 @@ static PyMethodDef pyodbc_methods[] =
     { "DateFromTicks",      (PyCFunction)mod_datefromticks,      METH_VARARGS,               datefromticks_doc },
     { "TimestampFromTicks", (PyCFunction)mod_timestampfromticks, METH_VARARGS,               timestampfromticks_doc },
     { "dataSources",        (PyCFunction)mod_datasources,        METH_NOARGS,                datasources_doc },
+
+#ifdef WINVER
+    { "drivers", (PyCFunction)mod_drivers, METH_NOARGS, drivers_doc },
+#endif
 
 #ifdef PYODBC_LEAK_CHECK
     { "leakcheck", (PyCFunction)mod_leakcheck, METH_NOARGS, 0 },
