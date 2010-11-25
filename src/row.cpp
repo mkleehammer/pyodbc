@@ -264,6 +264,9 @@ static PyObject* Row_richcompare(PyObject* olhs, PyObject* orhs, int op)
 		case Py_LE: result = (lhs->cValues <= rhs->cValues); break;
 		case Py_LT: result = (lhs->cValues <  rhs->cValues); break;
 		case Py_NE: result = (lhs->cValues != rhs->cValues); break;
+        default:
+            // Can't get here, but don't have a cross-compiler way to silence this.
+            result = false;
 		}
         PyObject* p = result ? Py_True : Py_False;
         Py_INCREF(p);

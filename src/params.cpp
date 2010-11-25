@@ -267,8 +267,6 @@ static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
 static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
 {
     // TODO: Overflow?
-    long long value = PyLong_AsLongLong(param);
-
     info.Data.i64 = (INT64)PyLong_AsLongLong(param);
 
     info.ValueType         = SQL_C_SBIGINT;

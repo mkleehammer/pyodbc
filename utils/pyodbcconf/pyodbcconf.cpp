@@ -55,10 +55,10 @@ static PyObject* mod_configure(PyObject* self)
     
     fprintf(f, "[define_macros]\n");
     fprintf(f, "PYODBC_VERSION: %s\n", TOSTRING(PYODBC_VERSION));
-    fprintf(f, "SQLWCHAR_SIZE: %d\n", sizeof(SQLWCHAR));
+    fprintf(f, "SQLWCHAR_SIZE: %d\n", (int)sizeof(SQLWCHAR));
 
 #if HAVE_WCHAR_H
-    fprintf(f, "WCHAR_T_SIZE: %d\n", sizeof(wchar_t));
+    fprintf(f, "WCHAR_T_SIZE: %d\n", (int)sizeof(wchar_t));
 #endif
 
     fclose(f);
@@ -74,5 +74,5 @@ static PyMethodDef methods[] =
 
 PyMODINIT_FUNC initpyodbcconf()
 {
-    PyObject* mod = Py_InitModule4("pyodbcconf", methods, 0, 0, PYTHON_API_VERSION);
+    Py_InitModule4("pyodbcconf", methods, 0, 0, PYTHON_API_VERSION);
 }
