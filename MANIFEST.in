@@ -2,6 +2,7 @@ include src/*.h
 include src/*.cpp
 include tests/*
 include README.rst
+recursive-include utils *.cpp
 
 # Include this file, needed for bdist_rpm
 include MANIFEST.in
