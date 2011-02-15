@@ -121,6 +121,18 @@ def get_compiler_settings(version_str):
         # OS/X now ships with iODBC.
         settings['libraries'].append('iodbc')
 
+    elif sys.platform.startswith('freebsd'):
+        try:
+            include = '-I'+os.environ['PREFIX']+'/include'
+            lib = '-L'+os.environ['PREFIX']+'/lib'
+        except:
+            include = '-I/usr/local/include'
+            lib = '-L/usr/local/lib'
+
+        settings['extra_compile_args'] = ['-Wno-write-strings', include, lib]
+        settings['extra_link_args'] = [ lib ]
+        settings['libraries'].append('odbc')
+
     else:
         # Other posix-like: Linux, Solaris, etc.
 
