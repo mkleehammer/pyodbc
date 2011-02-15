@@ -24,6 +24,7 @@
 #include "getdata.h"
 #include "dbspecific.h"
 #include "sqlwchar.h"
+#include "virtuoso.h"
 
 enum
 {
@@ -778,6 +779,8 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
 
     FreeParameterData(cur);
 
+    cur->spasql = (cur->cnxn->virtuoso && isSPASQL(pSql));
+
     if (ret == SQL_NO_DATA)
     {
         // Example: A delete statement that did not delete anything.
@@ -1002,7 +1005,7 @@ Cursor_fetch(Cursor* cur)
             return 0;
         }
 
-        apValues[i] = value;
+	apValues[i] = value;
     }
 
     return (PyObject*)Row_New(cur->description, cur->map_name_to_index, field_count, apValues);

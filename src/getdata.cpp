@@ -9,6 +9,7 @@
 #include "errors.h"
 #include "dbspecific.h"
 #include "sqlwchar.h"
+#include "virtuoso.h"
 
 void GetData_init()
 {
@@ -594,6 +595,87 @@ int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
     return -1;
 }
 
+static
+PyObject *GetDataSPASQL(Cursor *cur, Py_ssize_t column)
+{
+    // Return a tuple of information sufficient to glean the
+    // real underlying type in case of a Virtuoso SPASQL query
+    int dvtype, flag;
+    SQLHANDLE hdesc = SQL_NULL_HANDLE;
+    SQLRETURN ret;
+    SQLCHAR lang[0x100], dtype[0x100];
+    SQLINTEGER len, dv_dt_type;
+    PyObject *value, *colinfo;
+
+    memset(lang, 0, sizeof(lang));
+    memset(dtype, 0, sizeof(dtype));
+
+    value = GetDataString(cur, column);
+    if (!value)
+	return Py_None;
+
+    // why do the virtuoso extensions number the columns from 1???
+    column += 1;
+
+    Py_BEGIN_ALLOW_THREADS
+	ret = SQLGetStmtAttr(cur->hstmt, SQL_ATTR_IMP_ROW_DESC, &hdesc, SQL_IS_POINTER, NULL);
+    Py_END_ALLOW_THREADS;
+    if (!SQL_SUCCEEDED(ret)) {
+	return Py_None;
+    }
+    Py_BEGIN_ALLOW_THREADS
+	ret = SQLGetDescField(hdesc, column, SQL_DESC_COL_DV_TYPE, &dvtype, SQL_IS_INTEGER, NULL);
+    Py_END_ALLOW_THREADS;
+    if (!SQL_SUCCEEDED(ret)) {
+	return Py_None;
+    }    
+    Py_BEGIN_ALLOW_THREADS
+	ret = SQLGetDescField(hdesc, column, SQL_DESC_COL_BOX_FLAGS, &flag, SQL_IS_INTEGER, NULL);
+    Py_END_ALLOW_THREADS;
+    if (!SQL_SUCCEEDED(ret)) {
+	return Py_None;
+    }
+
+    switch (dvtype) {
+        case VIRTUOSO_DV_RDF:
+	    Py_BEGIN_ALLOW_THREADS
+		ret = SQLGetDescField(hdesc, column, SQL_DESC_COL_LITERAL_LANG, lang, sizeof(lang), &len);
+	    Py_END_ALLOW_THREADS;
+	    if (!SQL_SUCCEEDED(ret))
+		return Py_None;
+	    Py_BEGIN_ALLOW_THREADS
+		ret = SQLGetDescField(hdesc, column, SQL_DESC_COL_LITERAL_TYPE, dtype, sizeof(dtype), &len);
+	    Py_END_ALLOW_THREADS;
+	    if (!SQL_SUCCEEDED(ret))
+		return Py_None;
+	    break;
+        case VIRTUOSO_DV_TIMESTAMP:
+        case VIRTUOSO_DV_DATE:
+        case VIRTUOSO_DV_TIME:
+        case VIRTUOSO_DV_DATETIME:
+	    Py_BEGIN_ALLOW_THREADS
+		ret = SQLGetDescField (hdesc, column, SQL_DESC_COL_DT_DT_TYPE, &dv_dt_type, SQL_IS_INTEGER, NULL);
+	    Py_END_ALLOW_THREADS;
+	    if (!SQL_SUCCEEDED(ret))
+		return Py_None;
+	    break;
+        default:
+	    break;
+    }
+
+    colinfo = Py_BuildValue("(Oiiiss)",
+			    value,
+			    dvtype,
+			    dv_dt_type,
+			    flag,
+			    (char *)lang,
+			    (char *)dtype);
+    if (!colinfo)
+	return Py_None;
+
+    return colinfo;
+}
+
 
 PyObject*
 GetData(Cursor* cur, Py_ssize_t iCol)
@@ -609,6 +691,10 @@ GetData(Cursor* cur, Py_ssize_t iCol)
     int conv_index = GetUserConvIndex(cur, pinfo->sql_type);
     if (conv_index != -1)
         return GetDataUser(cur, iCol, conv_index);
+
+    // Check if we have to apply SPASQL processing
+    if (cur->spasql)
+	return GetDataSPASQL(cur, iCol);
 
     switch (pinfo->sql_type)
     {

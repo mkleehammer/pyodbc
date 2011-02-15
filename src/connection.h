@@ -52,6 +52,8 @@ struct Connection
     int wvarchar_maxlength;
     int binary_maxlength;
 
+    bool virtuoso;
+
     // Output conversions.  Maps from SQL type in conv_types to the converter function in conv_funcs.
     //
     // If conv_count is zero, conv_types and conv_funcs will also be zero.
