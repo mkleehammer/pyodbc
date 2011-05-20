@@ -8,7 +8,7 @@
 struct SqlStateMapping
 {
     char* prefix;
-    int   prefix_len;
+    size_t prefix_len;
     PyObject** pexc_class;      // Note: Double indirection (pexc_class) necessary because the pointer values are not
                                 // initialized during startup
 };

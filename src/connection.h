@@ -24,7 +24,7 @@ struct Connection
 	HDBC hdbc;
 
     // Will be SQL_AUTOCOMMIT_ON or SQL_AUTOCOMMIT_OFF.
-    int nAutoCommit;
+    SQLUINTEGER nAutoCommit;
 
     // The ODBC version the driver supports, from SQLGetInfo(DRIVER_ODBC_VER).  This is set after connecting.
     char odbc_major;

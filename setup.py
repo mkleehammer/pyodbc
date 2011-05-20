@@ -109,6 +109,14 @@ def get_compiler_settings(version_str):
             pass
 
     if os.name == 'nt':
+        settings['extra_compile_args'] = ['/Wall',
+                                          '/wd4668',
+                                          '/wd4820',
+                                          '/wd4711', # function selected for automatic inline expansion
+                                          '/wd4100', # unreferenced formal parameter
+                                          '/wd4127', # "conditional expression is constant" testing compilation constants
+                                          '/wd4191', # casts to PYCFunction, perhaps the extra parameters should be added
+                                          ]
         settings['libraries'].append('odbc32')
         settings['libraries'].append('advapi32')
 

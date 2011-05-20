@@ -116,7 +116,7 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
         if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_TYPE_TIMESTAMP)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
         {
             if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
-                p->datetime_precision = columnsize;
+                p->datetime_precision = (int)columnsize;
 
             SQLFreeStmt(hstmt, SQL_CLOSE);
         }

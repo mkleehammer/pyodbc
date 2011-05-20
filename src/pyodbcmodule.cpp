@@ -601,7 +601,7 @@ static PyObject* mod_drivers(PyObject* self, PyObject* args)
         if (ret != ERROR_SUCCESS)
             return PyErr_Format(PyExc_RuntimeError, "RegEnumKeyEx failed with error %ld\n", ret);
 
-        PyObject* oname = PyString_FromStringAndSize(name, length);
+        PyObject* oname = PyString_FromStringAndSize(name, (Py_ssize_t)length);
         if (!oname)
             return 0;
         

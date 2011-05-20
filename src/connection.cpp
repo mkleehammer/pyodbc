@@ -112,13 +112,13 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
                                 "not have a Unicode connect function");
                 return false;
             }
-            szConnect[i] = (char)p[i];
+            szConnect[i] = (SQLCHAR)p[i];
         }
     }
     else
     {
         const char* p = PyString_AS_STRING(pConnectString);
-        memcpy(szConnect, p, PyString_GET_SIZE(pConnectString) + 1);
+        memcpy(szConnect, p, (size_t)(PyString_GET_SIZE(pConnectString) + 1));
     }
 
     Py_BEGIN_ALLOW_THREADS
@@ -679,7 +679,7 @@ Connection_setautocommit(PyObject* self, PyObject* value, void* closure)
         return -1;
     }
     
-    int nAutoCommit = PyObject_IsTrue(value) ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
+    SQLUINTEGER nAutoCommit = PyObject_IsTrue(value) ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
     ret = SQLSetConnectAttr(cnxn->hdbc, SQL_ATTR_AUTOCOMMIT, (SQLPOINTER)nAutoCommit, SQL_IS_UINTEGER);
@@ -771,7 +771,7 @@ Connection_settimeout(PyObject* self, PyObject* value, void* closure)
     return 0;
 }
 
-static bool _add_converter(Connection* cnxn, int sqltype, PyObject* func)
+static bool _add_converter(Connection* cnxn, SQLSMALLINT sqltype, PyObject* func)
 {
     if (cnxn->conv_count)
     {
@@ -852,7 +852,7 @@ Connection_conv_add(Connection* cnxn, PyObject* args)
     if (!PyArg_ParseTuple(args, "iO", &sqltype, &func))
         return 0;
 
-    if (!_add_converter(cnxn, sqltype, func))
+    if (!_add_converter(cnxn, (SQLSMALLINT)sqltype, func))
         return 0;
 
     Py_RETURN_NONE;

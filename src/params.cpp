@@ -120,7 +120,7 @@ static bool GetStringInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamI
     Py_ssize_t len = PyString_GET_SIZE(param);
 
     info.ValueType  = SQL_C_CHAR;
-    info.ColumnSize = max(len, 1);
+    info.ColumnSize = (SQLUINTEGER)max(len, 1);
 
     if (len <= cur->cnxn->varchar_maxlength)
     {
@@ -145,7 +145,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     Py_ssize_t  len = PyUnicode_GET_SIZE(param);
 
     info.ValueType  = SQL_C_WCHAR;
-    info.ColumnSize = max(len, 1);
+    info.ColumnSize = (SQLUINTEGER)max(len, 1);
 
     if (len <= cur->cnxn->wvarchar_maxlength)
     {
@@ -167,7 +167,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
 #endif
         
         info.ParameterType = SQL_WVARCHAR;
-        info.StrLen_or_Ind = len * sizeof(SQLWCHAR);
+        info.StrLen_or_Ind = (SQLINTEGER)(len * sizeof(SQLWCHAR));
     }
     else
     {
@@ -220,7 +220,7 @@ static bool GetDateTimeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Para
 
     info.ValueType         = SQL_C_TIMESTAMP;
     info.ParameterType     = SQL_TIMESTAMP;
-    info.ColumnSize        = ((Connection*)cur->cnxn)->datetime_precision;
+    info.ColumnSize        = (SQLUINTEGER)((Connection*)cur->cnxn)->datetime_precision;
     info.StrLen_or_Ind     = sizeof(TIMESTAMP_STRUCT);
     info.ParameterValuePtr = &info.Data.timestamp;
     return true;
@@ -292,14 +292,14 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
     long count = (long)PyTuple_GET_SIZE(digits);
 
     char* pch;
-    long len;
+    int len;
 
     if (exp >= 0)
     {
         // (1 2 3) exp = 2 --> '12300'
 
         len = sign + count + exp + 1; // 1: NULL
-        pch = (char*)pyodbc_malloc(len);
+        pch = (char*)pyodbc_malloc((size_t)len);
         if (pch)
         {
             char* p = pch;
@@ -317,7 +317,7 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
         // (1 2 3) exp = -2 --> 1.23 : prec = 3, scale = 2
 
         len = sign + count + 2; // 2: decimal + NULL
-        pch = (char*)pyodbc_malloc(len);
+        pch = (char*)pyodbc_malloc((size_t)len);
         if (pch)
         {
             char* p = pch;
@@ -338,7 +338,7 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
 
         len = sign + -exp + 3; // 3: leading zero + decimal + NULL
 
-        pch = (char*)pyodbc_malloc(len);
+        pch = (char*)pyodbc_malloc((size_t)len);
         if (pch)
         {
             char* p = pch;
@@ -384,20 +384,20 @@ static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     {
         // (1 2 3) exp = 2 --> '12300'
 
-        info.ColumnSize    = count + exp;
+        info.ColumnSize    = (SQLUINTEGER)count + exp;
         info.DecimalDigits = 0;
 
     }
     else if (-exp <= count)
     {
         // (1 2 3) exp = -2 --> 1.23 : prec = 3, scale = 2
-        info.ColumnSize    = count;
+        info.ColumnSize    = (SQLUINTEGER)count;
         info.DecimalDigits = (SQLSMALLINT)-exp;
     }
     else
     {
         // (1 2 3) exp = -5 --> 0.00123 : prec = 5, scale = 5
-        info.ColumnSize    = count + (-exp);
+        info.ColumnSize    = (SQLUINTEGER)(count + (-exp));
         info.DecimalDigits = (SQLSMALLINT)info.ColumnSize;
     }
 
@@ -411,7 +411,7 @@ static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     }
     info.allocated = true;
 
-    info.StrLen_or_Ind = strlen((char*)info.ParameterValuePtr);
+    info.StrLen_or_Ind = (SQLINTEGER)strlen((char*)info.ParameterValuePtr);
 
     return true;
 }
@@ -430,7 +430,7 @@ static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamI
         info.ParameterType     = SQL_VARBINARY;
         info.ParameterValuePtr = (SQLPOINTER)pb;
         info.BufferLength      = cb;
-        info.ColumnSize        = max(cb, 1);
+        info.ColumnSize        = (SQLUINTEGER)max(cb, 1);
         info.StrLen_or_Ind     = cb;
     }
     else
@@ -441,7 +441,7 @@ static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamI
 
         info.ParameterType     = SQL_LONGVARBINARY;
         info.ParameterValuePtr = param;
-        info.ColumnSize        = PyBuffer_Size(param);
+        info.ColumnSize        = (SQLUINTEGER)PyBuffer_Size(param);
         info.BufferLength      = sizeof(PyObject*); // How big is ParameterValuePtr; ODBC copies it and gives it back in SQLParamData
         info.StrLen_or_Ind     = SQL_LEN_DATA_AT_EXEC(PyBuffer_Size(param));
     }

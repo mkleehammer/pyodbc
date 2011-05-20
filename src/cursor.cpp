@@ -307,7 +307,7 @@ create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
             // I'm not sure how
             if (cDecimalDigits != 0)
             {
-                nColSize = cDecimalDigits + 3;
+                nColSize = (SQLUINTEGER)(cDecimalDigits + 3);
             }
             else
             {
@@ -318,12 +318,12 @@ create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
         
         colinfo = Py_BuildValue("(sOOiiiO)",
                                 (char*)name,
-                                type,           // type_code
-                                Py_None,        // display size
-                                (int)nColSize,  // internal_size
-                                nColSize,       // precision
-                                cDecimalDigits, // scale
-                                nullable_obj);  // null_ok
+                                type,                // type_code
+                                Py_None,             // display size
+                                (int)nColSize,       // internal_size
+                                (int)nColSize,       // precision
+                                (int)cDecimalDigits, // scale
+                                nullable_obj);       // null_ok
         if (!colinfo)
             goto done;
 
@@ -598,7 +598,7 @@ PrepareResults(Cursor* cur, int cCols)
 
     for (i = 0; i < cCols; i++)
     {
-        if (!InitColumnInfo(cur, (SQLSMALLINT)(i + 1), &cur->colinfos[i]))
+        if (!InitColumnInfo(cur, (SQLUSMALLINT)(i + 1), &cur->colinfos[i]))
         {
             pyodbc_free(cur->colinfos);
             cur->colinfos = 0;
@@ -747,7 +747,7 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
                 {
                     SQLLEN remaining = min(cur->cnxn->varchar_maxlength, length - offset);
                     Py_BEGIN_ALLOW_THREADS
-                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)wchar[offset], remaining * sizeof(SQLWCHAR));
+                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)wchar[offset], (SQLLEN)(remaining * sizeof(SQLWCHAR)));
                     Py_END_ALLOW_THREADS
                     if (!SQL_SUCCEEDED(ret))
                         return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
@@ -1308,8 +1308,8 @@ Cursor_statistics(PyObject* self, PyObject* args, PyObject* kwargs)
     if (!free_results(cur, FREE_STATEMENT))
         return 0;
     
-    SQLUSMALLINT nUnique   = PyObject_IsTrue(pUnique) ? SQL_INDEX_UNIQUE : SQL_INDEX_ALL;
-    SQLUSMALLINT nReserved = PyObject_IsTrue(pQuick)  ? SQL_QUICK : SQL_ENSURE;
+    SQLUSMALLINT nUnique   = (SQLUSMALLINT)(PyObject_IsTrue(pUnique) ? SQL_INDEX_UNIQUE : SQL_INDEX_ALL);
+    SQLUSMALLINT nReserved = (SQLUSMALLINT)(PyObject_IsTrue(pQuick)  ? SQL_QUICK : SQL_ENSURE);
 
     SQLRETURN ret = 0;
 
@@ -1388,7 +1388,7 @@ _specialColumns(PyObject* self, PyObject* args, PyObject* kwargs, SQLUSMALLINT n
     
     SQLRETURN ret = 0;
 
-    SQLSMALLINT nNullable = PyObject_IsTrue(pNullable) ? SQL_NULLABLE : SQL_NO_NULLS;
+    SQLUSMALLINT nNullable = (SQLUSMALLINT)(PyObject_IsTrue(pNullable) ? SQL_NULLABLE : SQL_NO_NULLS);
 
     Py_BEGIN_ALLOW_THREADS
     ret = SQLSpecialColumns(cur->hstmt, nIdType, (SQLCHAR*)szCatalog, SQL_NTS, (SQLCHAR*)szSchema, SQL_NTS, (SQLCHAR*)szTable, SQL_NTS,
