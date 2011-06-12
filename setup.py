@@ -6,7 +6,7 @@ from ConfigParser import SafeConfigParser
 
 try:
     # Allow use of setuptools so eggs can be built.
-    from setuptools.core import setup, Command
+    from setuptools import setup, Command
 except ImportError:
     from distutils.core import setup, Command
 
