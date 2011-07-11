@@ -174,7 +174,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
         // Too long to pass all at once, so we'll provide the data at execute.
 
         info.ParameterType     = SQL_WLONGVARCHAR;
-        info.StrLen_or_Ind     = SQL_LEN_DATA_AT_EXEC((SQLLEN)len);
+        info.StrLen_or_Ind     = SQL_LEN_DATA_AT_EXEC((SQLLEN)(len * sizeof(SQLWCHAR)));
         info.ParameterValuePtr = param;
     }
 
