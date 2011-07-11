@@ -9,6 +9,7 @@
 #include "errors.h"
 #include "dbspecific.h"
 #include "sqlwchar.h"
+#include <alloca.h>
 
 void GetData_init()
 {
