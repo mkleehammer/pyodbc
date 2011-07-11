@@ -65,6 +65,10 @@ def main():
     if exists('MANIFEST'):
         os.remove('MANIFEST')
 
+    options = {}
+    if sys.hexversion >= 0x02060000:
+        options['bdist_wininst'] = {'user_access_control' : 'auto'}
+
     setup (name = "pyodbc",
            version = version_str,
            description = "DB API Module for ODBC",
@@ -76,6 +80,8 @@ def main():
            maintainer_email = "michael@kleehammer.com",
 
            ext_modules = [Extension('pyodbc', files, **settings)],
+
+           options = options,
 
            classifiers = ['Development Status :: 5 - Production/Stable',
                            'Intended Audience :: Developers',
