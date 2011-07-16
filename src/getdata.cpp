@@ -9,7 +9,6 @@
 #include "errors.h"
 #include "dbspecific.h"
 #include "sqlwchar.h"
-#include <alloca.h>
 
 void GetData_init()
 {
@@ -149,13 +148,13 @@ public:
             return true;
         }
 
-        if (PyString_CheckExact(bufferOwner))
+        if (bufferOwner && PyString_CheckExact(bufferOwner))
         {
             if (_PyString_Resize(&bufferOwner, newSize) == -1)
                 return false;
             buffer = PyString_AS_STRING(bufferOwner);
         }
-        else if (PyUnicode_CheckExact(bufferOwner))
+        else if (bufferOwner && PyUnicode_CheckExact(bufferOwner))
         {
             if (PyUnicode_Resize(&bufferOwner, newSize / element_size) == -1)
                 return false;
@@ -192,7 +191,7 @@ public:
             return PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, bytesUsed / element_size);
         }
 
-        if (PyString_CheckExact(bufferOwner))
+        if (bufferOwner && PyString_CheckExact(bufferOwner))
         {
             if (_PyString_Resize(&bufferOwner, bytesUsed) == -1)
                 return 0;
@@ -202,7 +201,7 @@ public:
             return tmp;
         }
 
-        if (PyUnicode_CheckExact(bufferOwner))
+        if (bufferOwner && PyUnicode_CheckExact(bufferOwner))
         {
             if (PyUnicode_Resize(&bufferOwner, bytesUsed / element_size) == -1)
                 return 0;

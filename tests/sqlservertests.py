@@ -286,6 +286,14 @@ class SqlServerTestCase(unittest.TestCase):
     def test_unicode_upperlatin(self):
         self._test_strtype('varchar', 'á')
 
+    def test_unicode_longmax(self):
+        # Issue 188:	Segfault when fetching NVARCHAR(MAX) data over 511 bytes
+
+        ver = self.get_sqlserver_version()
+        if ver < 9:            # 2005+
+            return              # so pass / ignore
+        self.cursor.execute("select cast(replicate(N'x', 512) as nvarchar(max))")
+
     #
     # binary
     #
