@@ -33,7 +33,7 @@ public:
 
     void Attach(PyObject* _p)
     {
-        Detach();
+        Py_XDECREF(p);
         p = _p;
     }
 

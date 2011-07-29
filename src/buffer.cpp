@@ -10,15 +10,19 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "pyodbc.h"
+
+#if PY_MAJOR_VERSION < 3
+
+
 #include "buffer.h"
 #include "pyodbcmodule.h"
 
 Py_ssize_t
 PyBuffer_GetMemory(PyObject* buffer, const char** pp)
 {
-    PyBufferProcs* procs = buffer->ob_type->tp_as_buffer;
+    PyBufferProcs* procs = Py_TYPE(buffer)->tp_as_buffer;
 
-    if (!procs || !PyType_HasFeature(buffer->ob_type, Py_TPFLAGS_HAVE_GETCHARBUFFER))
+    if (!procs || !PyType_HasFeature(Py_TYPE(buffer), Py_TPFLAGS_HAVE_GETCHARBUFFER))
     {
         // Can't access the memory directly because the buffer object doesn't support it.
         return -1;
@@ -53,6 +57,7 @@ PyBuffer_Size(PyObject* self)
     }
 
     Py_ssize_t total_len = 0;
-    self->ob_type->tp_as_buffer->bf_getsegcount(self, &total_len);
+    Py_TYPE(self)->tp_as_buffer->bf_getsegcount(self, &total_len);
     return total_len;
 }
+#endif

@@ -65,7 +65,7 @@ struct Connection
 };
 
 #define Connection_Check(op) PyObject_TypeCheck(op, &ConnectionType)
-#define Connection_CheckExact(op) ((op)->ob_type == &ConnectionType)
+#define Connection_CheckExact(op) (Py_TYPE(op) == &ConnectionType)
 
 /*
  * Used by the module's connect function to create new connection objects.  If unable to connect to the database, an

@@ -72,7 +72,31 @@ static PyMethodDef methods[] =
     { 0, 0, 0, 0 }
 };
 
-PyMODINIT_FUNC initpyodbcconf()
+#if PY_MAJOR_VERSION >= 3
+static struct PyModuleDef moduledef = {
+    PyModuleDef_HEAD_INIT,
+    "pyodbcconf",               // m_name
+    0,
+    -1,                         // m_size
+    methods,                    // m_methods
+    0,                          // m_reload
+    0,                          // m_traverse
+    0,                          // m_clear
+    0,                          // m_free
+    };
+#endif
+
+
+PyMODINIT_FUNC
+#if PY_MAJOR_VERSION >= 3
+PyInit_pyodbcconf()
+#else
+initpyodbcconf()
+#endif
 {
+#if PY_MAJOR_VERSION >= 3
+    return PyModule_Create(&moduledef);
+#else
     Py_InitModule4("pyodbcconf", methods, 0, 0, PYTHON_API_VERSION);
+#endif
 }

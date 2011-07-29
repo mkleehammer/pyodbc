@@ -2,7 +2,10 @@
 
 import sys, os, re, platform
 from os.path import exists, abspath, dirname, join, isdir
-from ConfigParser import SafeConfigParser
+try:
+    from ConfigParser import SafeConfigParser
+except:
+    from configparser import SafeConfigParser
 
 try:
     # Allow use of setuptools so eggs can be built.
@@ -15,6 +18,9 @@ from distutils.errors import *
 
 OFFICIAL_BUILD = 9999
 
+def _print(s):
+    # Python 2/3 compatibility
+    sys.stdout.write(s + '\n')
 
 class VersionCommand(Command):
 
@@ -30,7 +36,7 @@ class VersionCommand(Command):
 
     def run(self):
         version_str, version = get_version()
-        print version_str
+        sys.stdout.write(version_str + '\n')
     
 
 class TagsCommand(Command):
@@ -110,7 +116,7 @@ def get_compiler_settings(version_str):
     for option in ['assert', 'trace', 'leak-check']:
         try:
             sys.argv.remove('--%s' % option)
-            settings['define_macros'].append(('PYODBC_%s' % option.replace('-', '_'), 1))
+            settings['define_macros'].append(('PYODBC_%s' % option.replace('-', '_').upper(), 1))
         except ValueError:
             pass
 
@@ -169,13 +175,13 @@ def get_config(settings, version_str):
 
             if (not config.has_option('define_macros', 'pyodbc_version') or
                 config.get('define_macros', 'pyodbc_version') != version_str):
-                print 'Recreating pyodbc.conf for new version'
+                _print('Recreating pyodbc.conf for new version')
                 os.remove(filename)
 
         except:
             config = None
             # Assume the file has been corrupted.  Delete and recreate
-            print 'Unable to read %s.  Recreating' % filename
+            _print('Unable to read %s.  Recreating' % filename)
             os.remove(filename)
 
     if not exists('pyodbc.conf'):
@@ -268,7 +274,7 @@ def get_version():
         name, numbers = _get_version_git()
 
     if not numbers:
-        print 'WARNING: Unable to determine version.  Using 2.1.0.0'
+        _print('WARNING: Unable to determine version.  Using 2.1.0.0')
         name, numbers = '2.1.0-unsupported', [2,1,0,0]
 
     return name, numbers
@@ -292,7 +298,7 @@ def _get_version_pkginfo():
 def _get_version_git():
     n, result = getoutput('git describe --tags --match 2.*')
     if n:
-        print 'WARNING: git describe failed with: %s %s' % (n, result)
+        _print('WARNING: git describe failed with: %s %s' % (n, result))
         return None, None
 
     match = re.match(r'(\d+).(\d+).(\d+) (?: -(\d+)-g[0-9a-z]+)?', result, re.VERBOSE)

@@ -117,8 +117,13 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
     }
     else
     {
+#if PY_MAJOR_VERSION < 3
         const char* p = PyString_AS_STRING(pConnectString);
         memcpy(szConnect, p, (size_t)(PyString_GET_SIZE(pConnectString) + 1));
+#else
+        PyErr_SetString(PyExc_TypeError, "Connection strings must be Unicode");
+        return false;
+#endif
     }
 
     Py_BEGIN_ALLOW_THREADS
@@ -171,7 +176,13 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
 
     // Set all variables to something valid, so we don't crash in dealloc if this function fails.
 
+#ifdef _MSC_VER
+#pragma warning(disable : 4365)
+#endif
     Connection* cnxn = PyObject_NEW(Connection, &ConnectionType);
+#ifdef _MSC_VER
+#pragma warning(default : 4365)
+#endif
 
     if (cnxn == 0)
     {
@@ -573,10 +584,14 @@ Connection_getinfo(PyObject* self, PyObject* args)
     case GI_UINTEGER:
     {
         SQLUINTEGER n = *(SQLUINTEGER*)szBuffer; // Does this work on PPC or do we need a union?
+#if PY_MAJOR_VERSION >= 3
+        result = PyLong_FromLong((long)n);
+#else
         if (n <= (SQLUINTEGER)PyInt_GetMax())
             result = PyInt_FromLong((long)n);
         else
             result = PyLong_FromUnsignedLong(n);
+#endif
         break;
     }
     
@@ -902,8 +917,7 @@ static PyGetSetDef Connection_getseters[] = {
 
 PyTypeObject ConnectionType =
 {
-    PyObject_HEAD_INIT(0)
-    0,                                                      // ob_size
+    PyVarObject_HEAD_INIT(0, 0)
     "pyodbc.Connection",                                    // tp_name
     sizeof(Connection),                                     // tp_basicsize
     0,                                                      // tp_itemsize

@@ -32,7 +32,7 @@ void FreeRowValues(Py_ssize_t cValues, PyObject** apValues);
 
 extern PyTypeObject RowType;
 #define Row_Check(op) PyObject_TypeCheck(op, &RowType)
-#define Row_CheckExact(op) ((op)->ob_type == &RowType)
+#define Row_CheckExact(op) (Py_TYPE(op) == &RowType)
 
 #endif
 

@@ -37,7 +37,7 @@ extern PyObject* decimal_type;
 
 inline bool PyDecimal_Check(PyObject* p)
 {
-    return p->ob_type == (_typeobject*)decimal_type;
+    return Py_TYPE(p) == (_typeobject*)decimal_type;
 }
 
 extern HENV henv;
@@ -54,9 +54,6 @@ inline bool lowercase()
     return PyObject_GetAttrString(pModule, "lowercase") == Py_True;
 }
 
-extern char chDecimal;
-extern char chGroupSeparator;
-extern char chCurrencySymbol;
-
+extern Py_UNICODE chDecimal;
 
 #endif // _PYPGMODULE_H

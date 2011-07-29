@@ -86,6 +86,12 @@ RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* format, ...)
     return 0;
 }
 
+#if PY_MAJOR_VERSION < 3
+#define PyString_CompareWithASCIIString(lhs, rhs) _strcmpi(PyString_AS_STRING(lhs), rhs)
+#else
+#define PyString_CompareWithASCIIString PyUnicode_CompareWithASCIIString
+#endif
+
 bool HasSqlState(PyObject* ex, const char* szSqlState)
 {
     // Returns true if `ex` is an exception and has the given SQLSTATE.  It is safe to pass 0 for ex.
@@ -100,9 +106,10 @@ bool HasSqlState(PyObject* ex, const char* szSqlState)
             PyObject* s = PySequence_GetItem(args, 1);
             if (s != 0 && PyString_Check(s))
             {
-                const char* sz = PyString_AsString(s);
-                if (sz && _strcmpi(sz, szSqlState) == 0)
-                    has = true;
+                // const char* sz = PyString_AsString(s);
+                // if (sz && _strcmpi(sz, szSqlState) == 0)
+                //     has = true;
+                has = (PyString_CompareWithASCIIString(s, szSqlState) == 0);
             }
             Py_XDECREF(s);
             Py_DECREF(args);
