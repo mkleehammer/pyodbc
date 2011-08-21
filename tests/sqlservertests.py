@@ -1196,14 +1196,25 @@ class SqlServerTestCase(unittest.TestCase):
         rows = list(rows)
         rows.sort() # uses <
         
-    def test_context_manager(self):
-        with pyodbc.connect(self.connection_string) as cnxn:
-            cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
+    def test_context_manager_success(self):
 
-        # The connection should be closed now.
-        def test():
-            cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
-        self.assertRaises(pyodbc.ProgrammingError, test)
+        self.cursor.execute("create table t1(n int)")
+        self.cnxn.commit()
+
+        try:
+            with pyodbc.connect(self.connection_string) as cnxn:
+                cursor = cnxn.cursor()
+                cursor.execute("insert into t1 values (1)")
+        except Exception:
+            pass
+
+        cnxn = None
+        cursor = None
+
+        rows = self.cursor.execute("select n from t1").fetchall()
+        self.assertEquals(len(rows), 1)
+        self.assertEquals(rows[0][0], 1)
+
 
     def test_untyped_none(self):
         # From issue 129

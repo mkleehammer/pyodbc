@@ -868,7 +868,12 @@ static PyObject* Connection_enter(PyObject* self)
 static char exit_doc[] = "__exit__(*excinfo) -> None.  Closes the connection.";
 static PyObject* Connection_exit(Connection* cnxn, PyObject* args)
 {
-    Connection_clear(cnxn);
+    // If an error has occurred, `args` will be a tuple of 3 values.  Otherwise it will be a tuple of 3 `None`s.
+    I(PyTuple_Check(args));
+
+    if (cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF && PyTuple_GetItem(args, 0) == Py_None)
+        SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, SQL_COMMIT);
+
     Py_RETURN_NONE;
 }
 
