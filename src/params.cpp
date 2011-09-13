@@ -20,8 +20,11 @@ static bool GetParamType(Cursor* cur, Py_ssize_t iParam, SQLSMALLINT& type);
 static void FreeInfos(ParamInfo* a, Py_ssize_t count)
 {
     for (Py_ssize_t i = 0; i < count; i++)
+    {
         if (a[i].allocated)
             pyodbc_free(a[i].ParameterValuePtr);
+        Py_DECREF(a[i].pyParameterValue);
+    }
     pyodbc_free(a);
 }
 
@@ -165,7 +168,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
             info.ParameterValuePtr = pch;
         }
 #endif
-        
+
         info.ParameterType = SQL_WVARCHAR;
         info.StrLen_or_Ind = (SQLINTEGER)(len * sizeof(SQLWCHAR));
     }
@@ -454,6 +457,10 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
 {
     // Binds the given parameter and populates `info`.
 
+    // Hold a reference to param until info is freed, because info will often be
+    // holding data borrowed from param.
+    info.pyParameterValue = param;
+
     if (param == Py_None)
         return GetNullInfo(cur, index, info);
 
@@ -560,8 +567,7 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
     //
 
     // Since we may replace parameters (we replace objects with Py_True/Py_False when writing to a bit/bool column),
-    // allocate an array and use it instead of the original sequence.  Since we don't change ownership we don't bother
-    // with incref.  (That is, PySequence_GetItem will INCREF and ~ObjectArrayHolder will DECREF.)
+    // allocate an array and use it instead of the original sequence.
 
     int        params_offset = skip_first ? 1 : 0;
     Py_ssize_t cParams       = original_params == 0 ? 0 : PySequence_Length(original_params) - params_offset;
@@ -641,7 +647,10 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 
     for (Py_ssize_t i = 0; i < cParams; i++)
     {
+        // PySequence_GetItem returns a *new* reference
         PyObject* param = PySequence_GetItem(original_params, i + params_offset);
+        // cur->paramInfos[i] assumes ownership of param reference here;
+        // it will be released when FreeInfos is called.
         if (!GetParameterInfo(cur, i, param, cur->paramInfos[i]))
         {
             FreeInfos(cur->paramInfos, cParams);
