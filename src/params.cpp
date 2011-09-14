@@ -23,7 +23,7 @@ static void FreeInfos(ParamInfo* a, Py_ssize_t count)
     {
         if (a[i].allocated)
             pyodbc_free(a[i].ParameterValuePtr);
-        Py_DECREF(a[i].pyParameterValue);
+        Py_XDECREF(a[i].pyParameterValue);
     }
     pyodbc_free(a);
 }
