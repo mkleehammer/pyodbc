@@ -396,6 +396,17 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(result, "(1,)")
 
 
+    def test_pickling(self):
+        row = self.cursor.execute("select 1 a, 'two' b").fetchone()
+
+        import pickle
+        s = pickle.dumps(row)
+
+        other = pickle.loads(s)
+
+        self.assertEqual(row, other)
+
+
     def test_int_limits(self):
         values = [ (-sys.maxint - 1), -1, 0, 1, 3230392212, sys.maxint ]
 
