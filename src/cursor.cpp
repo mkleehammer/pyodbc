@@ -360,20 +360,35 @@ create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
     return success;
 }
 
-enum free_results_type
+
+enum free_results_flags
 {
-    FREE_STATEMENT,
-    KEEP_STATEMENT
+    FREE_STATEMENT = 0x01,
+    KEEP_STATEMENT = 0x02,
+    FREE_PREPARED  = 0x04,
+    KEEP_PREPARED  = 0x08,
+
+    STATEMENT_MASK = 0x03,
+    PREPARED_MASK  = 0x0C
 };
 
 static bool
-free_results(Cursor* self, free_results_type free_statement)
+free_results(Cursor* self, int flags)
 {
     // Internal function called any time we need to free the memory associated with query results.  It is safe to call
     // this even when a query has not been executed.
 
     // If we ran out of memory, it is possible that we have a cursor but colinfos is zero.  However, we should be
     // deleting this object, so the cursor will be freed when the HSTMT is destroyed. */
+
+    I((flags & STATEMENT_MASK) != 0);
+    I((flags & PREPARED_MASK) != 0);
+
+    if ((flags & PREPARED_MASK) == FREE_PREPARED)
+    {
+        Py_XDECREF(self->pPreparedSQL);
+        self->pPreparedSQL = 0;
+    }
 
     if (self->colinfos)
     {
@@ -383,7 +398,7 @@ free_results(Cursor* self, free_results_type free_statement)
     
     if (StatementIsValid(self))
     {
-        if (free_statement == FREE_STATEMENT)
+        if ((flags & STATEMENT_MASK) == FREE_STATEMENT)
         {
             SQLRETURN ret;
             Py_BEGIN_ALLOW_THREADS
@@ -434,7 +449,7 @@ closeimpl(Cursor* cur)
     // 
     // This method releases the GIL lock while closing, so verify the HDBC still exists if you use it.
 
-    free_results(cur, FREE_STATEMENT);
+    free_results(cur, FREE_STATEMENT | FREE_PREPARED);
 
     FreeParameterInfo(cur);
     FreeParameterData(cur);
@@ -640,7 +655,7 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
 
     SQLRETURN ret = 0;
 
-    free_results(cur, FREE_STATEMENT);
+    free_results(cur, FREE_STATEMENT | KEEP_PREPARED);
 
     const char* szLastFunction = "";
 
@@ -1162,7 +1177,7 @@ Cursor_tables(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT))
+    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1232,7 +1247,7 @@ Cursor_columns(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT))
+    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1305,7 +1320,7 @@ Cursor_statistics(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT))
+    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
     
     SQLUSMALLINT nUnique   = (SQLUSMALLINT)(PyObject_IsTrue(pUnique) ? SQL_INDEX_UNIQUE : SQL_INDEX_ALL);
@@ -1383,7 +1398,7 @@ _specialColumns(PyObject* self, PyObject* args, PyObject* kwargs, SQLUSMALLINT n
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT))
+    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1455,7 +1470,7 @@ Cursor_primaryKeys(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT))
+    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1527,7 +1542,7 @@ Cursor_foreignKeys(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT))
+    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1596,7 +1611,7 @@ Cursor_getTypeInfo(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT))
+    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1644,7 +1659,7 @@ Cursor_nextset(PyObject* self, PyObject* args)
 
     if (ret == SQL_NO_DATA)
     {
-        free_results(cur, FREE_STATEMENT);
+        free_results(cur, FREE_STATEMENT | KEEP_PREPARED);
         Py_RETURN_FALSE;
     }
 
@@ -1657,10 +1672,10 @@ Cursor_nextset(PyObject* self, PyObject* args)
         // Note: The SQL Server driver sometimes returns HY007 here if multiple statements (separated by ;) were
         // submitted.  This is not documented, but I've seen it with multiple successful inserts.  
 
-        free_results(cur, FREE_STATEMENT);
+        free_results(cur, FREE_STATEMENT | KEEP_PREPARED);
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     }
-    free_results(cur, KEEP_STATEMENT);
+    free_results(cur, KEEP_STATEMENT | KEEP_PREPARED);
 
     if (cCols != 0)
     {
@@ -1724,7 +1739,7 @@ Cursor_procedureColumns(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT))
+    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1784,7 +1799,7 @@ Cursor_procedures(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT))
+    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
     
     SQLRETURN ret = 0;

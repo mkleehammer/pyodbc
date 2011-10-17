@@ -1257,6 +1257,17 @@ class SqlServerTestCase(unittest.TestCase):
         current = m.group(1)
         self.assert_(current in drivers)
             
+    def test_prepare_cleanup(self):
+        # When statement is prepared, it is kept in case the next execute uses the same statement.  This must be
+        # removed when a non-execute statement is used that returns results, such as SQLTables.
+
+        self.cursor.execute("select top 1 name from sysobjects where name = ?", "bogus")
+        self.cursor.fetchone()
+
+        self.cursor.tables("bogus")
+        
+        self.cursor.execute("select top 1 name from sysobjects where name = ?", "bogus")
+        self.cursor.fetchone()
 
 
 def main():
