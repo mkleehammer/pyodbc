@@ -31,7 +31,7 @@ class VersionCommand(Command):
     def run(self):
         version_str, version = get_version()
         print version_str
-    
+
 
 class TagsCommand(Command):
 
@@ -51,7 +51,7 @@ class TagsCommand(Command):
         files = [ join('src', f) for f in os.listdir('src') if f.endswith(('.h', '.cpp')) ]
         cmd = 'etags %s' % ' '.join(files)
         return os.system(cmd)
-    
+
 
 
 def main():
@@ -71,6 +71,7 @@ def main():
 
     setup (name = "pyodbc",
            version = version_str,
+           zip_safe=False,
            description = "DB API Module for ODBC",
 
            long_description = ('A Python DB API 2 module for ODBC. This project provides an up-to-date, '
@@ -210,15 +211,15 @@ def add_to_path():
     Prepends the build directory to the path so pyodbcconf can be imported without installing it.
     """
     # Now run the utility
-  
+
     import imp
     library_exts  = [ t[0] for t in imp.get_suffixes() if t[-1] == imp.C_EXTENSION ]
     library_names = [ 'pyodbcconf%s' % ext for ext in library_exts ]
-     
-    # Only go into directories that match our version number. 
-     
+
+    # Only go into directories that match our version number.
+
     dir_suffix = '-%s.%s' % (sys.version_info[0], sys.version_info[1])
-     
+
     build = join(dirname(abspath(__file__)), 'build')
 
     for top, dirs, files in os.walk(build):
@@ -227,7 +228,7 @@ def add_to_path():
             if name in files:
                 sys.path.insert(0, top)
                 return
-  
+
     raise SystemExit('Did not find pyodbcconf')
 
 
@@ -272,7 +273,7 @@ def get_version():
         name, numbers = '2.1.0-unsupported', [2,1,0,0]
 
     return name, numbers
-            
+
 
 def _get_version_pkginfo():
     filename = join(dirname(abspath(__file__)), 'PKG-INFO')

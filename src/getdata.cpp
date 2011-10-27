@@ -259,6 +259,8 @@ GetDataString(Cursor* cur, Py_ssize_t iCol)
     case SQL_LONGVARCHAR:
     case SQL_GUID:
     case SQL_SS_XML:
+    case SQL_DECIMAL:
+    case SQL_NUMERIC:
         if (cur->cnxn->unicode_results)
             nTargetType  = SQL_C_WCHAR;
         else
@@ -506,7 +508,7 @@ static PyObject* GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
 
     if (pinfo->is_unsigned)
         return PyLong_FromUnsignedLongLong((unsigned PY_LONG_LONG)(SQLUBIGINT)value);
-    
+
     return PyLong_FromLongLong((PY_LONG_LONG)value);
 }
 
