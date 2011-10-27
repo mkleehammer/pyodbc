@@ -149,7 +149,7 @@ void SQLWChar::dump()
 
 SQLWCHAR* SQLWCHAR_FromUnicode(const Py_UNICODE* pch, Py_ssize_t len)
 {
-    SQLWCHAR* p = (SQLWCHAR*)pyodbc_malloc(sizeof(SQLWCHAR) * len);
+    SQLWCHAR* p = (SQLWCHAR*)pyodbc_malloc(sizeof(SQLWCHAR) * (len + 1));
     if (p != 0)
     {
         if (!sqlwchar_copy(p, pch, len))
