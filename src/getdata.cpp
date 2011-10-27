@@ -464,8 +464,8 @@ GetDataLong(Cursor* cur, Py_ssize_t iCol)
 {
     ColumnInfo* pinfo = &cur->colinfos[iCol];
 
-    long value = 0;
-    SQLLEN cbFetched = 0;
+    SQLINTEGER value;
+    SQLLEN cbFetched;
     SQLRETURN ret;
 
     SQLSMALLINT nCType = pinfo->is_unsigned ? SQL_C_ULONG : SQL_C_LONG;
