@@ -39,6 +39,13 @@ void CnxnInfo_init()
 
 static PyObject* GetHash(PyObject* p)
 {
+#if PY_MAJOR_VERSION >= 3
+    Object bytes(PyUnicode_EncodeUTF8(PyUnicode_AS_UNICODE(p), PyUnicode_GET_SIZE(p), 0));
+    if (!bytes)
+        return 0;
+    p = bytes.Get();
+#endif
+
     if (hashlib)
     {
         Object hash(PyObject_CallMethod(hashlib, "new", "s", "sha1"));
@@ -65,6 +72,9 @@ static PyObject* GetHash(PyObject* p)
 
 static PyObject* CnxnInfo_New(Connection* cnxn)
 {
+#ifdef _MSC_VER
+#pragma warning(disable : 4365)
+#endif
     CnxnInfo* p = PyObject_NEW(CnxnInfo, &CnxnInfoType);
     if (!p)
         return 0;
@@ -182,8 +192,7 @@ PyObject* GetConnectionInfo(PyObject* pConnectionString, Connection* cnxn)
 
 PyTypeObject CnxnInfoType =
 {
-    PyObject_HEAD_INIT(0)
-    0,                                                      // ob_size
+    PyVarObject_HEAD_INIT(0, 0)
     "pyodbc.CnxnInfo",                                      // tp_name
     sizeof(CnxnInfo),                                       // tp_basicsize
     0,                                                      // tp_itemsize

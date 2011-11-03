@@ -18,16 +18,14 @@
 #include "errors.h"
 #include "getdata.h"
 #include "cnxninfo.h"
+#include "params.h"
 #include "dbspecific.h"
+#include <datetime.h>
 
 #include <time.h>
 #include <stdarg.h>
 
 static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts);
-
-_typeobject* OurDateTimeType = 0;
-_typeobject* OurDateType = 0;
-_typeobject* OurTimeType = 0;
 
 PyObject* pModule = 0;
 
@@ -93,10 +91,10 @@ struct ExcInfo
 #define MAKEEXCINFO(name, parent, doc) { #name, "pyodbc." #name, &name, &parent, doc }
 
 static ExcInfo aExcInfos[] = {
-    MAKEEXCINFO(Error, PyExc_StandardError, 
+    MAKEEXCINFO(Error, PyExc_Exception, 
                 "Exception that is the base class of all other error exceptions. You can use\n"
                 "this to catch all errors with one single 'except' statement."),
-    MAKEEXCINFO(Warning, PyExc_StandardError,
+    MAKEEXCINFO(Warning, PyExc_Exception,
                 "Exception raised for important warnings like data truncations while inserting,\n"
                 " etc."),
     MAKEEXCINFO(InterfaceError, Error,
@@ -132,9 +130,7 @@ PyObject* decimal_type;
 
 HENV henv = SQL_NULL_HANDLE;
 
-char chDecimal        = '.';
-char chGroupSeparator = ',';
-char chCurrencySymbol = '$';
+Py_UNICODE chDecimal = '.';
 
 // Initialize the global decimal character and thousands separator character, used when parsing decimal
 // objects.
@@ -156,28 +152,12 @@ static void init_locale_info()
     }
 
     PyObject* value = PyDict_GetItemString(ldict, "decimal_point");
-    if (value && PyString_Check(value) && PyString_Size(value) == 1)
+    if (value)
     {
-        chDecimal = PyString_AsString(value)[0];
-    }
-        
-    value = PyDict_GetItemString(ldict, "thousands_sep");
-    if (value && PyString_Check(value) && PyString_Size(value) == 1)
-    {
-        chGroupSeparator = PyString_AsString(value)[0];
-
-        if (chGroupSeparator == '\0')
-        {
-            // I don't know why, but the default locale isn't setting ','.  We're going to make the assumption that the
-            // most common values are ',' and '.', and we'll take the opposite of the decimal value.
-            chGroupSeparator = (chDecimal == ',') ? '.' : ',';
-        }
-    }
-
-    value = PyDict_GetItemString(ldict, "currency_symbol");
-    if (value && PyString_Check(value) && PyString_Size(value) == 1)
-    {
-        chCurrencySymbol = PyString_AsString(value)[0];
+        if (PyBytes_Check(value) && PyBytes_Size(value) == 1)
+            chDecimal = (Py_UNICODE)PyBytes_AS_STRING(value)[0];
+        if (PyUnicode_Check(value) && PyUnicode_GET_SIZE(value) == 1)
+            chDecimal = PyUnicode_AS_UNICODE(value)[0];
     }
 }
 
@@ -193,20 +173,11 @@ static bool import_types()
         return false;
 
     PyDateTime_IMPORT;
-     
-    if (!PyDateTimeAPI)
-    {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to import the datetime module.");
-        return false;
-    }
     
-    OurDateTimeType = PyDateTimeAPI->DateTimeType;
-    OurDateType     = PyDateTimeAPI->DateType;
-    OurTimeType     = PyDateTimeAPI->TimeType;
-
     Cursor_init();
     CnxnInfo_init();
     GetData_init();
+    Params_init();
 
     PyObject* decimalmod = PyImport_ImportModule("decimal");
     if (!decimalmod)
@@ -306,36 +277,39 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
         if (!partsdict.IsValid())
             return 0;
 
-        Object unicodeT;            // used to temporarily hold Unicode objects if we have to convert values to unicode
-
         Py_ssize_t pos = 0;
         PyObject* key = 0;
         PyObject* value = 0;
 
+        Object okey; // in case we need to allocate a new key
+
         while (PyDict_Next(kwargs, &pos, &key, &value))
         {
-            // Note: key and value are *borrowed*.
+            if (!Text_Check(key))
+                return PyErr_Format(PyExc_TypeError, "Dictionary items passed to connect must be strings");
 
-            // Check for the two non-connection string keywords we accept.  (If we get many more of these, create something
-            // table driven.  Are we sure there isn't a Python function to parse keywords but leave those it doesn't know?)
-            const char* szKey = PyString_AsString(key);
+            // // Note: key and value are *borrowed*.
+            //  
+            // // Check for the two non-connection string keywords we accept.  (If we get many more of these, create something
+            // // table driven.  Are we sure there isn't a Python function to parse keywords but leave those it doesn't know?)
+            // const char* szKey = PyString_AsString(key);
 
-            if (_strcmpi(szKey, "autocommit") == 0)
+            if (Text_EqualsI(key, "autocommit"))
             {
                 fAutoCommit = PyObject_IsTrue(value);
                 continue;
             }
-            if (_strcmpi(szKey, "ansi") == 0)
+            if (Text_EqualsI(key, "ansi"))
             {
                 fAnsi = PyObject_IsTrue(value);
                 continue;
             }
-            if (_strcmpi(szKey, "unicode_results") == 0)
+            if (Text_EqualsI(key, "unicode_results"))
             {
                 fUnicodeResults = PyObject_IsTrue(value);
                 continue;
             }
-            if (_strcmpi(szKey, "timeout") == 0)
+            if (Text_EqualsI(key, "timeout"))
             {
                 timeout = PyInt_AsLong(value);
                 if (PyErr_Occurred())
@@ -343,15 +317,11 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                 continue;
             }
         
-            // Anything else must be a string that is appended, along with the keyword to the connection string.
-
-            if (!(PyString_Check(value) || PyUnicode_Check(value)))
-                return PyErr_Format(PyExc_TypeError, "'%s' is not a string or unicode value'", szKey);
-
             // Map DB API recommended names to ODBC names (e.g. user --> uid).
+
             for (size_t i = 0; i < _countof(keywordmaps); i++)
             {
-                if (_strcmpi(szKey, keywordmaps[i].oldname) == 0)
+                if (Text_EqualsI(key, keywordmaps[i].oldname))
                 {
                     if (keywordmaps[i].newnameObject == 0)
                     {
@@ -365,18 +335,16 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                 }
             }
 
-            if (PyString_Check(value))
-            {
-                unicodeT.Attach(PyUnicode_FromObject(value));
-                if (!unicodeT.IsValid())
-                    return 0;
-                value = unicodeT.Get();
-            }
-
-            if (PyDict_SetItem(partsdict.Get(), key, value) == -1)
+            PyObject* str = PyObject_Str(value); // convert if necessary
+            if (!str)
                 return 0;
-
-            unicodeT.Detach();
+            
+            if (PyDict_SetItem(partsdict.Get(), key, str) == -1)
+            {
+                Py_XDECREF(str);
+                return 0;
+            }
+            Py_XDECREF(str);
         }
 
         if (PyDict_Size(partsdict.Get()))
@@ -420,7 +388,7 @@ mod_datasources(PyObject* self)
     for (;;)
     {
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLDataSources(henv, SQL_FETCH_NEXT, szDSN,  _countof(szDSN),  &cbDSN, szDesc, _countof(szDesc), &cbDesc);
+        ret = SQLDataSources(henv, nDirection, szDSN,  _countof(szDSN),  &cbDSN, szDesc, _countof(szDesc), &cbDesc);
         Py_END_ALLOW_THREADS
         if (!SQL_SUCCEEDED(ret))
             break;
@@ -439,50 +407,34 @@ mod_datasources(PyObject* self)
 }
 
 
-
-static PyObject*
-mod_timefromticks(PyObject* self, PyObject* args)
+static PyObject* mod_timefromticks(PyObject* self, PyObject* args)
 {
     UNUSED(self);
     
-    time_t t = 0;
-    struct tm* fields;
-
-    // Sigh...  If a float is passed but we ask for a long, we get a deprecation warning printed to the screen instead
-    // of a failure.  Not only is this not documented, it means we can't reliably use PyArg_ParseTuple('l') anywhere!
-    
-    // if (PyArg_ParseTuple(args, "l", &ticks))
-
     PyObject* num;
     if (!PyArg_ParseTuple(args, "O", &num))
         return 0;
     
-    if (PyInt_Check(num))
-        t = PyInt_AS_LONG(num);
-    else if (PyLong_Check(num))
-        t = PyLong_AsLong(num);
-    else if (PyFloat_Check(num))
-        t = (long)PyFloat_AS_DOUBLE(num);
-    else
-    {
-        PyErr_SetString(PyExc_TypeError, "TimeFromTicks requires a number.");
+    if (!PyNumber_Check(num))
+        return PyErr_Format(PyExc_TypeError, "TimeFromTicks requires a number.");
+
+    Object l(PyNumber_Long(num));
+    if (!l)
         return 0;
-    }
-    
-    fields = localtime(&t);
+
+    time_t t = PyLong_AsLong(num);
+    struct tm* fields = localtime(&t);
 
     return PyTime_FromTime(fields->tm_hour, fields->tm_min, fields->tm_sec, 0);
 }
 
-static PyObject*
-mod_datefromticks(PyObject* self, PyObject* args)
+static PyObject* mod_datefromticks(PyObject* self, PyObject* args)
 {
     UNUSED(self);
     return PyDate_FromTimestamp(args);
 }
 
-static PyObject*
-mod_timestampfromticks(PyObject* self, PyObject* args)
+static PyObject* mod_timestampfromticks(PyObject* self, PyObject* args)
 {
     UNUSED(self);
     return PyDateTime_FromTimestamp(args);
@@ -909,7 +861,7 @@ static bool CreateExceptions()
             Py_DECREF(classdict);
             return false;
         }
-        
+
         PyDict_SetItemString(classdict, "__doc__", doc);
         Py_DECREF(doc);
 
@@ -919,7 +871,7 @@ static bool CreateExceptions()
             Py_DECREF(classdict);
             return false;
         }
-        
+
         // Keep a reference for our internal (C++) use.
         Py_INCREF(*info.ppexc);
 
@@ -929,91 +881,111 @@ static bool CreateExceptions()
     return true;
 }
 
-
-PyMODINIT_FUNC
-initpyodbc()
-{
-#ifdef _DEBUG
-    #ifndef Py_REF_DEBUG
-    #error Py_REF_DEBUG not set!
-    #endif
-
-    int grfDebugFlags = _CRTDBG_ALLOC_MEM_DF | _CRTDBG_CHECK_ALWAYS_DF;
-    _CrtSetDbgFlag(grfDebugFlags);
+#if PY_MAJOR_VERSION >= 3
+static struct PyModuleDef moduledef = {
+    PyModuleDef_HEAD_INIT,
+    "pyodbc",                   // m_name
+    module_doc,
+    -1,                         // m_size
+    pyodbc_methods,             // m_methods
+    0,                          // m_reload
+    0,                          // m_traverse
+    0,                          // m_clear
+    0,                          // m_free
+    };
+  #define MODRETURN(v) v
+#else
+  #define MODRETURN(v)
 #endif
 
+PyMODINIT_FUNC
+#if PY_MAJOR_VERSION >= 3
+PyInit_pyodbc()
+#else
+initpyodbc(void)
+#endif
+{
     ErrorInit();
 
-    // Make sure that this was built correctly.  Unfortunately, the lack of good static assertions leads to compiler
-    // warnings...
-    int n1 = sizeof(SQLWCHAR);
-    int n2 = SQLWCHAR_SIZE;
-    if (n1 != n2)
-    {
-        PyErr_Format(PyExc_RuntimeError, "The pyodbc module was built with incorrect SQLWCHAR_SIZE: actual-size=%d  compiled-size=%d  version=%s",
-                     n1, n2, TOSTRING(PYODBC_VERSION));
-        return;
-    }
-
     if (PyType_Ready(&ConnectionType) < 0 || PyType_Ready(&CursorType) < 0 || PyType_Ready(&RowType) < 0 || PyType_Ready(&CnxnInfoType) < 0)
-        return;
+        return MODRETURN(0);
 
-    pModule = Py_InitModule4("pyodbc", pyodbc_methods, module_doc, NULL, PYTHON_API_VERSION);
+    Object module;
 
-    if (!import_types())
-        return;
+#if PY_MAJOR_VERSION >= 3
+    module.Attach(PyModule_Create(&moduledef));
+#else
+    module.Attach(Py_InitModule4("pyodbc", pyodbc_methods, module_doc, NULL, PYTHON_API_VERSION));
+#endif
+    
+    pModule = module.Get();
 
+    if (!module || !import_types() || !CreateExceptions())
+        return MODRETURN(0);
+    
     init_locale_info();
 
-    if (!CreateExceptions())
-        return;
-
     const char* szVersion = TOSTRING(PYODBC_VERSION);
-    PyModule_AddStringConstant(pModule, "version", (char*)szVersion);
+    PyModule_AddStringConstant(module, "version", (char*)szVersion);
 
-    PyModule_AddIntConstant(pModule, "threadsafety", 1);
-    PyModule_AddStringConstant(pModule, "apilevel", "2.0");
-    PyModule_AddStringConstant(pModule, "paramstyle", "qmark");
-    PyModule_AddObject(pModule, "pooling", Py_True);
+    PyModule_AddIntConstant(module, "threadsafety", 1);
+    PyModule_AddStringConstant(module, "apilevel", "2.0");
+    PyModule_AddStringConstant(module, "paramstyle", "qmark");
+    PyModule_AddObject(module, "pooling", Py_True);
     Py_INCREF(Py_True);
-    PyModule_AddObject(pModule, "lowercase", Py_False);
+    PyModule_AddObject(module, "lowercase", Py_False);
     Py_INCREF(Py_False);
                        
-    PyModule_AddObject(pModule, "Connection", (PyObject*)&ConnectionType);
+    PyModule_AddObject(module, "Connection", (PyObject*)&ConnectionType);
     Py_INCREF((PyObject*)&ConnectionType);
-    PyModule_AddObject(pModule, "Cursor", (PyObject*)&CursorType);
+    PyModule_AddObject(module, "Cursor", (PyObject*)&CursorType);
     Py_INCREF((PyObject*)&CursorType);
-    PyModule_AddObject(pModule, "Row", (PyObject*)&RowType);
+    PyModule_AddObject(module, "Row", (PyObject*)&RowType);
     Py_INCREF((PyObject*)&RowType);
 
     // Add the SQL_XXX defines from ODBC.
     for (unsigned int i = 0; i < _countof(aConstants); i++)
-        PyModule_AddIntConstant(pModule, (char*)aConstants[i].szName, aConstants[i].value);
+        PyModule_AddIntConstant(module, (char*)aConstants[i].szName, aConstants[i].value);
 
-    PyModule_AddObject(pModule, "Date", (PyObject*)PyDateTimeAPI->DateType);
+    PyModule_AddObject(module, "Date", (PyObject*)PyDateTimeAPI->DateType);
     Py_INCREF((PyObject*)PyDateTimeAPI->DateType);
-    PyModule_AddObject(pModule, "Time", (PyObject*)PyDateTimeAPI->TimeType);
+    PyModule_AddObject(module, "Time", (PyObject*)PyDateTimeAPI->TimeType);
     Py_INCREF((PyObject*)PyDateTimeAPI->TimeType);
-    PyModule_AddObject(pModule, "Timestamp", (PyObject*)PyDateTimeAPI->DateTimeType);
+    PyModule_AddObject(module, "Timestamp", (PyObject*)PyDateTimeAPI->DateTimeType);
     Py_INCREF((PyObject*)PyDateTimeAPI->DateTimeType);
-    PyModule_AddObject(pModule, "DATETIME", (PyObject*)PyDateTimeAPI->DateTimeType);
+    PyModule_AddObject(module, "DATETIME", (PyObject*)PyDateTimeAPI->DateTimeType);
     Py_INCREF((PyObject*)PyDateTimeAPI->DateTimeType);
-    PyModule_AddObject(pModule, "STRING", (PyObject*)&PyString_Type);
+    PyModule_AddObject(module, "STRING", (PyObject*)&PyString_Type);
     Py_INCREF((PyObject*)&PyString_Type);
-    PyModule_AddObject(pModule, "NUMBER", (PyObject*)&PyFloat_Type);
+    PyModule_AddObject(module, "NUMBER", (PyObject*)&PyFloat_Type);
     Py_INCREF((PyObject*)&PyFloat_Type);
-    PyModule_AddObject(pModule, "ROWID", (PyObject*)&PyInt_Type);
+    PyModule_AddObject(module, "ROWID", (PyObject*)&PyInt_Type);
     Py_INCREF((PyObject*)&PyInt_Type);
-    PyModule_AddObject(pModule, "BINARY", (PyObject*)&PyBuffer_Type);
-    Py_INCREF((PyObject*)&PyBuffer_Type);
-    PyModule_AddObject(pModule, "Binary", (PyObject*)&PyBuffer_Type);
-    Py_INCREF((PyObject*)&PyBuffer_Type);
-    
-    PyModule_AddIntConstant(pModule, "UNICODE_SIZE", sizeof(Py_UNICODE));
-    PyModule_AddIntConstant(pModule, "SQLWCHAR_SIZE", sizeof(SQLWCHAR));
 
-    if (PyErr_Occurred())
+    PyObject* binary_type;
+#if PY_VERSION_HEX >= 0x02060000
+    binary_type = (PyObject*)&PyByteArray_Type;
+#else
+    binary_type = (PyObject*)&PyBuffer_Type;
+#endif
+    PyModule_AddObject(module, "BINARY", binary_type);
+    Py_INCREF(binary_type);
+    PyModule_AddObject(module, "Binary", binary_type);
+    Py_INCREF(binary_type);
+    
+    PyModule_AddIntConstant(module, "UNICODE_SIZE", sizeof(Py_UNICODE));
+    PyModule_AddIntConstant(module, "SQLWCHAR_SIZE", sizeof(SQLWCHAR));
+
+    if (!PyErr_Occurred())
+    {
+        module.Detach();
+    }
+    else
+    {
         ErrorCleanup();
+    }
+    
+    return MODRETURN(pModule);
 }
 
 #ifdef WINVER
@@ -1031,11 +1003,11 @@ BOOL WINAPI DllMain(
 static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
 {
     // Creates a connection string from an optional existing connection string plus a dictionary of keyword value
-    // pairs.  The keywords must be String objects and the values must be Unicode objects.
+    // pairs.  The keywords must be String or Unicode objects and the values must be Unicode objects.
 
     Py_ssize_t length = 0;
     if (existing)
-        length = PyUnicode_GET_SIZE(existing) + 1; // + 1 to add a trailing 
+        length = Text_Size(existing) + 1; // + 1 to add a trailing 
 
     Py_ssize_t pos = 0;
     PyObject* key = 0;
@@ -1043,7 +1015,7 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
 
     while (PyDict_Next(parts, &pos, &key, &value))
     {
-        length += PyString_GET_SIZE(key) + 1 + PyUnicode_GET_SIZE(value) + 1; // key=value;
+        length += Text_Size(key) + 1 + Text_Size(value) + 1; // key=value;
     }
     
     PyObject* result = PyUnicode_FromUnicode(0, length);
@@ -1060,12 +1032,21 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
         buffer[offset++] = (Py_UNICODE)';';
     }
 
+    Object okey;
+
     pos = 0;
     while (PyDict_Next(parts, &pos, &key, &value))
     {
-        const char* szKey = PyString_AS_STRING(key);
-        for (int i = 0; i < PyString_GET_SIZE(key); i++)
-            buffer[offset++] = (Py_UNICODE)szKey[i];
+#if PY_MAJOR_VERSION < 3
+        if (PyBytes_Check(key))
+        {
+            okey = PyUnicode_FromString(PyBytes_AS_STRING(key));
+            key = okey.Get();
+        }
+#endif
+
+        memcpy(&buffer[offset], PyUnicode_AS_UNICODE(key), PyUnicode_GET_SIZE(key) * sizeof(Py_UNICODE));
+        offset += PyUnicode_GET_SIZE(key);
 
         buffer[offset++] = (Py_UNICODE)'=';
 

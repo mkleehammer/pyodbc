@@ -12,6 +12,8 @@
 #ifndef _BUFFER_H
 #define _BUFFER_H
 
+#if PY_MAJOR_VERSION < 3
+
 // If the buffer object has a single, accessible segment, returns the length of the buffer.  If 'pp' is not NULL, the
 // address of the segment is also returned.  If there is more than one segment or if it cannot be accessed, -1 is
 // returned and 'pp' is not modified.
@@ -36,7 +38,7 @@ public:
     BufferSegmentIterator(PyObject* _pBuffer)
     {
         pBuffer   = _pBuffer;
-        PyBufferProcs* procs = pBuffer->ob_type->tp_as_buffer;
+        PyBufferProcs* procs = Py_TYPE(pBuffer)->tp_as_buffer;
         iSegment  = 0;
         cSegments = procs->bf_getsegcount(pBuffer, 0);
     }
@@ -46,10 +48,13 @@ public:
         if (iSegment >= cSegments)
             return false;
 
-        PyBufferProcs* procs = pBuffer->ob_type->tp_as_buffer;
+        PyBufferProcs* procs = Py_TYPE(pBuffer)->tp_as_buffer;
         cb = procs->bf_getreadbuffer(pBuffer, iSegment++, (void**)&pb);
         return true;
     }
 };
+
+#endif // PY_MAJOR_VERSION
+
 
 #endif

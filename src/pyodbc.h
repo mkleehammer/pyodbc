@@ -1,15 +1,13 @@
 
-/*
- * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
- * documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
- * permit persons to whom the Software is furnished to do so.
- * 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
- * WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
- * OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
- * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- */
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+// permit persons to whom the Software is furnished to do so.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+// WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
+// OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #ifndef PYODBC_H
 #define PYODBC_H
@@ -41,40 +39,12 @@ typedef unsigned long long UINT64;
 #define PY_SSIZE_T_CLEAN 1
 
 #include <Python.h>
-#include <stringobject.h>
-#include <intobject.h>
 #include <floatobject.h>
 #include <longobject.h>
 #include <boolobject.h>
-#include <bufferobject.h>
 #include <unicodeobject.h>
 #include <structmember.h>
-#include <datetime.h>
-
-// Whoever wrote the datetime C module declared a static variable in the header file.  A properly conforming C/C++
-// compiler will create a new copy in every source file, meaning you can't set the value globally.  Criminy.  We'll
-// declare our own global which will be set during initialization.
-//
-// We could initialize PyDateTimeAPI in each module, but we don't have a function in each module that is guaranteed to
-// be called first and I don't want to create an Init function just for this datetime bug.
-
-#undef PyDate_Check
-#undef PyDate_CheckExact
-#undef PyDateTime_Check
-#undef PyDateTime_CheckExact
-#undef PyTime_Check
-#undef PyTime_CheckExact
-
-extern _typeobject* OurDateTimeType;
-extern _typeobject* OurDateType;
-extern _typeobject* OurTimeType;
-
-#define PyDate_Check(op) PyObject_TypeCheck(op, OurDateType)
-#define PyDate_CheckExact(op) ((op)->ob_type == OurDateType)
-#define PyDateTime_Check(op) PyObject_TypeCheck(op, OurDateTimeType)
-#define PyDateTime_CheckExact(op) ((op)->ob_type == OurDateTimeType)
-#define PyTime_Check(op) PyObject_TypeCheck(op, OurTimeType)
-#define PyTime_CheckExact(op) ((op)->ob_type == OurTimeType)
+#include <bytesobject.h>
 
 #include <sql.h>
 #include <sqlext.h>
@@ -126,27 +96,22 @@ inline void _strlwr(char* name)
 // Building an actual debug version of Python is so much of a pain that it never happens.  I'm providing release-build
 // versions of assertions.
 
-#ifdef PYODBC_ASSERT
-  #ifdef _MSC_VER
-    #include <crtdbg.h>
-    inline void FailAssert(const char* szFile, size_t line, const char* szExpr)
-    {
-        printf("assertion failed: %s(%d)\n%s\n", szFile, line, szExpr);
-        __debugbreak(); // _CrtDbgBreak();
-    }
-    #define I(expr) if (!(expr)) FailAssert(__FILE__, __LINE__, #expr);
-    #define N(expr) if (expr) FailAssert(__FILE__, __LINE__, #expr);
-  #else
-    #define I(expr)
-    #define N(expr)
-  #endif
+#if defined(PYODBC_ASSERT) && defined(_MSC_VER)
+  #include <crtdbg.h>
+  inline void FailAssert(const char* szFile, size_t line, const char* szExpr)
+  {
+      printf("assertion failed: %s(%d)\n%s\n", szFile, line, szExpr);
+      __debugbreak(); // _CrtDbgBreak();
+  }
+  #define I(expr) if (!(expr)) FailAssert(__FILE__, __LINE__, #expr);
+  #define N(expr) if (expr) FailAssert(__FILE__, __LINE__, #expr);
 #else
   #define I(expr)
   #define N(expr)
 #endif
 
 #ifdef PYODBC_TRACE
-void CDECL DebugTrace(const char* szFmt, ...);
+void DebugTrace(const char* szFmt, ...);
 #else  
 inline void DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
 #endif
@@ -163,5 +128,9 @@ void pyodbc_leak_check();
 #endif
 
 void PrintBytes(void* p, size_t len);
+
+#include "pyodbccompat.h"
+
+#define HERE printf("%s(%d)\n", __FILE__, __LINE__)
 
 #endif // pyodbc_h

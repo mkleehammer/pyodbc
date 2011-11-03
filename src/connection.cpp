@@ -90,14 +90,17 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
 
         // The Unicode function failed.  If the error is that the driver doesn't have a Unicode version (IM001), continue
         // to the ANSI version.
-
-        PyObject* error = GetErrorFromHandle("SQLDriverConnectW", hdbc, SQL_NULL_HANDLE);
-        if (!HasSqlState(error, "IM001"))
-        {
-            RaiseErrorFromException(error);
-            return false;
-        }
-        Py_XDECREF(error);
+        //
+        // I've commented this out since a number of common drivers are returning different errors.  The MySQL 5
+        // driver, for example, returns IM002 "Data source name not found...".
+        //
+        // PyObject* error = GetErrorFromHandle("SQLDriverConnectW", hdbc, SQL_NULL_HANDLE);
+        // if (!HasSqlState(error, "IM001"))
+        // {
+        //     RaiseErrorFromException(error);
+        //     return false;
+        // }
+        // Py_XDECREF(error);
     }
         
     SQLCHAR szConnect[cchMax];
@@ -117,8 +120,13 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
     }
     else
     {
+#if PY_MAJOR_VERSION < 3
         const char* p = PyString_AS_STRING(pConnectString);
         memcpy(szConnect, p, (size_t)(PyString_GET_SIZE(pConnectString) + 1));
+#else
+        PyErr_SetString(PyExc_TypeError, "Connection strings must be Unicode");
+        return false;
+#endif
     }
 
     Py_BEGIN_ALLOW_THREADS
@@ -171,7 +179,13 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
 
     // Set all variables to something valid, so we don't crash in dealloc if this function fails.
 
+#ifdef _MSC_VER
+#pragma warning(disable : 4365)
+#endif
     Connection* cnxn = PyObject_NEW(Connection, &ConnectionType);
+#ifdef _MSC_VER
+#pragma warning(default : 4365)
+#endif
 
     if (cnxn == 0)
     {
@@ -573,10 +587,14 @@ Connection_getinfo(PyObject* self, PyObject* args)
     case GI_UINTEGER:
     {
         SQLUINTEGER n = *(SQLUINTEGER*)szBuffer; // Does this work on PPC or do we need a union?
+#if PY_MAJOR_VERSION >= 3
+        result = PyLong_FromLong((long)n);
+#else
         if (n <= (SQLUINTEGER)PyInt_GetMax())
             result = PyInt_FromLong((long)n);
         else
             result = PyLong_FromUnsignedLong(n);
+#endif
         break;
     }
     
@@ -679,7 +697,7 @@ Connection_setautocommit(PyObject* self, PyObject* value, void* closure)
         return -1;
     }
     
-    SQLUINTEGER nAutoCommit = PyObject_IsTrue(value) ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
+    uintptr_t nAutoCommit = PyObject_IsTrue(value) ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
     ret = SQLSetConnectAttr(cnxn->hdbc, SQL_ATTR_AUTOCOMMIT, (SQLPOINTER)nAutoCommit, SQL_IS_UINTEGER);
@@ -747,7 +765,7 @@ Connection_settimeout(PyObject* self, PyObject* value, void* closure)
         PyErr_SetString(PyExc_TypeError, "Cannot delete the timeout attribute.");
         return -1;
     }
-    int timeout = PyInt_AsLong(value);
+    intptr_t timeout = PyInt_AsLong(value);
     if (timeout == -1 && PyErr_Occurred())
         return -1;
     if (timeout < 0)
@@ -907,8 +925,7 @@ static PyGetSetDef Connection_getseters[] = {
 
 PyTypeObject ConnectionType =
 {
-    PyObject_HEAD_INIT(0)
-    0,                                                      // ob_size
+    PyVarObject_HEAD_INIT(0, 0)
     "pyodbc.Connection",                                    // tp_name
     sizeof(Connection),                                     // tp_basicsize
     0,                                                      // tp_itemsize

@@ -2,7 +2,6 @@
 
 import sys, os, re, platform
 from os.path import exists, abspath, dirname, join, isdir
-from ConfigParser import SafeConfigParser
 
 try:
     # Allow use of setuptools so eggs can be built.
@@ -15,6 +14,9 @@ from distutils.errors import *
 
 OFFICIAL_BUILD = 9999
 
+def _print(s):
+    # Python 2/3 compatibility
+    sys.stdout.write(s + '\n')
 
 class VersionCommand(Command):
 
@@ -30,7 +32,7 @@ class VersionCommand(Command):
 
     def run(self):
         version_str, version = get_version()
-        print version_str
+        sys.stdout.write(version_str + '\n')
     
 
 class TagsCommand(Command):
@@ -110,7 +112,7 @@ def get_compiler_settings(version_str):
     for option in ['assert', 'trace', 'leak-check']:
         try:
             sys.argv.remove('--%s' % option)
-            settings['define_macros'].append(('PYODBC_%s' % option.replace('-', '_'), 1))
+            settings['define_macros'].append(('PYODBC_%s' % option.replace('-', '_').upper(), 1))
         except ValueError:
             pass
 
@@ -144,65 +146,7 @@ def get_compiler_settings(version_str):
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
         settings['libraries'].append('odbc')
 
-    get_config(settings, version_str)
-
     return settings
-
-
-def get_config(settings, version_str):
-    """
-    Adds configuration macros from pyodbc.conf to the compiler settings dictionary.
-
-    If pyodbc.conf does not exist, it will compile and run the pyodbcconf utility.
-
-    This is similar to what autoconf provides, but only uses the infrastructure provided by Python, which is important
-    for building on *nix and Windows.
-    """
-    filename = 'pyodbc.conf'
-
-    # If the file exists, make sure that the version in it is the same as the version we are compiling.  Otherwise we
-    # might have added configuration items that aren't there.
-    if exists(filename):
-        try:
-            config = SafeConfigParser()
-            config.read(filename)
-
-            if (not config.has_option('define_macros', 'pyodbc_version') or
-                config.get('define_macros', 'pyodbc_version') != version_str):
-                print 'Recreating pyodbc.conf for new version'
-                os.remove(filename)
-
-        except:
-            config = None
-            # Assume the file has been corrupted.  Delete and recreate
-            print 'Unable to read %s.  Recreating' % filename
-            os.remove(filename)
-
-    if not exists('pyodbc.conf'):
-        # Doesn't exist, so build the pyodbcconf module and use it.
-
-        oldargv = sys.argv
-        sys.argv = [ oldargv[0], 'build' ]
-
-        setup(name="pyodbcconf",
-              ext_modules = [ Extension('pyodbcconf',
-                                        [join('utils', 'pyodbcconf', 'pyodbcconf.cpp')],
-                                        **settings) ])
-
-        sys.argv = oldargv
-
-        add_to_path()
-
-        import pyodbcconf
-        pyodbcconf.configure()
-
-    config = SafeConfigParser()
-    config.read(filename)
-
-    for section in config.sections():
-        for key, value in config.items(section):
-            settings[section].append( (key.upper(), value) )
-
 
 
 def add_to_path():
@@ -240,7 +184,7 @@ def get_version():
       1. If in a git repository, use the latest tag (git describe).
       2. If in an unzipped source directory (from setup.py sdist),
          read the version from the PKG-INFO file.
-      3. Use 2.1.0.0 and complain a lot.
+      3. Use 3.0.0.0 and complain a lot.
     """
     # My goal is to (1) provide accurate tags for official releases but (2) not have to manage tags for every test
     # release.
@@ -268,8 +212,8 @@ def get_version():
         name, numbers = _get_version_git()
 
     if not numbers:
-        print 'WARNING: Unable to determine version.  Using 2.1.0.0'
-        name, numbers = '2.1.0-unsupported', [2,1,0,0]
+        _print('WARNING: Unable to determine version.  Using 3.0.0.0')
+        name, numbers = '3.0.0-unsupported', [3,0,0,0]
 
     return name, numbers
             
@@ -290,9 +234,9 @@ def _get_version_pkginfo():
 
 
 def _get_version_git():
-    n, result = getoutput('git describe --tags --match 2.*')
+    n, result = getoutput('git describe --tags --match 3.*')
     if n:
-        print 'WARNING: git describe failed with: %s %s' % (n, result)
+        _print('WARNING: git describe failed with: %s %s' % (n, result))
         return None, None
 
     match = re.match(r'(\d+).(\d+).(\d+) (?: -(\d+)-g[0-9a-z]+)?', result, re.VERBOSE)

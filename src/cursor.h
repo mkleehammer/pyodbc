@@ -52,9 +52,9 @@ struct ParamInfo
     // If true, the memory in ParameterValuePtr was allocated via malloc and must be freed.
     bool allocated;
 
-    // The python object containing the parameter value.  A reference to this
-    // object should be held until we have finished using memory owned by it.
-    PyObject *pyParameterValue;
+    // The python object containing the parameter value.  A reference to this object should be held until we have
+    // finished using memory owned by it.
+    PyObject* pParam;
 
     // Optional data.  If used, ParameterValuePtr will point into this.
     union

@@ -6,7 +6,6 @@ dist
 *.pyc
 *.pyo
 tmp
-web/*.cmd
 TAGS
 pyodbc.egg-info
 pyodbc.conf

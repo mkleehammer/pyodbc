@@ -24,6 +24,7 @@
 #include "getdata.h"
 #include "dbspecific.h"
 #include "sqlwchar.h"
+#include <datetime.h>
 
 enum
 {
@@ -44,7 +45,7 @@ extern PyTypeObject CursorType;
 inline bool
 Cursor_Check(PyObject* o)
 {
-    return o != 0 && o->ob_type == &CursorType;
+    return o != 0 && Py_TYPE(o) == &CursorType;
 }
 
 
@@ -127,8 +128,7 @@ inline bool IsNumericType(SQLSMALLINT sqltype)
 }
 
 
-PyObject*
-PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMALLINT type, bool unicode_results)
+PyObject* PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMALLINT type, bool unicode_results)
 {
     // Returns a type object ('int', 'str', etc.) for the given ODBC C type.  This is used to populate
     // Cursor.description with the type of Python object that will be returned for each column.
@@ -201,7 +201,11 @@ PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMALLINT type, bool u
     case SQL_BINARY:
     case SQL_VARBINARY:
     case SQL_LONGVARBINARY:
+#if PY_MAJOR_VERSION >= 3
+        pytype = (PyObject*)&PyBytes_Type;
+#else
         pytype = (PyObject*)&PyBuffer_Type;
+#endif
         break;
 
 
@@ -360,35 +364,20 @@ create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
     return success;
 }
 
-
-enum free_results_flags
+enum free_results_type
 {
-    FREE_STATEMENT = 0x01,
-    KEEP_STATEMENT = 0x02,
-    FREE_PREPARED  = 0x04,
-    KEEP_PREPARED  = 0x08,
-
-    STATEMENT_MASK = 0x03,
-    PREPARED_MASK  = 0x0C
+    FREE_STATEMENT,
+    KEEP_STATEMENT
 };
 
 static bool
-free_results(Cursor* self, int flags)
+free_results(Cursor* self, free_results_type free_statement)
 {
     // Internal function called any time we need to free the memory associated with query results.  It is safe to call
     // this even when a query has not been executed.
 
     // If we ran out of memory, it is possible that we have a cursor but colinfos is zero.  However, we should be
     // deleting this object, so the cursor will be freed when the HSTMT is destroyed. */
-
-    I((flags & STATEMENT_MASK) != 0);
-    I((flags & PREPARED_MASK) != 0);
-
-    if ((flags & PREPARED_MASK) == FREE_PREPARED)
-    {
-        Py_XDECREF(self->pPreparedSQL);
-        self->pPreparedSQL = 0;
-    }
 
     if (self->colinfos)
     {
@@ -398,21 +387,18 @@ free_results(Cursor* self, int flags)
     
     if (StatementIsValid(self))
     {
-        if ((flags & STATEMENT_MASK) == FREE_STATEMENT)
+        if (free_statement == FREE_STATEMENT)
         {
-            SQLRETURN ret;
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLFreeStmt(self->hstmt, SQL_CLOSE);
+            SQLFreeStmt(self->hstmt, SQL_CLOSE);
             Py_END_ALLOW_THREADS;
         }
         else
         {
-            SQLRETURN ret;
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLFreeStmt(self->hstmt, SQL_UNBIND);
-            ret = SQLFreeStmt(self->hstmt, SQL_RESET_PARAMS);
+            SQLFreeStmt(self->hstmt, SQL_UNBIND);
+            SQLFreeStmt(self->hstmt, SQL_RESET_PARAMS);
             Py_END_ALLOW_THREADS;
-            
         }
 
         if (self->cnxn->hdbc == SQL_NULL_HANDLE)
@@ -449,7 +435,7 @@ closeimpl(Cursor* cur)
     // 
     // This method releases the GIL lock while closing, so verify the HDBC still exists if you use it.
 
-    free_results(cur, FREE_STATEMENT | FREE_PREPARED);
+    free_results(cur, FREE_STATEMENT);
 
     FreeParameterInfo(cur);
     FreeParameterData(cur);
@@ -655,7 +641,7 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
 
     SQLRETURN ret = 0;
 
-    free_results(cur, FREE_STATEMENT | KEEP_PREPARED);
+    free_results(cur, FREE_STATEMENT);
 
     const char* szLastFunction = "";
 
@@ -682,6 +668,7 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
         cur->pPreparedSQL = 0;
 
         szLastFunction = "SQLExecDirect";
+#if PY_MAJOR_VERSION < 3
         if (PyString_Check(pSql))
         {
             Py_BEGIN_ALLOW_THREADS
@@ -689,6 +676,7 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
             Py_END_ALLOW_THREADS
         }
         else
+#endif
         {
             SQLWChar query(pSql);
             if (!query)
@@ -734,24 +722,7 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
         if (ret == SQL_NEED_DATA)
         {
             szLastFunction = "SQLPutData";
-            if (PyBuffer_Check(pParam))
-            {
-                // Buffers can have multiple segments, so we might need multiple writes.  Looping through buffers isn't
-                // difficult, but we've wrapped it up in an iterator object to keep this loop simple.
-
-                BufferSegmentIterator it(pParam);
-                byte* pb;
-                SQLLEN cb;
-                while (it.Next(pb, cb))
-                {
-                    Py_BEGIN_ALLOW_THREADS
-                    ret = SQLPutData(cur->hstmt, pb, cb);
-                    Py_END_ALLOW_THREADS
-                    if (!SQL_SUCCEEDED(ret))
-                        return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
-                }
-            }
-            else if (PyUnicode_Check(pParam))
+            if (PyUnicode_Check(pParam))
             {
                 SQLWChar wchar(pParam); // Will convert to SQLWCHAR if necessary.
 
@@ -769,11 +740,11 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
                     offset += remaining;
                 }
             }
-            else if (PyString_Check(pParam))
+            else if (PyBytes_Check(pParam))
             {
-                const char* p = PyString_AS_STRING(pParam);
+                const char* p = PyBytes_AS_STRING(pParam);
                 SQLLEN offset = 0;
-                SQLLEN cb = (SQLLEN)PyString_GET_SIZE(pParam);
+                SQLLEN cb = (SQLLEN)PyBytes_GET_SIZE(pParam);
                 while (offset < cb)
                 {
                     SQLLEN remaining = min(cur->cnxn->varchar_maxlength, cb - offset);
@@ -786,7 +757,44 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
                     offset += remaining;
                 }
             }
+#if PY_VERSION_HEX >= 0x02060000
+            else if (PyByteArray_Check(pParam))
+            {
+                const char* p = PyByteArray_AS_STRING(pParam);
+                SQLLEN offset = 0;
+                SQLLEN cb     = (SQLLEN)PyByteArray_GET_SIZE(pParam);
+                while (offset < cb)
+                {
+                    SQLLEN remaining = min(cur->cnxn->varchar_maxlength, cb - offset);
+                    TRACE("SQLPutData [%d] (%d) %s\n", offset, remaining, &p[offset]);
+                    Py_BEGIN_ALLOW_THREADS
+                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
+                    Py_END_ALLOW_THREADS
+                    if (!SQL_SUCCEEDED(ret))
+                        return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                    offset += remaining;
+                }
+            }
+#endif
+#if PY_MAJOR_VERSION < 3
+            else if (PyBuffer_Check(pParam))
+            {
+                // Buffers can have multiple segments, so we might need multiple writes.  Looping through buffers isn't
+                // difficult, but we've wrapped it up in an iterator object to keep this loop simple.
 
+                BufferSegmentIterator it(pParam);
+                byte* pb;
+                SQLLEN cb;
+                while (it.Next(pb, cb))
+                {
+                    Py_BEGIN_ALLOW_THREADS
+                    ret = SQLPutData(cur->hstmt, pb, cb);
+                    Py_END_ALLOW_THREADS
+                    if (!SQL_SUCCEEDED(ret))
+                        return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                }
+            }
+#endif
             ret = SQL_NEED_DATA;
         }
     }
@@ -853,10 +861,13 @@ execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
     return (PyObject*)cur;
 }
 
-inline bool
-IsSequence(PyObject* p)
+inline bool IsSequence(PyObject* p)
 {
-    return PySequence_Check(p) && !PyString_Check(p) && !PyBuffer_Check(p) && !PyUnicode_Check(p);
+    // Used to determine if the first parameter of execute is a collection of SQL parameters or is a SQL parameter
+    // itself.  If the first parameter is a list, tuple, or Row object, then we consider it a collection.  Anything
+    // else, including other sequences (e.g. bytearray), are considered SQL parameters.
+
+    return PyList_Check(p) || PyTuple_Check(p) || Row_Check(p);
 }
 
 static char execute_doc[] =
@@ -873,8 +884,7 @@ static char execute_doc[] =
     "\n"
     "  cursor.execute(sql, param1, param2)\n";
 
-PyObject*
-Cursor_execute(PyObject* self, PyObject* args)
+PyObject* Cursor_execute(PyObject* self, PyObject* args)
 {
     Py_ssize_t cParams = PyTuple_Size(args) - 1;
 
@@ -1177,7 +1187,7 @@ Cursor_tables(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
+    if (!free_results(cur, FREE_STATEMENT))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1247,7 +1257,7 @@ Cursor_columns(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
+    if (!free_results(cur, FREE_STATEMENT))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1320,7 +1330,7 @@ Cursor_statistics(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
+    if (!free_results(cur, FREE_STATEMENT))
         return 0;
     
     SQLUSMALLINT nUnique   = (SQLUSMALLINT)(PyObject_IsTrue(pUnique) ? SQL_INDEX_UNIQUE : SQL_INDEX_ALL);
@@ -1398,7 +1408,7 @@ _specialColumns(PyObject* self, PyObject* args, PyObject* kwargs, SQLUSMALLINT n
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
+    if (!free_results(cur, FREE_STATEMENT))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1470,7 +1480,7 @@ Cursor_primaryKeys(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
+    if (!free_results(cur, FREE_STATEMENT))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1542,7 +1552,7 @@ Cursor_foreignKeys(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
+    if (!free_results(cur, FREE_STATEMENT))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1611,7 +1621,7 @@ Cursor_getTypeInfo(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
+    if (!free_results(cur, FREE_STATEMENT))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1659,7 +1669,7 @@ Cursor_nextset(PyObject* self, PyObject* args)
 
     if (ret == SQL_NO_DATA)
     {
-        free_results(cur, FREE_STATEMENT | KEEP_PREPARED);
+        free_results(cur, FREE_STATEMENT);
         Py_RETURN_FALSE;
     }
 
@@ -1672,10 +1682,10 @@ Cursor_nextset(PyObject* self, PyObject* args)
         // Note: The SQL Server driver sometimes returns HY007 here if multiple statements (separated by ;) were
         // submitted.  This is not documented, but I've seen it with multiple successful inserts.  
 
-        free_results(cur, FREE_STATEMENT | KEEP_PREPARED);
+        free_results(cur, FREE_STATEMENT);
         return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
     }
-    free_results(cur, KEEP_STATEMENT | KEEP_PREPARED);
+    free_results(cur, KEEP_STATEMENT);
 
     if (cCols != 0)
     {
@@ -1739,7 +1749,7 @@ Cursor_procedureColumns(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
+    if (!free_results(cur, FREE_STATEMENT))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1799,7 +1809,7 @@ Cursor_procedures(PyObject* self, PyObject* args, PyObject* kwargs)
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
     
-    if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
+    if (!free_results(cur, FREE_STATEMENT))
         return 0;
     
     SQLRETURN ret = 0;
@@ -1950,7 +1960,7 @@ static PyObject* Cursor_setnoscan(PyObject* self, PyObject* value, void *closure
         return 0;
     }
 
-    SQLUINTEGER noscan = PyObject_IsTrue(value) ? SQL_NOSCAN_ON : SQL_NOSCAN_OFF;
+    uintptr_t noscan = PyObject_IsTrue(value) ? SQL_NOSCAN_ON : SQL_NOSCAN_OFF;
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
     ret = SQLSetStmtAttr(cursor->hstmt, SQL_ATTR_NOSCAN, (SQLPOINTER)noscan, 0);
@@ -2058,8 +2068,7 @@ static char cursor_doc[] =
     
 PyTypeObject CursorType =
 {
-    PyObject_HEAD_INIT(0)
-    0,                                                      // ob_size
+    PyVarObject_HEAD_INIT(0, 0)
     "pyodbc.Cursor",                                        // tp_name
     sizeof(Cursor),                                         // tp_basicsize
     0,                                                      // tp_itemsize
@@ -2078,7 +2087,11 @@ PyTypeObject CursorType =
     0,                                                      // tp_getattro
     0,                                                      // tp_setattro
     0,                                                      // tp_as_buffer
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,              // tp_flags
+#if defined(Py_TPFLAGS_HAVE_ITER)
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,
+#else
+    Py_TPFLAGS_DEFAULT,
+#endif
     cursor_doc,                                             // tp_doc
     0,                                                      // tp_traverse
     0,                                                      // tp_clear
@@ -2111,7 +2124,13 @@ Cursor_New(Connection* cnxn)
 {
     // Exported to allow the connection class to create cursors.
 
+#ifdef _MSC_VER
+#pragma warning(disable : 4365)
+#endif
     Cursor* cur = PyObject_NEW(Cursor, &CursorType);
+#ifdef _MSC_VER
+#pragma warning(default : 4365)
+#endif
 
     if (cur)
     {
@@ -2162,8 +2181,7 @@ Cursor_New(Connection* cnxn)
     return cur;
 }
 
-void
-Cursor_init()
+void Cursor_init()
 {
     PyDateTime_IMPORT;    
 }

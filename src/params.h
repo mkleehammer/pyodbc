@@ -2,6 +2,8 @@
 #ifndef PARAMS_H
 #define PARAMS_H
 
+void Params_init();
+
 struct Cursor;
 
 bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first);

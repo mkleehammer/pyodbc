@@ -9,6 +9,8 @@
 #include "errors.h"
 #include "dbspecific.h"
 #include "sqlwchar.h"
+#include "wrapper.h"
+#include <datetime.h>
 
 void GetData_init()
 {
@@ -44,7 +46,7 @@ private:
     Py_ssize_t bufferSize;      // How big is the buffer.
     int bytesUsed;              // How many elements have been read into the buffer?
 
-    PyObject* bufferOwner;      // If possible, we bind into a PyString or PyUnicode object.
+    PyObject* bufferOwner;      // If possible, we bind into a PyString, PyUnicode, or PyByteArray object.
     int element_size;           // How wide is each character: ASCII/ANSI -> 1, Unicode -> 2 or 4, binary -> 1
 
     bool usingStack;            // Is buffer pointing to the initial stack buffer?
@@ -121,10 +123,20 @@ public:
 
             char* stackBuffer = buffer;
 
-            if (dataType == SQL_C_CHAR || dataType == SQL_C_BINARY)
+            if (dataType == SQL_C_CHAR)
             {
-                bufferOwner = PyString_FromStringAndSize(0, newSize);
-                buffer      = bufferOwner ? PyString_AS_STRING(bufferOwner) : 0;
+                bufferOwner = PyBytes_FromStringAndSize(0, newSize);
+                buffer      = bufferOwner ? PyBytes_AS_STRING(bufferOwner) : 0;
+            }
+            else if (dataType == SQL_C_BINARY)
+            {
+#if PY_VERSION_HEX >= 0x02060000
+                bufferOwner = PyByteArray_FromStringAndSize(0, newSize);
+                buffer      = bufferOwner ? PyByteArray_AS_STRING(bufferOwner) : 0;
+#else
+                bufferOwner = PyBytes_FromStringAndSize(0, newSize);
+                buffer      = bufferOwner ? PyBytes_AS_STRING(bufferOwner) : 0;
+#endif
             }
             else if (sizeof(SQLWCHAR) == Py_UNICODE_SIZE)
             {
@@ -135,7 +147,8 @@ public:
             else
             {
                 // We're Unicode, but SQLWCHAR and Py_UNICODE don't match, so maintain our own SQLWCHAR buffer.
-                buffer = (char*)pyodbc_malloc((size_t)newSize);
+                bufferOwner = 0;
+                buffer      = (char*)pyodbc_malloc((size_t)newSize);
             }
 
             if (buffer == 0)
@@ -148,18 +161,27 @@ public:
             return true;
         }
 
-        if (bufferOwner && PyString_CheckExact(bufferOwner))
-        {
-            if (_PyString_Resize(&bufferOwner, newSize) == -1)
-                return false;
-            buffer = PyString_AS_STRING(bufferOwner);
-        }
-        else if (bufferOwner && PyUnicode_CheckExact(bufferOwner))
+        if (bufferOwner && PyUnicode_CheckExact(bufferOwner))
         {
             if (PyUnicode_Resize(&bufferOwner, newSize / element_size) == -1)
                 return false;
             buffer = (char*)PyUnicode_AsUnicode(bufferOwner);
         }
+#if PY_VERSION_HEX >= 0x02060000
+        else if (bufferOwner && PyByteArray_CheckExact(bufferOwner))
+        {
+            if (PyByteArray_Resize(bufferOwner, newSize) == -1)
+                return false;
+            buffer = PyByteArray_AS_STRING(bufferOwner);
+        }
+#else
+        else if (bufferOwner && PyBytes_CheckExact(bufferOwner))
+        {
+            if (_PyBytes_Resize(&bufferOwner, newSize) == -1)
+                return false;
+            buffer = PyBytes_AS_STRING(bufferOwner);
+        }
+#endif
         else
         {
             char* tmp = (char*)realloc(buffer, (size_t)newSize);
@@ -182,23 +204,22 @@ public:
 
         if (usingStack)
         {
-            if (dataType == SQL_C_CHAR || dataType == SQL_C_BINARY)
-                return PyString_FromStringAndSize(buffer, bytesUsed);
+            if (dataType == SQL_C_CHAR)
+                return PyBytes_FromStringAndSize(buffer, bytesUsed);
 
+            if (dataType == SQL_C_BINARY)
+            {
+#if PY_VERSION_HEX >= 0x02060000
+                return PyByteArray_FromStringAndSize(buffer, bytesUsed);
+#else
+                return PyBytes_FromStringAndSize(buffer, bytesUsed);
+#endif
+            }
+            
             if (sizeof(SQLWCHAR) == Py_UNICODE_SIZE)
                 return PyUnicode_FromUnicode((const Py_UNICODE*)buffer, bytesUsed / element_size);
 
             return PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, bytesUsed / element_size);
-        }
-
-        if (bufferOwner && PyString_CheckExact(bufferOwner))
-        {
-            if (_PyString_Resize(&bufferOwner, bytesUsed) == -1)
-                return 0;
-            PyObject* tmp = bufferOwner;
-            bufferOwner = 0;
-            buffer      = 0;
-            return tmp;
         }
 
         if (bufferOwner && PyUnicode_CheckExact(bufferOwner))
@@ -211,7 +232,30 @@ public:
             return tmp;
         }
 
+        if (bufferOwner && PyBytes_CheckExact(bufferOwner))
+        {
+            if (_PyBytes_Resize(&bufferOwner, bytesUsed) == -1)
+                return 0;
+            PyObject* tmp = bufferOwner;
+            bufferOwner = 0;
+            buffer      = 0;
+            return tmp;
+        }
+
+#if PY_VERSION_HEX >= 0x02060000
+        if (bufferOwner && PyByteArray_CheckExact(bufferOwner))
+        {
+            if (PyByteArray_Resize(bufferOwner, bytesUsed) == -1)
+                return 0;
+            PyObject* tmp = bufferOwner;
+            bufferOwner = 0;
+            buffer      = 0;
+            return tmp;
+        }
+#endif
+        
         // We have allocated our own SQLWCHAR buffer and must now copy it to a Unicode object.
+        I(bufferOwner == 0);
         PyObject* result = PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, bytesUsed / element_size);
         if (result == 0)
             return false;
@@ -221,11 +265,14 @@ public:
     }
 };
 
-static PyObject*
-GetDataString(Cursor* cur, Py_ssize_t iCol)
-{
-    // Returns a String or Unicode object for character and binary data.
 
+static PyObject* GetDataString(Cursor* cur, Py_ssize_t iCol)
+{
+    // Returns a string, unicode, or bytearray object for character and binary data.
+    //
+    // In Python 2.6+, binary data is returned as a byte array.  Earlier versions will return an ASCII str object here
+    // which will be wrapped in a buffer object by the caller.
+    //
     // NULL terminator notes:
     //
     //  * pinfo->column_size, from SQLDescribeCol, does not include a NULL terminator.  For example, column_size for a
@@ -259,10 +306,15 @@ GetDataString(Cursor* cur, Py_ssize_t iCol)
     case SQL_LONGVARCHAR:
     case SQL_GUID:
     case SQL_SS_XML:
+#if PY_MAJOR_VERSION < 3
         if (cur->cnxn->unicode_results)
             nTargetType  = SQL_C_WCHAR;
         else
             nTargetType  = SQL_C_CHAR;
+#else
+        nTargetType  = SQL_C_WCHAR;
+#endif
+
         break;
 
     case SQL_WCHAR:
@@ -363,9 +415,8 @@ GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
     return result;
 }
 
-
-static PyObject*
-GetDataBuffer(Cursor* cur, Py_ssize_t iCol)
+#if PY_VERSION_HEX < 0x02060000
+static PyObject* GetDataBuffer(Cursor* cur, Py_ssize_t iCol)
 {
     PyObject* str = GetDataString(cur, iCol);
 
@@ -382,30 +433,31 @@ GetDataBuffer(Cursor* cur, Py_ssize_t iCol)
 
     return buffer;
 }
+#endif
 
-static PyObject*
-GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
+
+static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 {
-    // The SQL_NUMERIC_STRUCT support is hopeless (SQL Server ignores scale on input parameters and output columns), so
-    // we'll rely on the Decimal's string parsing.  Unfortunately, the Decimal author does not pay attention to the
-    // locale, so we have to modify the string ourselves.
+    // The SQL_NUMERIC_STRUCT support is hopeless (SQL Server ignores scale on input parameters and output columns,
+    // Oracle does something else weird, and many drivers don't support it at all), so we'll rely on the Decimal's
+    // string parsing.  Unfortunately, the Decimal author does not pay attention to the locale, so we have to modify
+    // the string ourselves.
     //
     // Oracle inserts group separators (commas in US, periods in some countries), so leave room for that too.
+    //
+    // Some databases support a 'money' type which also inserts currency symbols.  Since we don't want to keep track of
+    // all these, we'll ignore all characters we don't recognize.  We will look for digits, negative sign (which I hope
+    // is universal), and a decimal point ('.' or ',' usually).  We'll do everything as Unicode in case currencies,
+    // etc. are too far out.
 
-    ColumnInfo* pinfo = &cur->colinfos[iCol];
+    // TODO: Is Unicode a good idea for Python 2.7?  We need to know which drivers support Unicode.
 
-    SQLLEN cbNeeded = (SQLLEN)(pinfo->column_size + 3 +       // sign, decimal, NULL
-                               (pinfo->column_size / 3) + 2); // grouping.  I believe this covers all cases.
-
-    SQLLEN cbFetched = 0;
-    char* sz = (char*)_alloca((size_t)cbNeeded);
-
-    if (sz == 0)
-        return PyErr_NoMemory();
+    SQLWCHAR buffer[100];
+    SQLLEN cbFetched = 0; // Note: will not include the NULL terminator.
 
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_CHAR, sz, cbNeeded, &cbFetched);
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_WCHAR, buffer, sizeof(buffer), &cbFetched);
     Py_END_ALLOW_THREADS
     if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
@@ -413,31 +465,37 @@ GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
 
-    // The decimal class requires the decimal to be a period and does not allow thousands separators.  Clean it up.
+    // Remove non-digits and convert the databases decimal to a '.' (required by decimal ctor).
     //
-    // Unfortunately this code only handles single-character values, which might be good enough for decimals and
-    // separators, but is certainly not good enough for currency symbols.
-    //
-    // Note: cbFetched does not include the NULL terminator.
+    // We are assuming that the decimal point and digits fit within the size of SQLWCHAR.
 
-    for (int i = (int)(cbFetched - 1); i >=0; i--)
+    int cch = (int)(cbFetched / sizeof(SQLWCHAR));
+
+    for (int i = (cch - 1); i >= 0; i--)
     {
-        if (sz[i] == chGroupSeparator || sz[i] == '$' || sz[i] == chCurrencySymbol)
+        if (buffer[i] == chDecimal)
         {
-            memmove(&sz[i], &sz[i] + 1, (size_t)(cbFetched - i));
-            cbFetched--;
+            // Must force it to use '.' since the Decimal class doesn't pay attention to the locale.
+            buffer[i] = '.';
         }
-        else if (sz[i] == chDecimal)
+        else if ((buffer[i] < '0' || buffer[i] > '9') && buffer[i] != '-')
         {
-            sz[i] = '.';
+            memmove(&buffer[i], &buffer[i] + 1, (cch - i) * sizeof(SQLWCHAR));
+            cch--;
         }
     }
 
-    return PyObject_CallFunction(decimal_type, "s", sz);
+    I(buffer[cch] == 0);
+
+    Object str(PyUnicode_FromSQLWCHAR(buffer, cch));
+    if (!str)
+        return 0;
+
+    return PyObject_CallFunction(decimal_type, "O", str.Get());
 }
 
-static PyObject*
-GetDataBit(Cursor* cur, Py_ssize_t iCol)
+
+static PyObject* GetDataBit(Cursor* cur, Py_ssize_t iCol)
 {
     SQLCHAR ch;
     SQLLEN cbFetched;
@@ -459,13 +517,13 @@ GetDataBit(Cursor* cur, Py_ssize_t iCol)
     Py_RETURN_FALSE;
 }
 
-static PyObject*
-GetDataLong(Cursor* cur, Py_ssize_t iCol)
+
+static PyObject* GetDataLong(Cursor* cur, Py_ssize_t iCol)
 {
     ColumnInfo* pinfo = &cur->colinfos[iCol];
 
-    long value = 0;
-    SQLLEN cbFetched = 0;
+    SQLINTEGER value;
+    SQLLEN cbFetched;
     SQLRETURN ret;
 
     SQLSMALLINT nCType = pinfo->is_unsigned ? SQL_C_ULONG : SQL_C_LONG;
@@ -484,6 +542,7 @@ GetDataLong(Cursor* cur, Py_ssize_t iCol)
 
     return PyInt_FromLong(value);
 }
+
 
 static PyObject* GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
 {
@@ -506,12 +565,12 @@ static PyObject* GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
 
     if (pinfo->is_unsigned)
         return PyLong_FromUnsignedLongLong((unsigned PY_LONG_LONG)(SQLUBIGINT)value);
-    
+
     return PyLong_FromLongLong((PY_LONG_LONG)value);
 }
 
-static PyObject*
-GetDataDouble(Cursor* cur, Py_ssize_t iCol)
+
+static PyObject* GetDataDouble(Cursor* cur, Py_ssize_t iCol)
 {
     double value;
     SQLLEN cbFetched = 0;
@@ -529,8 +588,8 @@ GetDataDouble(Cursor* cur, Py_ssize_t iCol)
     return PyFloat_FromDouble(value);
 }
 
-static PyObject*
-GetSqlServerTime(Cursor* cur, Py_ssize_t iCol)
+
+static PyObject* GetSqlServerTime(Cursor* cur, Py_ssize_t iCol)
 {
     SQL_SS_TIME2_STRUCT value;
 
@@ -550,8 +609,8 @@ GetSqlServerTime(Cursor* cur, Py_ssize_t iCol)
     return PyTime_FromTime(value.hour, value.minute, value.second, micros);
 }
 
-static PyObject*
-GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
+
+static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
 {
     TIMESTAMP_STRUCT value;
 
@@ -583,6 +642,7 @@ GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
     return PyDateTime_FromDateAndTime(value.year, value.month, value.day, value.hour, value.minute, value.second, micros);
 }
 
+
 int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
 {
     // If this sql type has a user-defined conversion, the index into the connection's `conv_funcs` array is returned.
@@ -595,8 +655,7 @@ int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
 }
 
 
-PyObject*
-GetData(Cursor* cur, Py_ssize_t iCol)
+PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
 {
     // Returns an object representing the value in the row/field.  If 0 is returned, an exception has already been set.
     //
@@ -620,12 +679,19 @@ GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_LONGVARCHAR:
     case SQL_GUID:
     case SQL_SS_XML:
+#if PY_VERSION_HEX >= 0x02060000
+    case SQL_BINARY:
+    case SQL_VARBINARY:
+    case SQL_LONGVARBINARY:
+#endif
         return GetDataString(cur, iCol);
 
+#if PY_VERSION_HEX < 0x02060000
     case SQL_BINARY:
     case SQL_VARBINARY:
     case SQL_LONGVARBINARY:
         return GetDataBuffer(cur, iCol);
+#endif
 
     case SQL_DECIMAL:
     case SQL_NUMERIC:

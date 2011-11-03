@@ -7,6 +7,7 @@ specification.
 
 :homepage: http://code.google.com/p/pyodbc
 :source:   http://github.com/mkleehammer/pyodbc
+:source:   http://code.google.com/p/pyodbc/source/list
 
 This module requires:
 
@@ -20,6 +21,10 @@ On Windows, the easiest way to install is to use the Windows installers from:
 Source can be obtained at
 
   http://github.com/mkleehammer/pyodbc/tree
+
+  or
+
+  http://code.google.com/p/pyodbc/source/list
 
 To build from source, either check the source out of version control or download a source
 extract and run::

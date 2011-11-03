@@ -47,7 +47,7 @@ def _generate_test_string(length):
     if length <= len(_TESTSTR):
         return _TESTSTR[:length]
 
-    c = (length + len(_TESTSTR)-1) / len(_TESTSTR)
+    c = int((length + len(_TESTSTR)-1) / len(_TESTSTR))
     v = _TESTSTR * c
     return v[:length]
 
@@ -56,9 +56,9 @@ class SqlServerTestCase(unittest.TestCase):
     SMALL_FENCEPOST_SIZES = [ 0, 1, 255, 256, 510, 511, 512, 1023, 1024, 2047, 2048, 4000 ]
     LARGE_FENCEPOST_SIZES = [ 4095, 4096, 4097, 10 * 1024, 20 * 1024 ]
 
-    ANSI_FENCEPOSTS    = [ _generate_test_string(size) for size in SMALL_FENCEPOST_SIZES ]
-    UNICODE_FENCEPOSTS = [ unicode(s) for s in ANSI_FENCEPOSTS ]
-    IMAGE_FENCEPOSTS   = ANSI_FENCEPOSTS + [ _generate_test_string(size) for size in LARGE_FENCEPOST_SIZES ]
+    STR_FENCEPOSTS = [ _generate_test_string(size) for size in SMALL_FENCEPOST_SIZES ]
+    BYTE_FENCEPOSTS    = [ bytes(s, 'ascii') for s in STR_FENCEPOSTS ]
+    IMAGE_FENCEPOSTS   = BYTE_FENCEPOSTS + [ bytes(_generate_test_string(size), 'ascii') for size in LARGE_FENCEPOST_SIZES ]
 
     def __init__(self, method_name, connection_string):
         unittest.TestCase.__init__(self, method_name)
@@ -137,7 +137,7 @@ class SqlServerTestCase(unittest.TestCase):
 
     def test_getinfo_int(self):
         value = self.cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
-        self.assert_(isinstance(value, (int, long)))
+        self.assert_(isinstance(value, (int, int)))
 
     def test_getinfo_smallint(self):
         value = self.cnxn.getinfo(pyodbc.SQL_CONCAT_NULL_BEHAVIOR)
@@ -171,19 +171,20 @@ class SqlServerTestCase(unittest.TestCase):
             self.assertEqual(i + 2, row.i)
 
     def test_fixed_unicode(self):
-        value = u"t\xebsting"
+        value = "t\xebsting"
         self.cursor.execute("create table t1(s nchar(7))")
-        self.cursor.execute("insert into t1 values(?)", u"t\xebsting")
+        self.cursor.execute("insert into t1 values(?)", "t\xebsting")
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), unicode)
+        self.assertEqual(type(v), str)
         self.assertEqual(len(v), len(value)) # If we alloc'd wrong, the test below might work because of an embedded NULL
         self.assertEqual(v, value)
 
 
-    def _test_strtype(self, sqltype, value, colsize=None):
+    def _test_strtype(self, sqltype, value, resulttype=None, colsize=None):
         """
         The implementation for string, Unicode, and binary tests.
         """
+        assert colsize is None or isinstance(colsize, int), colsize
         assert colsize is None or (value is None or colsize >= len(value))
 
         if colsize:
@@ -191,33 +192,32 @@ class SqlServerTestCase(unittest.TestCase):
         else:
             sql = "create table t1(s %s)" % sqltype
 
+        if resulttype is None:
+            resulttype = type(value)
+
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(?)", value)
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), type(value))
+        self.assertEqual(type(v), resulttype)
 
         if value is not None:
             self.assertEqual(len(v), len(value))
 
+        # To allow buffer --> db --> bytearray tests, always convert the input to the expected result type before
+        # comparing.
+        if type(value) is not resulttype:
+            value = resulttype(value)
+
         self.assertEqual(v, value)
 
-        # Reported by Andy Hochhaus in the pyodbc group: In 2.1.7 and earlier, a hardcoded length of 255 was used to
-        # determine whether a parameter was bound as a SQL_VARCHAR or SQL_LONGVARCHAR.  Apparently SQL Server chokes if
-        # we bind as a SQL_LONGVARCHAR and the target column size is 8000 or less, which is considers just SQL_VARCHAR.
-        # This means binding a 256 character value would cause problems if compared with a VARCHAR column under
-        # 8001. We now use SQLGetTypeInfo to determine the time to switch.
-        #
-        # [42000] [Microsoft][SQL Server Native Client 10.0][SQL Server]The data types varchar and text are incompatible in the equal to operator.
 
-        self.cursor.execute("select * from t1 where s=?", value)
-
-
-    def _test_strliketype(self, sqltype, value, colsize=None):
+    def _test_strliketype(self, sqltype, value, resulttype=None, colsize=None):
         """
         The implementation for text, image, ntext, and binary.
 
         These types do not support comparison operators.
         """
+        assert colsize is None or isinstance(colsize, int), colsize
         assert colsize is None or (value is None or colsize >= len(value))
 
         if colsize:
@@ -225,13 +225,21 @@ class SqlServerTestCase(unittest.TestCase):
         else:
             sql = "create table t1(s %s)" % sqltype
 
+        if resulttype is None:
+            resulttype = type(value)
+
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(?)", value)
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), type(value))
+        self.assertEqual(type(v), resulttype)
 
         if value is not None:
             self.assertEqual(len(v), len(value))
+
+        # To allow buffer --> db --> bytearray tests, always convert the input to the expected result type before
+        # comparing.
+        if type(value) is not resulttype:
+            value = resulttype(value)
 
         self.assertEqual(v, value)
 
@@ -241,14 +249,14 @@ class SqlServerTestCase(unittest.TestCase):
     #
 
     def test_varchar_null(self):
-        self._test_strtype('varchar', None, 100)
+        self._test_strtype('varchar', None, colsize=100)
 
     # Generate a test for each fencepost size: test_varchar_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('varchar', value, len(value))
+            self._test_strtype('varchar', value, colsize=len(value))
         return t
-    for value in ANSI_FENCEPOSTS:
+    for value in STR_FENCEPOSTS:
         locals()['test_varchar_%s' % len(value)] = _maketest(value)
 
     def test_varchar_many(self):
@@ -265,26 +273,20 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(v2, row.c2)
         self.assertEqual(v3, row.c3)
 
-    def test_varchar_upperlatin(self):
-        self._test_strtype('varchar', 'á')
-
     #
     # unicode
     #
 
     def test_unicode_null(self):
-        self._test_strtype('nvarchar', None, 100)
+        self._test_strtype('nvarchar', None, colsize=100)
 
     # Generate a test for each fencepost size: test_unicode_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('nvarchar', value, len(value))
+            self._test_strtype('nvarchar', value, colsize=len(value))
         return t
-    for value in UNICODE_FENCEPOSTS:
+    for value in STR_FENCEPOSTS:
         locals()['test_unicode_%s' % len(value)] = _maketest(value)
-
-    def test_unicode_upperlatin(self):
-        self._test_strtype('varchar', 'á')
 
     def test_unicode_longmax(self):
         # Issue 188:	Segfault when fetching NVARCHAR(MAX) data over 511 bytes
@@ -298,20 +300,26 @@ class SqlServerTestCase(unittest.TestCase):
     # binary
     #
 
-    def test_null_binary(self):
-        self._test_strtype('varbinary', None, 100)
+    def test_binary_null(self):
+        self._test_strtype('varbinary', None, colsize=100)
      
-    def test_large_null_binary(self):
-        # Bug 1575064
-        self._test_strtype('varbinary', None, 4000)
-
-    # Generate a test for each fencepost size: test_unicode_0, etc.
+    # bytearray
+        
     def _maketest(value):
         def t(self):
-            self._test_strtype('varbinary', buffer(value), len(value))
+                self._test_strtype('varbinary', bytearray(value), colsize=len(value))
         return t
-    for value in ANSI_FENCEPOSTS:
-        locals()['test_binary_%s' % len(value)] = _maketest(value)
+    for value in BYTE_FENCEPOSTS:
+        locals()['test_binary_bytearray_%s' % len(value)] = _maketest(value)
+
+    # bytes
+        
+    def _maketest(value):
+        def t(self):
+                self._test_strtype('varbinary', bytes(value), resulttype=bytearray, colsize=len(value))
+        return t
+    for value in BYTE_FENCEPOSTS:
+        locals()['test_binary_bytes_%s' % len(value)] = _maketest(value)
 
     #
     # image
@@ -320,37 +328,37 @@ class SqlServerTestCase(unittest.TestCase):
     def test_image_null(self):
         self._test_strliketype('image', None)
 
-    # Generate a test for each fencepost size: test_unicode_0, etc.
+    # bytearray
+
     def _maketest(value):
         def t(self):
-            self._test_strliketype('image', buffer(value))
+            self._test_strliketype('image', bytearray(value))
         return t
     for value in IMAGE_FENCEPOSTS:
-        locals()['test_image_%s' % len(value)] = _maketest(value)
+        locals()['test_image_bytearray_%s' % len(value)] = _maketest(value)
 
-    def test_image_upperlatin(self):
-        self._test_strliketype('image', buffer('á'))
+    # bytes
+
+    def _maketest(value):
+        def t(self):
+            self._test_strliketype('image', bytes(value), resulttype=bytearray)
+        return t
+    for value in IMAGE_FENCEPOSTS:
+        locals()['test_image_bytes_%s' % len(value)] = _maketest(value)
 
     #
     # text
     #
 
-    # def test_empty_text(self):
-    #     self._test_strliketype('text', buffer(''))
-
     def test_null_text(self):
         self._test_strliketype('text', None)
 
-    # Generate a test for each fencepost size: test_unicode_0, etc.
     def _maketest(value):
         def t(self):
             self._test_strliketype('text', value)
         return t
-    for value in ANSI_FENCEPOSTS:
+    for value in STR_FENCEPOSTS:
         locals()['test_text_%s' % len(value)] = _maketest(value)
-
-    def test_text_upperlatin(self):
-        self._test_strliketype('text', 'á')
 
     #
     # bit
@@ -379,6 +387,7 @@ class SqlServerTestCase(unittest.TestCase):
             decStr = decStr + "." + '9' * scale
         if negative:
             decStr = "-" + decStr
+
         value = Decimal(decStr)
 
         self.cursor.execute("insert into t1 values(?)", value)
@@ -461,11 +470,8 @@ class SqlServerTestCase(unittest.TestCase):
 
     def test_empty_unicode(self):
         self.cursor.execute("create table t1(s nvarchar(20))")
-        self.cursor.execute("insert into t1 values(?)", u"")
+        self.cursor.execute("insert into t1 values(?)", "")
 
-    def test_unicode_query(self):
-        self.cursor.execute(u"select 1")
-        
     def test_negative_row_index(self):
         self.cursor.execute("create table t1(s varchar(20))")
         self.cursor.execute("insert into t1 values(?)", "1")
@@ -968,10 +974,8 @@ class SqlServerTestCase(unittest.TestCase):
 
     def test_autocommit(self):
         self.assertEqual(self.cnxn.autocommit, False)
-
         othercnxn = pyodbc.connect(self.connection_string, autocommit=True)
         self.assertEqual(othercnxn.autocommit, True)
-
         othercnxn.autocommit = False
         self.assertEqual(othercnxn.autocommit, False)
 
@@ -986,7 +990,7 @@ class SqlServerTestCase(unittest.TestCase):
 
         # ... should be returned as Unicode
         value = othercursor.execute("select s from t1").fetchone()[0]
-        self.assertEqual(value, u'test')
+        self.assertEqual(value, 'test')
 
 
     def test_sqlserver_callproc(self):
@@ -1127,7 +1131,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (1, newid())")
         row = self.cursor.execute("select * from t1").fetchone()
         self.assertEqual(row.n, 1)
-        self.assertEqual(type(row.blob), buffer)
+        self.assertEqual(type(row.blob), bytearray)
 
         self.cursor.execute("update t1 set n=?, blob=?", 2, None)
         row = self.cursor.execute("select * from t1").fetchone()
@@ -1223,7 +1227,7 @@ class SqlServerTestCase(unittest.TestCase):
         
     def test_large_update_nodata(self):
         self.cursor.execute('create table t1(a varbinary(max))')
-        hundredkb = buffer('x'*100*1024)
+        hundredkb = b'x'*100*1024
         self.cursor.execute('update t1 set a=? where 1=0', (hundredkb,))
 
     def test_func_param(self):
@@ -1257,23 +1261,12 @@ class SqlServerTestCase(unittest.TestCase):
         current = m.group(1)
         self.assert_(current in drivers)
             
-    def test_prepare_cleanup(self):
-        # When statement is prepared, it is kept in case the next execute uses the same statement.  This must be
-        # removed when a non-execute statement is used that returns results, such as SQLTables.
-
-        self.cursor.execute("select top 1 name from sysobjects where name = ?", "bogus")
-        self.cursor.fetchone()
-
-        self.cursor.tables("bogus")
-        
-        self.cursor.execute("select top 1 name from sysobjects where name = ?", "bogus")
-        self.cursor.fetchone()
 
 
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage=usage)
-    parser.add_option("-v", "--verbose", action="count", help="Increment test verbosity (can be used multiple times)")
+    parser.add_option("-v", "--verbose", action="count", default=0, help="Increment test verbosity (can be used multiple times)")
     parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
     parser.add_option("-t", "--test", help="Run only the named test")
 
