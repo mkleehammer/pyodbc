@@ -102,5 +102,29 @@ inline Py_ssize_t Text_Size(PyObject* o)
     return (o && PyUnicode_Check(o)) ? PyUnicode_GET_SIZE(o) : 0;
 }
 
+inline Py_ssize_t TextCopyToUnicode(Py_UNICODE* buffer, PyObject* o)
+{
+    // Copies a String or Unicode object to a Unicode buffer and returns the number of characters copied.
+    // No NULL terminator is appended!
+
+#if PY_MAJOR_VERSION < 3
+    if (PyBytes_Check(o))
+    {
+        const Py_ssize_t cch = PyBytes_GET_SIZE(o);
+        const char * pch = PyBytes_AS_STRING(o);
+        for (Py_ssize_t i = 0; i < cch; i++)
+            *buffer++ = (Py_UNICODE)*pch++;
+        return cch;
+    }
+    else
+    {
+#endif    
+        Py_ssize_t cch = PyUnicode_GET_SIZE(o);
+        memcpy(buffer, PyUnicode_AS_UNICODE(o), cch * sizeof(Py_UNICODE));
+        return cch;
+#if PY_MAJOR_VERSION < 3
+    }
+#endif    
+}
 
 #endif // PYODBCCOMPAT_H
