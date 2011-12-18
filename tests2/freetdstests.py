@@ -300,6 +300,11 @@ class FreeTDSTestCase(unittest.TestCase):
             return              # so pass / ignore
         self.cursor.execute("select cast(replicate(N'x', 512) as nvarchar(max))")
 
+    def test_unicode_bind(self):
+        value = u'test'
+        v = self.cursor.execute("select ?", value).fetchone()[0]
+        self.assertEqual(value, v)
+        
     #
     # binary
     #
