@@ -319,6 +319,10 @@ class SqlServerTestCase(unittest.TestCase):
         # Bug 1575064
         self._test_strtype('varbinary', None, colsize=4000)
 
+    def test_binaryNull_object(self):
+        self.cursor.execute("create table t1(n varbinary(10))")
+        self.cursor.execute("insert into t1 values (?)", pyodbc.BinaryNull);
+
     # buffer
 
     def _maketest(value):

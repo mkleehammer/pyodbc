@@ -2,7 +2,7 @@
 #ifndef PARAMS_H
 #define PARAMS_H
 
-void Params_init();
+bool Params_init();
 
 struct Cursor;
 

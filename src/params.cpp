@@ -11,11 +11,6 @@
 #include "sqlwchar.h"
 #include <datetime.h>
 
-void Params_init()
-{
-    PyDateTime_IMPORT;
-}
-
 
 inline Connection* GetConnection(Cursor* cursor)
 {
@@ -124,6 +119,17 @@ static bool GetNullInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
     info.StrLen_or_Ind = SQL_NULL_DATA;
     return true;
 }
+
+static bool GetNullBinaryInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
+{
+    info.ValueType         = SQL_C_BINARY;
+    info.ParameterType     = SQL_BINARY;
+    info.ColumnSize        = 1;
+    info.ParameterValuePtr = 0;
+    info.StrLen_or_Ind     = SQL_NULL_DATA;
+    return true;
+}
+
 
 static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
 {
@@ -534,6 +540,9 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     if (param == Py_None)
         return GetNullInfo(cur, index, info);
 
+    if (param == null_binary)
+        return GetNullBinaryInfo(cur, index, info);
+
     if (PyBytes_Check(param))
         return GetBytesInfo(cur, index, param, info);
 
@@ -811,3 +820,50 @@ static bool GetParamType(Cursor* cur, Py_ssize_t index, SQLSMALLINT& type)
     type = cur->paramtypes[index];
     return true;
 }
+
+struct NullParam
+{
+    PyObject_HEAD
+};
+
+
+PyTypeObject NullParamType =
+{
+    PyVarObject_HEAD_INIT(NULL, 0)
+    "pyodbc.NullParam",         // tp_name
+    sizeof(NullParam),          // tp_basicsize
+    0,                                                      // tp_itemsize
+    0,                                // destructor tp_dealloc
+    0,                                                      // tp_print
+    0,                                                      // tp_getattr
+    0,                                                      // tp_setattr
+    0,                                                      // tp_compare
+    0,                                               // tp_repr
+    0,                                                      // tp_as_number
+    0,                                       // tp_as_sequence
+    0,                                        // tp_as_mapping
+    0,                                                      // tp_hash
+    0,                                                      // tp_call
+    0,                                                      // tp_str
+    0,                                           // tp_getattro
+    0,                                           // tp_setattro
+    0,                                                      // tp_as_buffer
+    Py_TPFLAGS_DEFAULT,                                     // tp_flags
+};
+
+PyObject* null_binary;
+
+bool Params_init()
+{
+    if (PyType_Ready(&NullParamType) < 0)
+        return false;
+    
+    null_binary = (PyObject*)PyObject_New(NullParam, &NullParamType);
+    if (null_binary == 0)
+        return false;
+    
+    PyDateTime_IMPORT;
+
+    return true;
+}
+

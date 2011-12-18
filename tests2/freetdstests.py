@@ -310,11 +310,10 @@ class FreeTDSTestCase(unittest.TestCase):
     #
 
     def test_binary_null(self):
-        self._test_strtype('varbinary', None, colsize=100)
-     
-    def test_large_binary_null(self):
-        # Bug 1575064
-        self._test_strtype('varbinary', None, colsize=4000)
+        # FreeTDS does not support SQLDescribeParam, so we must specifically tell it when we are inserting
+        # a NULL into a binary column.
+        self.cursor.execute("create table t1(n varbinary(10))")
+        self.cursor.execute("insert into t1 values (?)", pyodbc.BinaryNull);
 
     # buffer
 

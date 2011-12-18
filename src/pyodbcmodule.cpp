@@ -177,7 +177,8 @@ static bool import_types()
     Cursor_init();
     CnxnInfo_init();
     GetData_init();
-    Params_init();
+    if (!Params_init())
+        return false;
 
     PyObject* decimalmod = PyImport_ImportModule("decimal");
     if (!decimalmod)
@@ -973,6 +974,9 @@ initpyodbc(void)
     Py_INCREF(binary_type);
     PyModule_AddObject(module, "Binary", binary_type);
     Py_INCREF(binary_type);
+
+    I(null_binary != 0);        // must be initialized first
+    PyModule_AddObject(module, "BinaryNull", null_binary);
 
     PyModule_AddIntConstant(module, "UNICODE_SIZE", sizeof(Py_UNICODE));
     PyModule_AddIntConstant(module, "SQLWCHAR_SIZE", sizeof(SQLWCHAR));
