@@ -215,7 +215,7 @@ public:
                 return PyBytes_FromStringAndSize(buffer, bytesUsed);
 #endif
             }
-            
+
             if (sizeof(SQLWCHAR) == Py_UNICODE_SIZE)
                 return PyUnicode_FromUnicode((const Py_UNICODE*)buffer, bytesUsed / element_size);
 
@@ -253,7 +253,7 @@ public:
             return tmp;
         }
 #endif
-        
+
         // We have allocated our own SQLWCHAR buffer and must now copy it to a Unicode object.
         I(bufferOwner == 0);
         PyObject* result = PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, bytesUsed / element_size);
@@ -340,8 +340,19 @@ static PyObject* GetDataString(Cursor* cur, Py_ssize_t iCol)
         ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), nTargetType, buffer.GetBuffer(), buffer.GetRemaining(), &cbData);
         Py_END_ALLOW_THREADS;
 
-        if (cbData == SQL_NULL_DATA)
+        if (cbData == SQL_NULL_DATA || (ret == SQL_SUCCESS && cbData < 0))
+        {
+            // HACK: FreeTDS 0.91 on OS/X returns -4 for NULL data instead of SQL_NULL_DATA (-1).  I've traced into the
+            // code and it appears to be the result of assigning -1 to a SQLLEN:
+            //
+            //   if (colinfo->column_cur_size < 0) {
+            //       /* TODO check what should happen if pcbValue was NULL */
+            //       *pcbValue = SQL_NULL_DATA;
+            //
+            // I believe it will be fine to treat all negative values as NULL for now.
+
             Py_RETURN_NONE;
+        }
 
         if (!SQL_SUCCEEDED(ret) && ret != SQL_NO_DATA)
             return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
