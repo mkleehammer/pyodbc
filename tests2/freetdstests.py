@@ -554,11 +554,14 @@ class FreeTDSTestCase(unittest.TestCase):
     #
 
     def test_int(self):
-        value = 1234
-        self.cursor.execute("create table t1(n int)")
-        self.cursor.execute("insert into t1 values (?)", value)
-        result = self.cursor.execute("select n from t1").fetchone()[0]
-        self.assertEquals(result, value)
+        # Issue 226: Failure if there is more than one int?
+        value1 =  1234
+        value2 = -1234
+        self.cursor.execute("create table t1(n1 int, n2 int)")
+        self.cursor.execute("insert into t1 values (?, ?)", value1, value2)
+        row = self.cursor.execute("select n1, n2 from t1").fetchone()
+        self.assertEquals(row.n1, value1)
+        self.assertEquals(row.n2, value2)
 
     def test_negative_int(self):
         value = -1
