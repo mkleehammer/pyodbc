@@ -123,7 +123,7 @@ def get_compiler_settings(version_str):
                                           '/wd4711', # function selected for automatic inline expansion
                                           '/wd4100', # unreferenced formal parameter
                                           '/wd4127', # "conditional expression is constant" testing compilation constants
-                                          '/wd4191', # casts to PYCFunction, perhaps the extra parameters should be added
+                                          '/wd4191', # casts to PYCFunction which doesn't have the keywords parameter
                                           ]
         settings['libraries'].append('odbc32')
         settings['libraries'].append('advapi32')

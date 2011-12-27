@@ -366,8 +366,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
 }
 
 
-static PyObject*
-mod_datasources(PyObject* self)
+static PyObject* mod_datasources(PyObject* self)
 {
     UNUSED(self);
 
@@ -430,17 +429,20 @@ static PyObject* mod_timefromticks(PyObject* self, PyObject* args)
     return PyTime_FromTime(fields->tm_hour, fields->tm_min, fields->tm_sec, 0);
 }
 
+
 static PyObject* mod_datefromticks(PyObject* self, PyObject* args)
 {
     UNUSED(self);
     return PyDate_FromTimestamp(args);
 }
 
+
 static PyObject* mod_timestampfromticks(PyObject* self, PyObject* args)
 {
     UNUSED(self);
     return PyDateTime_FromTimestamp(args);
 }
+
 
 static char connect_doc[] =
     "connect(str, autocommit=False, ansi=False, timeout=0, **kwargs) --> Connection\n"

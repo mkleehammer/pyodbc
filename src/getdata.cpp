@@ -411,8 +411,7 @@ static PyObject* GetDataString(Cursor* cur, Py_ssize_t iCol)
 }
 
 
-static PyObject*
-GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
+static PyObject* GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
 {
     // conv
     //   The index into the connection's user-defined conversions `conv_types`.
@@ -425,6 +424,7 @@ GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
     Py_DECREF(value);
     return result;
 }
+
 
 #if PY_VERSION_HEX < 0x02060000
 static PyObject* GetDataBuffer(Cursor* cur, Py_ssize_t iCol)

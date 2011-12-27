@@ -44,7 +44,7 @@ def _generate_test_string(length):
     if length <= len(_TESTSTR):
         return _TESTSTR[:length]
 
-    c = (length + len(_TESTSTR)-1) / len(_TESTSTR)
+    c = (length + len(_TESTSTR)-1) // len(_TESTSTR)
     v = _TESTSTR * c
     return v[:length]
 
@@ -53,9 +53,9 @@ class SqliteTestCase(unittest.TestCase):
     SMALL_FENCEPOST_SIZES = [ 0, 1, 255, 256, 510, 511, 512, 1023, 1024, 2047, 2048, 4000 ]
     LARGE_FENCEPOST_SIZES = [ 4095, 4096, 4097, 10 * 1024, 20 * 1024 ]
 
-    ANSI_FENCEPOSTS    = [ _generate_test_string(size) for size in SMALL_FENCEPOST_SIZES ]
-    UNICODE_FENCEPOSTS = [ unicode(s) for s in ANSI_FENCEPOSTS ]
-    IMAGE_FENCEPOSTS   = ANSI_FENCEPOSTS + [ _generate_test_string(size) for size in LARGE_FENCEPOST_SIZES ]
+    STR_FENCEPOSTS = [ _generate_test_string(size) for size in SMALL_FENCEPOST_SIZES ]
+    BYTE_FENCEPOSTS    = [ bytes(s, 'ascii') for s in STR_FENCEPOSTS ]
+    IMAGE_FENCEPOSTS   = BYTE_FENCEPOSTS + [ bytes(_generate_test_string(size), 'ascii') for size in LARGE_FENCEPOST_SIZES ]
 
     def __init__(self, method_name, connection_string):
         unittest.TestCase.__init__(self, method_name)
@@ -121,21 +121,11 @@ class SqliteTestCase(unittest.TestCase):
 
     def test_getinfo_int(self):
         value = self.cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
-        self.assert_(isinstance(value, (int, long)))
+        self.assert_(isinstance(value, int))
 
     def test_getinfo_smallint(self):
         value = self.cnxn.getinfo(pyodbc.SQL_CONCAT_NULL_BEHAVIOR)
         self.assert_(isinstance(value, int))
-
-    def test_fixed_unicode(self):
-        value = u"t\xebsting"
-        self.cursor.execute("create table t1(s nchar(7))")
-        self.cursor.execute("insert into t1 values(?)", u"t\xebsting")
-        v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), unicode)
-        self.assertEqual(len(v), len(value)) # If we alloc'd wrong, the test below might work because of an embedded NULL
-        self.assertEqual(v, value)
-
 
     def _test_strtype(self, sqltype, value, colsize=None):
         """
@@ -204,11 +194,11 @@ class SqliteTestCase(unittest.TestCase):
         def t(self):
             self._test_strtype('text', value, len(value))
         return t
-    for value in UNICODE_FENCEPOSTS:
+    for value in STR_FENCEPOSTS:
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strtype('varchar', u'á')
+        self._test_strtype('varchar', 'á')
 
     #
     # blob
@@ -224,9 +214,9 @@ class SqliteTestCase(unittest.TestCase):
     # Generate a test for each fencepost size: test_unicode_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('blob', buffer(value), len(value))
+            self._test_strtype('blob', bytearray(value), len(value))
         return t
-    for value in ANSI_FENCEPOSTS:
+    for value in BYTE_FENCEPOSTS:
         locals()['test_blob_%s' % len(value)] = _maketest(value)
 
     def test_subquery_params(self):
@@ -262,13 +252,6 @@ class SqliteTestCase(unittest.TestCase):
         self.sql = "select * from t1"
         self.assertRaises(pyodbc.ProgrammingError, self._exec)
 
-    def test_empty_unicode(self):
-        self.cursor.execute("create table t1(s nvarchar(20))")
-        self.cursor.execute("insert into t1 values(?)", u"")
-
-    def test_unicode_query(self):
-        self.cursor.execute(u"select 1")
-        
     def test_negative_row_index(self):
         self.cursor.execute("create table t1(s varchar(20))")
         self.cursor.execute("insert into t1 values(?)", "1")
@@ -556,19 +539,6 @@ class SqliteTestCase(unittest.TestCase):
         othercnxn.autocommit = False
         self.assertEqual(othercnxn.autocommit, False)
 
-    def test_unicode_results(self):
-        "Ensure unicode_results forces Unicode"
-        othercnxn = pyodbc.connect(self.connection_string, unicode_results=True)
-        othercursor = othercnxn.cursor()
-
-        # ANSI data in an ANSI column ...
-        othercursor.execute("create table t1(s varchar(20))")
-        othercursor.execute("insert into t1 values(?)", 'test')
-
-        # ... should be returned as Unicode
-        value = othercursor.execute("select s from t1").fetchone()[0]
-        self.assertEqual(value, u'test')
-
     def test_skip(self):
         # Insert 1, 2, and 3.  Fetch 1, skip 2, fetch 3.
 
@@ -641,27 +611,9 @@ class SqliteTestCase(unittest.TestCase):
         # text
         t = self.cursor.description[1]
         self.assertEqual(t[0], 's')
-        self.assertEqual(t[1], unicode)
+        self.assertEqual(t[1], str)
         self.assertEqual(t[5], 0)       # scale
         self.assertEqual(t[6], True)    # nullable
-
-    def test_none_param(self):
-        "Ensure None can be used for params other than the first"
-        # Some driver/db versions would fail if NULL was not the first parameter because SQLDescribeParam (only used
-        # with NULL) could not be used after the first call to SQLBindParameter.  This means None always worked for the
-        # first column, but did not work for later columns.
-        #
-        # If SQLDescribeParam doesn't work, pyodbc would use VARCHAR which almost always worked.  However,
-        # binary/varbinary won't allow an implicit conversion.
-
-        value = u'\x12abc'
-        self.cursor.execute("create table t1(n int, b blob)")
-        self.cursor.execute("insert into t1 values (1, ?)", value)
-        row = self.cursor.execute("select * from t1").fetchone()
-        self.assertEqual(row.n, 1)
-        self.assertEqual(type(row.b), buffer)
-        self.assertEqual(row.b, value)
-
 
     def test_row_equal(self):
         self.cursor.execute("create table t1(n int, s varchar(20))")
@@ -701,7 +653,7 @@ class SqliteTestCase(unittest.TestCase):
         
     def test_large_update_nodata(self):
         self.cursor.execute('create table t1(a blob)')
-        hundredkb = buffer('x'*100*1024)
+        hundredkb = bytearray('x'*100*1024)
         self.cursor.execute('update t1 set a=? where 1=0', (hundredkb,))
 
     def test_no_fetch(self):
@@ -725,7 +677,6 @@ def main():
 
     if not args:
         connection_string = load_setup_connection_string('sqlitetests')
-        print 'connection_string:', connection_string
 
         if not connection_string:
             parser.print_help()

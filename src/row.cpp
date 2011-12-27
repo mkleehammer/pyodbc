@@ -47,15 +47,18 @@ void FreeRowValues(Py_ssize_t cValues, PyObject** apValues)
     }
 }
 
-static void Row_dealloc(Row* self)
+static void Row_dealloc(PyObject* o)
 {
     // Note: Now that __newobj__ is available, our variables could be zero...
+
+    Row* self = (Row*)o;
 
     Py_XDECREF(self->description);
     Py_XDECREF(self->map_name_to_index);
     FreeRowValues(self->cValues, self->apValues);
     PyObject_Del(self);
 }
+
 
 Row* Row_New(PyObject* description, PyObject* map_name_to_index, Py_ssize_t cValues, PyObject** apValues)
 {
@@ -86,6 +89,7 @@ Row* Row_New(PyObject* description, PyObject* map_name_to_index, Py_ssize_t cVal
     return row;
 }
 
+
 static PyObject* Row_getattro(PyObject* o, PyObject* name)
 {
     // Called to handle 'row.colname'.
@@ -104,16 +108,19 @@ static PyObject* Row_getattro(PyObject* o, PyObject* name)
     return PyObject_GenericGetAttr(o, name);
 }
 
+
 static Py_ssize_t Row_length(PyObject* self)
 {
     return ((Row*)self)->cValues;
 }
 
 
-static int Row_contains(Row *self, PyObject *el)
+static int Row_contains(PyObject* o, PyObject* el)
 {
     // Implementation of contains.  The documentation is not good (non-existent?), so I copied the following from the
     // PySequence_Contains documentation: Return -1 if error; 1 if ob in seq; 0 if ob not in seq.
+
+    Row* self = (Row*)o;
 
     int cmp = 0;
 
@@ -124,9 +131,11 @@ static int Row_contains(Row *self, PyObject *el)
 }
 
 
-static PyObject* Row_item(Row* self, Py_ssize_t i)
+static PyObject* Row_item(PyObject* o, Py_ssize_t i)
 {
     // Apparently, negative indexes are handled by magic ;) -- they never make it here.
+
+    Row* self = (Row*)o;
 
     if (i < 0 || i >= self->cValues)
     {
@@ -139,9 +148,11 @@ static PyObject* Row_item(Row* self, Py_ssize_t i)
 }
 
 
-static int Row_ass_item(Row* self, Py_ssize_t i, PyObject* v)
+static int Row_ass_item(PyObject* o, Py_ssize_t i, PyObject* v)
 {
     // Implements row[i] = value.
+
+    Row* self = (Row*)o;
 
     if (i < 0 || i >= self->cValues)
     {
@@ -164,47 +175,9 @@ static int Row_setattro(PyObject* o, PyObject *name, PyObject* v)
     PyObject* index = PyDict_GetItem(self->map_name_to_index, name);
 
     if (index)
-        return Row_ass_item(self, PyNumber_AsSsize_t(index, 0), v);
+        return Row_ass_item(o, PyNumber_AsSsize_t(index, 0), v);
 
     return PyObject_GenericSetAttr(o, name, v);
-}
-
-
-static PyObject* Row_slice(PyObject* o, Py_ssize_t iFirst, Py_ssize_t iMax)
-{
-    // Note: Negative indexes will have already been converted to positive ones before this is called.  It is possible
-    // for the iMax value to be too high if row[:] or row[1:] is used.
-    //
-    // I don't think iFirst can ever be below zero, but the tuple slice function checks for it, so we will too.
-
-    Row* self = (Row*)o;
-
-    if (iFirst < 0)
-        iFirst = 0;
-    if (iMax > self->cValues)
-        iMax = self->cValues;
-    if (iMax < iFirst)
-        iMax = iFirst;
-
-    if (iFirst == 0 && iMax == self->cValues)
-    {
-        Py_INCREF(o);
-        return o;
-    }
-
-    Py_ssize_t len = iMax - iFirst;
-    PyObject* result = PyTuple_New(len);
-    if (!result)
-        return 0;
-
-    for (Py_ssize_t i = 0; i < len; i++)
-    {
-        PyObject* item = self->apValues[iFirst + i];
-        PyTuple_SET_ITEM(result, i, item);
-        Py_INCREF(item);
-    }
-
-    return result;
 }
 
 
@@ -237,7 +210,7 @@ static PyObject* Row_repr(PyObject* o)
         // Need a trailing comma: (value,)
         length += 2;
     }
-    
+
     PyObject* result = Text_New(length);
     if (!result)
         return 0;
@@ -332,11 +305,11 @@ static PyObject* Row_subscript(PyObject* o, PyObject* key)
 
         if (i < 0 || i >= row->cValues)
             return PyErr_Format(PyExc_IndexError, "row index out of range index=%d len=%d", (int)i, (int)row->cValues);
-        
+
         Py_INCREF(row->apValues[i]);
         return row->apValues[i];
     }
-    
+
     if (PySlice_Check(key))
     {
         Py_ssize_t start, stop, step, slicelength;
@@ -372,17 +345,16 @@ static PyObject* Row_subscript(PyObject* o, PyObject* key)
 }
 
 
-
 static PySequenceMethods row_as_sequence =
 {
-    (lenfunc)Row_length,               // sq_length
-    0,                                 // sq_concat
-    0,                                 // sq_repeat
-    (ssizeargfunc)Row_item,            // sq_item
-    Row_slice,                         // sq_slice
-    (ssizeobjargproc)Row_ass_item,     // sq_ass_item
-    0,                                 // sq_ass_slice
-    (objobjproc)Row_contains,          // sq_contains
+    Row_length,                 // sq_length
+    0,                          // sq_concat
+    0,                          // sq_repeat
+    Row_item,                   // sq_item
+    0,                          // was_sq_slice
+    Row_ass_item,               // sq_ass_item
+    0,                          // sq_ass_slice
+    Row_contains,               // sq_contains
 };
 
 
@@ -433,7 +405,7 @@ PyTypeObject RowType =
     "pyodbc.Row",                                           // tp_name
     sizeof(Row),                                            // tp_basicsize
     0,                                                      // tp_itemsize
-    (destructor)Row_dealloc,                                // destructor tp_dealloc
+    Row_dealloc,                                            // tp_dealloc
     0,                                                      // tp_print
     0,                                                      // tp_getattr
     0,                                                      // tp_setattr
@@ -458,20 +430,20 @@ PyTypeObject RowType =
     0,                                                      // tp_iternext
     0,                                                      // tp_methods
     Row_members,                                            // tp_members
-    0,                                                      // tp_getset
-    0,                                                      // tp_base
-    0,                                                      // tp_dict
-    0,                                                      // tp_descr_get
-    0,                                                      // tp_descr_set
-    0,                                                      // tp_dictoffset
-    0,                                                      // tp_init
-    0,                                                      // tp_alloc
-    0,                                                      // tp_new
-    0,                                                      // tp_free
-    0,                                                      // tp_is_gc
-    0,                                                      // tp_bases
-    0,                                                      // tp_mro
-    0,                                                      // tp_cache
-    0,                                                      // tp_subclasses
-    0,                                                      // tp_weaklist
+    // 0,                                                      // tp_getset
+    // 0,                                                      // tp_base
+    // 0,                                                      // tp_dict
+    // 0,                                                      // tp_descr_get
+    // 0,                                                      // tp_descr_set
+    // 0,                                                      // tp_dictoffset
+    // 0,                                                      // tp_init
+    // 0,                                                      // tp_alloc
+    // 0,                                                      // tp_new
+    // 0,                                                      // tp_free
+    // 0,                                                      // tp_is_gc
+    // 0,                                                      // tp_bases
+    // 0,                                                      // tp_mro
+    // 0,                                                      // tp_cache
+    // 0,                                                      // tp_subclasses
+    // 0,                                                      // tp_weaklist
 };

@@ -23,8 +23,7 @@ static char connection_doc[] =
     "\n"
     "Each manages a single ODBC HDBC.";
 
-static Connection*
-Connection_Validate(PyObject* self)
+static Connection* Connection_Validate(PyObject* self)
 {
     Connection* cnxn;
     
@@ -273,19 +272,21 @@ static char conv_clear_doc[] =
     "clear_output_converters() --> None\n\n"
     "Remove all output converter functions.";
 
-static PyObject*
-Connection_conv_clear(Connection* cnxn)
+static PyObject* Connection_conv_clear(PyObject* self, PyObject* args)
 {
+    UNUSED(args);
+    
+    Connection* cnxn = (Connection*)self;
     _clear_conv(cnxn);
-
     Py_RETURN_NONE;
 }
 
-static int
-Connection_clear(Connection* cnxn)
+static int Connection_clear(PyObject* self)
 {
     // Internal method for closing the connection.  (Not called close so it isn't confused with the external close
     // method.)
+
+    Connection* cnxn = (Connection*)self;
 
     if (cnxn->hdbc != SQL_NULL_HANDLE)
     {
@@ -312,11 +313,9 @@ Connection_clear(Connection* cnxn)
     return 0;
 }
 
-static void
-Connection_dealloc(PyObject* self)
+static void Connection_dealloc(PyObject* self)
 {
-    Connection* cnxn = (Connection*)self;
-    Connection_clear(cnxn);
+    Connection_clear(self);
     PyObject_Del(self);
 }
 
@@ -330,8 +329,7 @@ static char close_doc[] =
     "Note that closing a connection without committing the changes first will cause\n"
     "an implicit rollback to be performed.";
     
-static PyObject*
-Connection_close(PyObject* self, PyObject* args)
+static PyObject* Connection_close(PyObject* self, PyObject* args)
 {
     UNUSED(args);
     
@@ -339,13 +337,12 @@ Connection_close(PyObject* self, PyObject* args)
     if (!cnxn)
         return 0;
 
-    Connection_clear(cnxn);
+    Connection_clear(self);
 
     Py_RETURN_NONE;
 }
 
-static PyObject*
-Connection_cursor(PyObject* self, PyObject* args)
+static PyObject* Connection_cursor(PyObject* self, PyObject* args)
 {
     UNUSED(args);
     
@@ -356,8 +353,7 @@ Connection_cursor(PyObject* self, PyObject* args)
     return (PyObject*)Cursor_New(cnxn);
 }
 
-static PyObject*
-Connection_execute(PyObject* self, PyObject* args)
+static PyObject* Connection_execute(PyObject* self, PyObject* args)
 {
     PyObject* result = 0;
 
@@ -537,8 +533,7 @@ static const GetInfoType aInfoTypes[] = {
     { SQL_XOPEN_CLI_YEAR, GI_STRING },
 };
 
-static PyObject*
-Connection_getinfo(PyObject* self, PyObject* args)
+static PyObject* Connection_getinfo(PyObject* self, PyObject* args)
 {
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
@@ -607,8 +602,7 @@ Connection_getinfo(PyObject* self, PyObject* args)
 }
 
 
-static PyObject*
-Connection_endtrans(PyObject* self, PyObject* args, SQLSMALLINT type)
+static PyObject* Connection_endtrans(PyObject* self, PyObject* args, SQLSMALLINT type)
 {
     UNUSED(args);
     
@@ -631,14 +625,12 @@ Connection_endtrans(PyObject* self, PyObject* args, SQLSMALLINT type)
     Py_RETURN_NONE;
 }
 
-static PyObject*
-Connection_commit(PyObject* self, PyObject* args)
+static PyObject* Connection_commit(PyObject* self, PyObject* args)
 {
     return Connection_endtrans(self, args, SQL_COMMIT);
 }
 
-static PyObject*
-Connection_rollback(PyObject* self, PyObject* args)
+static PyObject* Connection_rollback(PyObject* self, PyObject* args)
 {
     return Connection_endtrans(self, args, SQL_ROLLBACK);
 }
@@ -668,8 +660,7 @@ static char getinfo_doc[] =
     "Calls SQLGetInfo, passing `type`, and returns the result formatted as a Python object.";
 
 
-PyObject*
-Connection_getautocommit(PyObject* self, void* closure)
+PyObject* Connection_getautocommit(PyObject* self, void* closure)
 {
     UNUSED(closure);
 
@@ -682,8 +673,7 @@ Connection_getautocommit(PyObject* self, void* closure)
     return result;
 }
 
-static int
-Connection_setautocommit(PyObject* self, PyObject* value, void* closure)
+static int Connection_setautocommit(PyObject* self, PyObject* value, void* closure)
 {
     UNUSED(closure);
 
@@ -714,33 +704,33 @@ Connection_setautocommit(PyObject* self, PyObject* value, void* closure)
 }
 
 
-PyObject*
-Connection_getsearchescape(Connection* self, void* closure)
+static PyObject* Connection_getsearchescape(PyObject* self, void* closure)
 {
     UNUSED(closure);
     
-    if (!self->searchescape)
+    Connection* cnxn = (Connection*)self;
+
+    if (!cnxn->searchescape)
     {
         char sz[8] = { 0 };
         SQLSMALLINT cch = 0;
 
         SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetInfo(self->hdbc, SQL_SEARCH_PATTERN_ESCAPE, &sz, _countof(sz), &cch);
+        ret = SQLGetInfo(cnxn->hdbc, SQL_SEARCH_PATTERN_ESCAPE, &sz, _countof(sz), &cch);
         Py_END_ALLOW_THREADS
         if (!SQL_SUCCEEDED(ret))
-            return RaiseErrorFromHandle("SQLGetInfo", self->hdbc, SQL_NULL_HANDLE);
+            return RaiseErrorFromHandle("SQLGetInfo", cnxn->hdbc, SQL_NULL_HANDLE);
 
-        self->searchescape = PyString_FromStringAndSize(sz, (Py_ssize_t)cch);
+        cnxn->searchescape = PyString_FromStringAndSize(sz, (Py_ssize_t)cch);
     }
 
-    Py_INCREF(self->searchescape);
-    return self->searchescape;
+    Py_INCREF(cnxn->searchescape);
+    return cnxn->searchescape;
 }
 
 
-static PyObject*
-Connection_gettimeout(PyObject* self, void* closure)
+static PyObject* Connection_gettimeout(PyObject* self, void* closure)
 {
     UNUSED(closure);
 
@@ -751,8 +741,7 @@ Connection_gettimeout(PyObject* self, void* closure)
     return PyInt_FromLong(cnxn->timeout);
 }
 
-static int
-Connection_settimeout(PyObject* self, PyObject* value, void* closure)
+static int Connection_settimeout(PyObject* self, PyObject* value, void* closure)
 {
     UNUSED(closure);
 
@@ -789,8 +778,10 @@ Connection_settimeout(PyObject* self, PyObject* value, void* closure)
     return 0;
 }
 
-static bool _add_converter(Connection* cnxn, SQLSMALLINT sqltype, PyObject* func)
+static bool _add_converter(PyObject* self, SQLSMALLINT sqltype, PyObject* func)
 {
+    Connection* cnxn = (Connection*)self;
+
     if (cnxn->conv_count)
     {
         // If the sqltype is already registered, replace the old conversion function with the new.
@@ -862,30 +853,32 @@ static char conv_add_doc[] =
     "  parameter will be None.  Otherwise it will be a Python string.";
 
 
-static PyObject*
-Connection_conv_add(Connection* cnxn, PyObject* args)
+static PyObject* Connection_conv_add(PyObject* self, PyObject* args)
 {
     int sqltype;
     PyObject* func;
     if (!PyArg_ParseTuple(args, "iO", &sqltype, &func))
         return 0;
 
-    if (!_add_converter(cnxn, (SQLSMALLINT)sqltype, func))
+    if (!_add_converter(self, (SQLSMALLINT)sqltype, func))
         return 0;
 
     Py_RETURN_NONE;
 }
 
 static char enter_doc[] = "__enter__() -> self.";
-static PyObject* Connection_enter(PyObject* self)
+static PyObject* Connection_enter(PyObject* self, PyObject* args)
 {
+    UNUSED(args);
     Py_INCREF(self);
     return self;
 }
 
 static char exit_doc[] = "__exit__(*excinfo) -> None.  Closes the connection.";
-static PyObject* Connection_exit(Connection* cnxn, PyObject* args)
+static PyObject* Connection_exit(PyObject* self, PyObject* args)
 {
+    Connection* cnxn = (Connection*)self;
+
     // If an error has occurred, `args` will be a tuple of 3 values.  Otherwise it will be a tuple of 3 `None`s.
     I(PyTuple_Check(args));
 
@@ -898,16 +891,16 @@ static PyObject* Connection_exit(Connection* cnxn, PyObject* args)
 
 static struct PyMethodDef Connection_methods[] =
 {
-    { "cursor",                  (PyCFunction)Connection_cursor,          METH_NOARGS,  cursor_doc     },
-    { "close",                   (PyCFunction)Connection_close,           METH_NOARGS,  close_doc      },
-    { "execute",                 (PyCFunction)Connection_execute,         METH_VARARGS, execute_doc    },
-    { "commit",                  (PyCFunction)Connection_commit,          METH_NOARGS,  commit_doc     },
-    { "rollback",                (PyCFunction)Connection_rollback,        METH_NOARGS,  rollback_doc   },
-    { "getinfo",                 (PyCFunction)Connection_getinfo,         METH_VARARGS, getinfo_doc    },
-    { "add_output_converter",    (PyCFunction)Connection_conv_add,        METH_VARARGS, conv_add_doc   },
-    { "clear_output_converters", (PyCFunction)Connection_conv_clear,      METH_NOARGS,  conv_clear_doc },
-    { "__enter__",               (PyCFunction)Connection_enter,           METH_NOARGS,  enter_doc      },
-    { "__exit__",                (PyCFunction)Connection_exit,            METH_VARARGS, exit_doc       },
+    { "cursor",                  Connection_cursor,          METH_NOARGS,  cursor_doc     },
+    { "close",                   Connection_close,           METH_NOARGS,  close_doc      },
+    { "execute",                 Connection_execute,         METH_VARARGS, execute_doc    },
+    { "commit",                  Connection_commit,          METH_NOARGS,  commit_doc     },
+    { "rollback",                Connection_rollback,        METH_NOARGS,  rollback_doc   },
+    { "getinfo",                 Connection_getinfo,         METH_VARARGS, getinfo_doc    },
+    { "add_output_converter",    Connection_conv_add,        METH_VARARGS, conv_add_doc   },
+    { "clear_output_converters", Connection_conv_clear,      METH_NOARGS,  conv_clear_doc },
+    { "__enter__",               Connection_enter,           METH_NOARGS,  enter_doc      },
+    { "__exit__",                Connection_exit,            METH_VARARGS, exit_doc       },
     
     { 0, 0, 0, 0 }
 };
@@ -926,48 +919,48 @@ static PyGetSetDef Connection_getseters[] = {
 PyTypeObject ConnectionType =
 {
     PyVarObject_HEAD_INIT(0, 0)
-    "pyodbc.Connection",                                    // tp_name
-    sizeof(Connection),                                     // tp_basicsize
-    0,                                                      // tp_itemsize
-    (destructor)Connection_dealloc,                         // destructor tp_dealloc
-    0,                                                      // tp_print
-    0,                                                      // tp_getattr
-    0,                                                      // tp_setattr
-    0,                                                      // tp_compare
-    0,                                                      // tp_repr
-    0,                                                      // tp_as_number
-    0,                                                      // tp_as_sequence
-    0,                                                      // tp_as_mapping
-    0,                                                      // tp_hash
-    0,                                                      // tp_call
-    0,                                                      // tp_str
-    0,                                                      // tp_getattro
-    0,                                                      // tp_setattro
-    0,                                                      // tp_as_buffer
-    Py_TPFLAGS_DEFAULT,                                     // tp_flags
-    connection_doc,                                         // tp_doc
-    0,                                                      // tp_traverse
-    0,                                                      // tp_clear
-    0,                                                      // tp_richcompare
-    0,                                                      // tp_weaklistoffset
-    0,                                                      // tp_iter
-    0,                                                      // tp_iternext
-    Connection_methods,                                     // tp_methods
-    0,                                                      // tp_members
-    Connection_getseters,                                   // tp_getset
-    0,                                                      // tp_base
-    0,                                                      // tp_dict
-    0,                                                      // tp_descr_get
-    0,                                                      // tp_descr_set
-    0,                                                      // tp_dictoffset
-    0,                                                      // tp_init
-    0,                                                      // tp_alloc
-    0,                                                      // tp_new
-    0,                                                      // tp_free
-    0,                                                      // tp_is_gc
-    0,                                                      // tp_bases
-    0,                                                      // tp_mro
-    0,                                                      // tp_cache
-    0,                                                      // tp_subclasses
-    0,                                                      // tp_weaklist
+    "pyodbc.Connection",        // tp_name
+    sizeof(Connection),         // tp_basicsize
+    0,                          // tp_itemsize
+    Connection_dealloc,         // destructor tp_dealloc
+    0,                          // tp_print
+    0,                          // tp_getattr
+    0,                          // tp_setattr
+    0,                          // tp_compare
+    0,                          // tp_repr
+    0,                          // tp_as_number
+    0,                          // tp_as_sequence
+    0,                          // tp_as_mapping
+    0,                          // tp_hash
+    0,                          // tp_call
+    0,                          // tp_str
+    0,                          // tp_getattro
+    0,                          // tp_setattro
+    0,                          // tp_as_buffer
+    Py_TPFLAGS_DEFAULT,         // tp_flags
+    connection_doc,             // tp_doc
+    0,                          // tp_traverse
+    0,                          // tp_clear
+    0,                          // tp_richcompare
+    0,                          // tp_weaklistoffset
+    0,                          // tp_iter
+    0,                          // tp_iternext
+    Connection_methods,         // tp_methods
+    0,                          // tp_members
+    Connection_getseters,       // tp_getset
+    0,                          // tp_base
+    0,                          // tp_dict
+    0,                          // tp_descr_get
+    0,                          // tp_descr_set
+    0,                          // tp_dictoffset
+    0,                          // tp_init
+    0,                          // tp_alloc
+    0,                          // tp_new
+    0,                          // tp_free
+    0,                          // tp_is_gc
+    0,                          // tp_bases
+    0,                          // tp_mro
+    0,                          // tp_cache
+    0,                          // tp_subclasses
+    0,                          // tp_weaklist
 };

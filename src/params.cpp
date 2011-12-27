@@ -206,7 +206,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
                 info.ParameterValuePtr = pch;
             }
         }
-        
+
         info.ParameterType = SQL_WVARCHAR;
         info.StrLen_or_Ind = (SQLINTEGER)(len * sizeof(SQLWCHAR));
     }
@@ -309,7 +309,7 @@ static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
 #else
     #error Unexpected LONG_BIT value
 #endif
-     
+
     info.ParameterValuePtr = &info.Data.l;
     return true;
 }
@@ -536,7 +536,7 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
 
     // Hold a reference to param until info is freed, because info will often be holding data borrowed from param.
     info.pParam = param;
-	
+
     if (param == Py_None)
         return GetNullInfo(cur, index, info);
 
@@ -582,7 +582,7 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     if (PyBuffer_Check(param))
         return GetBufferInfo(cur, index, param, info);
 #endif
-    
+
     RaiseErrorV("HY105", ProgrammingError, "Invalid parameter type.  param-index=%zd param-type=%s", index, Py_TYPE(param)->tp_name);
     return false;
 }
@@ -832,23 +832,23 @@ PyTypeObject NullParamType =
     PyVarObject_HEAD_INIT(NULL, 0)
     "pyodbc.NullParam",         // tp_name
     sizeof(NullParam),          // tp_basicsize
-    0,                                                      // tp_itemsize
-    0,                                // destructor tp_dealloc
-    0,                                                      // tp_print
-    0,                                                      // tp_getattr
-    0,                                                      // tp_setattr
-    0,                                                      // tp_compare
-    0,                                               // tp_repr
-    0,                                                      // tp_as_number
-    0,                                       // tp_as_sequence
-    0,                                        // tp_as_mapping
-    0,                                                      // tp_hash
-    0,                                                      // tp_call
-    0,                                                      // tp_str
-    0,                                           // tp_getattro
-    0,                                           // tp_setattro
-    0,                                                      // tp_as_buffer
-    Py_TPFLAGS_DEFAULT,                                     // tp_flags
+    0,                          // tp_itemsize
+    0,                          // destructor tp_dealloc
+    0,                          // tp_print
+    0,                          // tp_getattr
+    0,                          // tp_setattr
+    0,                          // tp_compare
+    0,                          // tp_repr
+    0,                          // tp_as_number
+    0,                          // tp_as_sequence
+    0,                          // tp_as_mapping
+    0,                          // tp_hash
+    0,                          // tp_call
+    0,                          // tp_str
+    0,                          // tp_getattro
+    0,                          // tp_setattro
+    0,                          // tp_as_buffer
+    Py_TPFLAGS_DEFAULT,         // tp_flags
 };
 
 PyObject* null_binary;
@@ -857,11 +857,11 @@ bool Params_init()
 {
     if (PyType_Ready(&NullParamType) < 0)
         return false;
-    
+
     null_binary = (PyObject*)PyObject_New(NullParam, &NullParamType);
     if (null_binary == 0)
         return false;
-    
+
     PyDateTime_IMPORT;
 
     return true;
