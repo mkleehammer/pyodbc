@@ -85,14 +85,18 @@ def main():
 
            options = options,
 
+           license = 'MIT',
+
            classifiers = ['Development Status :: 5 - Production/Stable',
-                           'Intended Audience :: Developers',
-                           'Intended Audience :: System Administrators',
-                           'License :: OSI Approved :: MIT License',
-                           'Operating System :: Microsoft :: Windows',
-                           'Operating System :: POSIX',
-                           'Programming Language :: Python',
-                           'Topic :: Database',
+                          'Intended Audience :: Developers',
+                          'Intended Audience :: System Administrators',
+                          'License :: OSI Approved :: MIT License',
+                          'Operating System :: Microsoft :: Windows',
+                          'Operating System :: POSIX',
+                          'Programming Language :: Python',
+                          'Programming Language :: Python :: 2',
+                          'Programming Language :: Python :: 3',
+                          'Topic :: Database',
                           ],
 
            url = 'http://code.google.com/p/pyodbc',
