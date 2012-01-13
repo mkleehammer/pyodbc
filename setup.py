@@ -67,43 +67,45 @@ def main():
     if exists('MANIFEST'):
         os.remove('MANIFEST')
 
-    options = {}
+    kwargs = {
+        'name': "pyodbc",
+        'version': version_str,
+        'description': "DB API Module for ODBC",
+
+        'long_description': ('A Python DB API 2 module for ODBC. This project provides an up-to-date, '
+                            'convenient interface to ODBC using native data types like datetime and decimal.'),
+        
+        'maintainer':       "Michael Kleehammer",
+        'maintainer_email': "michael@kleehammer.com",
+        
+        'ext_modules': [Extension('pyodbc', files, **settings)],
+
+        'license': 'MIT',
+
+        'classifiers': ['Development Status :: 5 - Production/Stable',
+                       'Intended Audience :: Developers',
+                       'Intended Audience :: System Administrators',
+                       'License :: OSI Approved :: MIT License',
+                       'Operating System :: Microsoft :: Windows',
+                       'Operating System :: POSIX',
+                       'Programming Language :: Python',
+                       'Programming Language :: Python :: 2',
+                       'Programming Language :: Python :: 3',
+                       'Topic :: Database',
+                       ],
+
+        'url': 'http://code.google.com/p/pyodbc',
+        'download_url': 'http://code.google.com/p/pyodbc/downloads/list',
+        'cmdclass': { 'version' : VersionCommand,
+                     'tags'    : TagsCommand }
+        }
+    
     if sys.hexversion >= 0x02060000:
-        options['bdist_wininst'] = {'user_access_control' : 'auto'}
+        kwargs['options'] = {
+            'bdist_wininst': {'user_access_control' : 'auto'}
+            }
 
-    setup (name = "pyodbc",
-           version = version_str,
-           description = "DB API Module for ODBC",
-
-           long_description = ('A Python DB API 2 module for ODBC. This project provides an up-to-date, '
-                               'convenient interface to ODBC using native data types like datetime and decimal.'),
-
-           maintainer       = "Michael Kleehammer",
-           maintainer_email = "michael@kleehammer.com",
-
-           ext_modules = [Extension('pyodbc', files, **settings)],
-
-           options = options,
-
-           license = 'MIT',
-
-           classifiers = ['Development Status :: 5 - Production/Stable',
-                          'Intended Audience :: Developers',
-                          'Intended Audience :: System Administrators',
-                          'License :: OSI Approved :: MIT License',
-                          'Operating System :: Microsoft :: Windows',
-                          'Operating System :: POSIX',
-                          'Programming Language :: Python',
-                          'Programming Language :: Python :: 2',
-                          'Programming Language :: Python :: 3',
-                          'Topic :: Database',
-                          ],
-
-           url = 'http://code.google.com/p/pyodbc',
-           download_url = 'http://code.google.com/p/pyodbc/downloads/list',
-           cmdclass = { 'version' : VersionCommand,
-                        'tags'    : TagsCommand })
-
+    setup(**kwargs)
 
 
 def get_compiler_settings(version_str):

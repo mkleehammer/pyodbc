@@ -16,6 +16,19 @@
 #define Py_TYPE(ob) (((PyObject*)(ob))->ob_type)
 #endif
 
+// Macros were introduced in 2.6 to map "bytes" to "str" in Python 2.  Back port to 2.5.
+#if PY_VERSION_HEX >= 0x02060000
+    #include <bytesobject.h>
+#else
+    #define PyBytes_AS_STRING PyString_AS_STRING
+    #define PyBytes_Check PyString_Check
+    #define PyBytes_CheckExact PyString_CheckExact 
+    #define PyBytes_FromStringAndSize PyString_FromStringAndSize
+    #define PyBytes_GET_SIZE PyString_GET_SIZE
+    #define PyBytes_Size PyString_Size
+    #define _PyBytes_Resize _PyString_Resize
+#endif
+
 // Used for items that are ANSI in Python 2 and Unicode in Python 3 or in int 2 and long in 3.
 
 #if PY_MAJOR_VERSION >= 3

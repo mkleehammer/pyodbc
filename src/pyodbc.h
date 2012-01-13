@@ -44,7 +44,6 @@ typedef unsigned long long UINT64;
 #include <boolobject.h>
 #include <unicodeobject.h>
 #include <structmember.h>
-#include <bytesobject.h>
 
 #include <sql.h>
 #include <sqlext.h>
