@@ -252,6 +252,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     int fAutoCommit = 0;
     int fAnsi = 0;              // force ansi
     int fUnicodeResults = 0;
+    int fReadOnly = 0;
     long timeout = 0;
 
     Py_ssize_t size = args ? PyTuple_Size(args) : 0;
@@ -317,7 +318,12 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                     return 0;
                 continue;
             }
-
+            if (Text_EqualsI(key, "readonly"))
+            {
+                fReadOnly = PyObject_IsTrue(value);
+                continue;
+            }
+            
             // Map DB API recommended names to ODBC names (e.g. user --> uid).
 
             for (size_t i = 0; i < _countof(keywordmaps); i++)
@@ -362,7 +368,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
             return 0;
     }
 
-    return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, fUnicodeResults != 0, timeout);
+    return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, fUnicodeResults != 0, timeout, fReadOnly != 0);
 }
 
 
