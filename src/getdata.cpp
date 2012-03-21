@@ -463,12 +463,12 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 
     // TODO: Is Unicode a good idea for Python 2.7?  We need to know which drivers support Unicode.
 
-    SQLWCHAR buffer[100];
+    SQLCHAR buffer[100];
     SQLLEN cbFetched = 0; // Note: will not include the NULL terminator.
 
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_WCHAR, buffer, sizeof(buffer), &cbFetched);
+    ret = SQLGetData(cur->hstmt, (SQLSMALLINT)(iCol+1), SQL_C_CHAR, buffer, sizeof(buffer), &cbFetched);
     Py_END_ALLOW_THREADS
     if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
@@ -478,9 +478,9 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 
     // Remove non-digits and convert the databases decimal to a '.' (required by decimal ctor).
     //
-    // We are assuming that the decimal point and digits fit within the size of SQLWCHAR.
+    // We are assuming that the decimal point and digits fit within the size of SQLCHAR.
 
-    int cch = (int)(cbFetched / sizeof(SQLWCHAR));
+    int cch = (int)(cbFetched / sizeof(SQLCHAR));
 
     for (int i = (cch - 1); i >= 0; i--)
     {
@@ -491,18 +491,14 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
         }
         else if ((buffer[i] < '0' || buffer[i] > '9') && buffer[i] != '-')
         {
-            memmove(&buffer[i], &buffer[i] + 1, (cch - i) * sizeof(SQLWCHAR));
+            memmove(&buffer[i], &buffer[i] + 1, (cch - i) * sizeof(SQLCHAR));
             cch--;
         }
     }
 
     I(buffer[cch] == 0);
 
-    Object str(PyUnicode_FromSQLWCHAR(buffer, cch));
-    if (!str)
-        return 0;
-
-    return PyObject_CallFunction(decimal_type, "O", str.Get());
+    return PyObject_CallFunction(decimal_type, "s", buffer);
 }
 
 
