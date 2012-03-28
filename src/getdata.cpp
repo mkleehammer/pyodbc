@@ -556,7 +556,7 @@ static PyObject* GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
     ColumnInfo* pinfo = &cur->colinfos[iCol];
 
     SQLSMALLINT nCType = pinfo->is_unsigned ? SQL_C_UBIGINT : SQL_C_SBIGINT;
-    SQLBIGINT   value;
+    PY_LONG_LONG value;
     SQLLEN      cbFetched;
     SQLRETURN   ret;
 
@@ -571,7 +571,7 @@ static PyObject* GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
 
     if (pinfo->is_unsigned)
-        return PyLong_FromUnsignedLongLong((unsigned PY_LONG_LONG)(SQLUBIGINT)value);
+        return PyLong_FromUnsignedLongLong((unsigned PY_LONG_LONG)value);
 
     return PyLong_FromLongLong((PY_LONG_LONG)value);
 }
