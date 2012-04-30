@@ -24,6 +24,7 @@ extern PyObject* ProgrammingError;
 extern PyObject* IntegrityError;
 extern PyObject* DataError;
 extern PyObject* NotSupportedError;
+extern PyObject* ArrayBindingNotSupportedError;
 
 extern PyObject* null_binary;
 

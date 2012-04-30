@@ -615,7 +615,7 @@ static bool PrepareResults(Cursor* cur, int cCols)
 }
 
 
-static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
+static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, Py_ssize_t paramSetSize, Py_ssize_t paramsOffset)
 {
     // Internal function to execute SQL, called by .execute and .executemany.
     //
@@ -626,22 +626,18 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
     //   Pointer to an optional sequence of parameters, and possibly the SQL statement (see skip_first):
     //   (SQL, param1, param2) or (param1, param2).
     //
-    // skip_first
-    //   If true, the first element in `params` is ignored.  (It will be the SQL statement and `params` will be the
-    //   entire tuple passed to Cursor.execute.)  Otherwise all of the params are used.  (This case occurs when called
-    //   from Cursor.executemany, in which case the sequences do not contain the SQL statement.)  Ignored if params is
-    //   zero.
+    // paramSetSize
+    //   Number of parameter sets in params when called by .executemany. Set to 0 for .execute.
+    //
+    // paramsOffset
+    //   Number of parameters to skip over. Set to 1 for .execute when the first parameter is the SQL statement.
+    //   Otherwise, set to 0 to use all params. Ignored if params is zero.
 
-    if (params)
+    if (params && paramSetSize == 0)
     {
         if (!PyTuple_Check(params) && !PyList_Check(params) && !Row_Check(params))
             return RaiseErrorV(0, PyExc_TypeError, "Params must be in a list, tuple, or Row");
     }
-
-    // Normalize the parameter variables.
-
-    int        params_offset = skip_first ? 1 : 0;
-    Py_ssize_t cParams       = params == 0 ? 0 : PySequence_Length(params) - params_offset;
 
     SQLRETURN ret = 0;
 
@@ -649,14 +645,22 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
 
     const char* szLastFunction = "";
 
-    if (cParams > 0)
+    if (params)
     {
         // There are parameters, so we'll need to prepare the SQL statement and bind the parameters.  (We need to
         // prepare the statement because we can't bind a NULL (None) object without knowing the target datatype.  There
         // is no one data type that always maps to the others (no, not even varchar)).
 
-        if (!PrepareAndBind(cur, pSql, params, skip_first))
-            return 0;
+        if (paramSetSize > 0)
+        {
+            if (!PrepareAndBindArray(cur, pSql, params))
+                return 0;
+        }
+        else
+        {
+            if (!PrepareAndBind(cur, pSql, params, paramsOffset))
+                return 0;
+        }
 
         szLastFunction = "SQLExecute";
         Py_BEGIN_ALLOW_THREADS
@@ -709,13 +713,13 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
 
     while (ret == SQL_NEED_DATA)
     {
-        // We have bound a PyObject* using SQL_LEN_DATA_AT_EXEC, so ODBC is asking us for the data now.  We gave the
+        // We have bound a PyObject** using SQL_LEN_DATA_AT_EXEC, so ODBC is asking us for the data now.  We gave the
         // PyObject pointer to ODBC in SQLBindParameter -- SQLParamData below gives the pointer back to us.
 
         szLastFunction = "SQLParamData";
-        PyObject* pParam;
+        PyObject** ppParam;
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLParamData(cur->hstmt, (SQLPOINTER*)&pParam);
+        ret = SQLParamData(cur->hstmt, (SQLPOINTER*)&ppParam);
         Py_END_ALLOW_THREADS
 
         if (ret != SQL_NEED_DATA && ret != SQL_NO_DATA && !SQL_SUCCEEDED(ret))
@@ -725,6 +729,8 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
 
         if (ret == SQL_NEED_DATA)
         {
+            PyObject* pParam = *ppParam;
+
             szLastFunction = "SQLPutData";
             if (PyUnicode_Check(pParam))
             {
@@ -875,6 +881,16 @@ inline bool IsSequence(PyObject* p)
     return PyList_Check(p) || PyTuple_Check(p) || Row_Check(p);
 }
 
+inline bool ClearArrayBindingNotSupportedError()
+{
+    PyObject *pError = PyErr_Occurred();
+    if (pError != 0 && PyErr_GivenExceptionMatches(pError, ArrayBindingNotSupportedError))
+    {
+        PyErr_Clear();
+        return true;
+    }
+    return false;
+}
 
 static char execute_doc[] =
     "C.execute(sql, [params]) --> Cursor\n"
@@ -914,25 +930,25 @@ PyObject* Cursor_execute(PyObject* self, PyObject* args)
 
     // Figure out if there were parameters and how they were passed.  Our optional parameter passing complicates this slightly.
 
-    bool skip_first = false;
+    Py_ssize_t paramsOffset = 0;
     PyObject *params = 0;
     if (cParams == 1 && IsSequence(PyTuple_GET_ITEM(args, 1)))
     {
         // There is a single argument and it is a sequence, so we must treat it as a sequence of parameters.  (This is
         // the normal Cursor.execute behavior.)
 
-        params     = PyTuple_GET_ITEM(args, 1);
-        skip_first = false;
+        params       = PyTuple_GET_ITEM(args, 1);
+        paramsOffset = 0;
     }
     else if (cParams > 0)
     {
-        params     = args;
-        skip_first = true;
+        params       = args;
+        paramsOffset = 1;
     }
 
     // Execute.
 
-    return execute(cursor, pSql, params, skip_first);
+    return execute(cursor, pSql, params, 0, paramsOffset);
 }
 
 
@@ -967,19 +983,39 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
         PyErr_SetString(ProgrammingError, "The second parameter to executemany must not be empty.");
         return 0;
     }
-
-    for (Py_ssize_t i = 0; i < c; i++)
+    
+    bool success = false;
+    if ( cursor->cnxn->useParameterArrayBinding )
     {
-        PyObject* params = PySequence_GetItem(param_seq, i);
-        PyObject* result = execute(cursor, pSql, params, false);
-        bool success = result != 0;
+        PyObject* result = execute(cursor, pSql, param_seq, c, false);
+        success = result != 0;
         Py_XDECREF(result);
-        Py_DECREF(params);
-        if (!success)
+        result = 0;
+        if (!success && !ClearArrayBindingNotSupportedError())
         {
             cursor->rowcount = -1;
             return 0;
         }
+    }
+    if (!success)
+    {
+        for (Py_ssize_t i = 0; i < c; i++)
+        {
+            PyObject* params = PySequence_GetItem(param_seq, i);
+            PyObject* result = execute(cursor, pSql, params, 0, false);
+            success = result != 0;
+            Py_XDECREF(result);
+            Py_DECREF(params);
+            if (!success)
+            {
+                break;
+            }
+        }
+    }
+    if (!success)
+    {
+        cursor->rowcount = -1;
+        return 0;
     }
 
     cursor->rowcount = -1;
