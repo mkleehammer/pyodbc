@@ -94,6 +94,7 @@ struct Cursor
     // Even if the same SQL statement is executed twice, the parameter bindings are redone from scratch since we try to
     // bind into the Python objects directly.
     ParamInfo* paramInfos;
+    Py_ssize_t paramSetSize;
 
     //
     // Result Information

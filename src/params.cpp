@@ -855,21 +855,26 @@ static bool Prepare(Cursor* cur, PyObject* pSql, Py_ssize_t cParamSetSize)
         Py_INCREF(cur->pPreparedSQL);
     }
 
-    Py_BEGIN_ALLOW_THREADS
+    if (cur->cnxn->useParameterArrayBinding && cParamSetSize != cur->paramSetSize)
+    {
+        Py_BEGIN_ALLOW_THREADS
         ret = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAMSET_SIZE, (SQLPOINTER)cParamSetSize, SQL_IS_INTEGER);
-    Py_END_ALLOW_THREADS
+        Py_END_ALLOW_THREADS
 
-    if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
-    {
-        // The connection was closed by another thread in the ALLOW_THREADS block above.
-        RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
-        return false;
-    }
+        if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
+        {
+            // The connection was closed by another thread in the ALLOW_THREADS block above.
+            RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
+            return false;
+        }
 
-    if (!SQL_SUCCEEDED(ret))
-    {
-        RaiseErrorV(0, ArrayBindingNotSupportedError, "Binding parameters to arrays is not supported.");
-        return false;
+        if (!SQL_SUCCEEDED(ret))
+        {
+            RaiseErrorV(0, ArrayBindingNotSupportedError, "Binding parameters to arrays is not supported.");
+            return false;
+        }
+
+        cur->paramSetSize = cParamSetSize;
     }
 
     return true;

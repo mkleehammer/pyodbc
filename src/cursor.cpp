@@ -2174,6 +2174,7 @@ Cursor_New(Connection* cnxn)
         cur->paramcount        = 0;
         cur->paramtypes        = 0;
         cur->paramInfos        = 0;
+        cur->paramSetSize      = 1;
         cur->colinfos          = 0;
         cur->arraysize         = 1;
         cur->rowcount          = -1;
