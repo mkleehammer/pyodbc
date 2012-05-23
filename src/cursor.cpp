@@ -704,13 +704,18 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
     {
         // We could try dropping through the while and if below, but if there is an error, we need to raise it before
         // FreeParameterData calls more ODBC functions.
-        return RaiseErrorFromHandle("SQLExecDirectW", cur->cnxn->hdbc, cur->hstmt);
+        RaiseErrorFromHandle("SQLExecDirectW", cur->cnxn->hdbc, cur->hstmt);
+        FreeParameterData(cur);
+        return 0;
     }
 
     while (ret == SQL_NEED_DATA)
     {
         // We have bound a PyObject* using SQL_LEN_DATA_AT_EXEC, so ODBC is asking us for the data now.  We gave the
         // PyObject pointer to ODBC in SQLBindParameter -- SQLParamData below gives the pointer back to us.
+        //
+        // Note that we did not increment the pointer reference for this since we are still in the same C function call
+        // that performed the bind.
 
         szLastFunction = "SQLParamData";
         PyObject* pParam;
