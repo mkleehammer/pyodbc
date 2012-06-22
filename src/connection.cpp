@@ -616,24 +616,21 @@ static PyObject* Connection_getinfo(PyObject* self, PyObject* args)
     return result;
 }
 
-
-static PyObject* Connection_endtrans(PyObject* self, PyObject* args, SQLSMALLINT type)
+PyObject* Connection_endtrans(Connection* cnxn, SQLSMALLINT type)
 {
-    UNUSED(args);
-    
-    Connection* cnxn = Connection_Validate(self);
-    if (!cnxn)
-        return 0;
-    
-    TRACE("%s: cnxn=%p hdbc=%d\n", (type == SQL_COMMIT) ? "commit" : "rollback", cnxn, cnxn->hdbc);
+    // If called from Cursor.commit, it is possible that `cnxn` is deleted by another thread when we release them
+    // below.  (The cursor has had its reference incremented by the method it is calling, but nothing has incremented
+    // the connections count.  We could, but we really only need the HDBC.)
+    HDBC hdbc = cnxn->hdbc;
 
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, type);
+    ret = SQLEndTran(SQL_HANDLE_DBC, hdbc, type);
     Py_END_ALLOW_THREADS
+
     if (!SQL_SUCCEEDED(ret))
     {
-        RaiseErrorFromHandle("SQLEndTran", cnxn->hdbc, SQL_NULL_HANDLE);
+        RaiseErrorFromHandle("SQLEndTran", hdbc, SQL_NULL_HANDLE);
         return 0;
     }
 
@@ -642,12 +639,28 @@ static PyObject* Connection_endtrans(PyObject* self, PyObject* args, SQLSMALLINT
 
 static PyObject* Connection_commit(PyObject* self, PyObject* args)
 {
-    return Connection_endtrans(self, args, SQL_COMMIT);
+    UNUSED(args);
+    
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
+    
+    TRACE("commit: cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
+
+    return Connection_endtrans(cnxn, SQL_COMMIT);
 }
 
 static PyObject* Connection_rollback(PyObject* self, PyObject* args)
 {
-    return Connection_endtrans(self, args, SQL_ROLLBACK);
+    UNUSED(args);
+    
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
+    
+    TRACE("rollback: cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
+
+    return Connection_endtrans(cnxn, SQL_ROLLBACK);
 }
 
 static char cursor_doc[] = 

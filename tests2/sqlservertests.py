@@ -1015,6 +1015,20 @@ class SqlServerTestCase(unittest.TestCase):
         othercnxn.autocommit = False
         self.assertEqual(othercnxn.autocommit, False)
 
+    def test_cursorcommit(self):
+        "Ensure cursor.commit works"
+        othercnxn = pyodbc.connect(self.connection_string)
+        othercursor = othercnxn.cursor()
+        othercnxn = None
+
+        othercursor.execute("create table t1(s varchar(20))")
+        othercursor.execute("insert into t1 values(?)", 'test')
+        othercursor.commit()
+
+        value = self.cursor.execute("select s from t1").fetchone()[0]
+        self.assertEqual(value, 'test')
+
+
     def test_unicode_results(self):
         "Ensure unicode_results forces Unicode"
         othercnxn = pyodbc.connect(self.connection_string, unicode_results=True)

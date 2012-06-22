@@ -1874,6 +1874,30 @@ static PyObject* Cursor_skip(PyObject* self, PyObject* args)
     Py_RETURN_NONE;
 }
 
+static const char* commit_doc =
+    "Commits any pending transaction to the database on the current connection,\n"
+    "including those from other cursors.\n";
+
+static PyObject* Cursor_commit(PyObject* self, PyObject* args)
+{
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
+    return Connection_endtrans(cur->cnxn, SQL_COMMIT);
+}
+
+static char rollback_doc[] =
+    "Rolls back any pending transaction to the database on the current connection,\n"
+    "including those from other cursors.\n";
+
+static PyObject* Cursor_rollback(PyObject* self, PyObject* args)
+{
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
+    return Connection_endtrans(cur->cnxn, SQL_ROLLBACK);
+}
+
 
 static PyObject* Cursor_ignored(PyObject* self, PyObject* args)
 {
@@ -2052,6 +2076,8 @@ static PyMethodDef Cursor_methods[] =
     { "procedures",       (PyCFunction)Cursor_procedures,       METH_VARARGS|METH_KEYWORDS, procedures_doc       },
     { "procedureColumns", (PyCFunction)Cursor_procedureColumns, METH_VARARGS|METH_KEYWORDS, procedureColumns_doc },
     { "skip",             (PyCFunction)Cursor_skip,             METH_VARARGS,               skip_doc             },
+    { "commit",           (PyCFunction)Cursor_commit,           METH_NOARGS,                commit_doc           },
+    { "rollback",         (PyCFunction)Cursor_rollback,         METH_NOARGS,                rollback_doc         },
     { 0, 0, 0, 0 }
 };
 

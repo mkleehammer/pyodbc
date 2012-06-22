@@ -73,4 +73,9 @@ struct Connection
  */
 PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, bool fUnicodeResults, long timeout, bool fReadOnly);
 
+/*
+ * Used by the Cursor to implement commit and rollback.
+ */
+PyObject* Connection_endtrans(Connection* cnxn, SQLSMALLINT type);
+
 #endif
