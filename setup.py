@@ -134,6 +134,10 @@ def get_compiler_settings(version_str):
         settings['libraries'].append('odbc32')
         settings['libraries'].append('advapi32')
 
+        if '--debug' in sys.argv:
+            sys.argv.remove('--debug')
+            settings['extra_compile_args'].extend('/Od /Ge /GS /GZ /RTC1 /Wp64 /Yd'.split())
+
     elif os.environ.get("OS", '').lower().startswith('windows'):
         # Windows Cygwin (posix on windows)
         # OS name not windows, but still on Windows
