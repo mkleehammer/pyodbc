@@ -393,6 +393,27 @@ class SqlServerTestCase(unittest.TestCase):
         self._test_strliketype('text', 'á')
 
     #
+    # xml
+    #
+
+    # def test_empty_xml(self):
+    #     self._test_strliketype('xml', bytearray(''))
+
+    def test_null_xml(self):
+        self._test_strliketype('xml', None, type(None))
+
+    # Generate a test for each fencepost size: test_unicode_0, etc.
+    def _maketest(value):
+        def t(self):
+            self._test_strliketype('xml', value)
+        return t
+    for value in ANSI_FENCEPOSTS:
+        locals()['test_xml_buffer_%s' % len(value)] = _maketest(value)
+
+    def test_xml_upperlatin(self):
+        self._test_strliketype('xml', 'á')
+
+    #
     # bit
     #
 

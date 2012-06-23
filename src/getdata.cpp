@@ -174,14 +174,13 @@ public:
                 return false;
             buffer = PyByteArray_AS_STRING(bufferOwner);
         }
-#else
+#endif
         else if (bufferOwner && PyBytes_CheckExact(bufferOwner))
         {
             if (_PyBytes_Resize(&bufferOwner, newSize) == -1)
                 return false;
             buffer = PyBytes_AS_STRING(bufferOwner);
         }
-#endif
         else
         {
             char* tmp = (char*)realloc(buffer, (size_t)newSize);
