@@ -2054,6 +2054,40 @@ static char fetchmany_doc[] =
     "A ProgrammingError exception is raised if the previous call to execute() did\n" \
     "not produce any result set or no call was issued yet.";
 
+
+static char enter_doc[] = "__enter__() -> self.";
+static PyObject* Cursor_enter(PyObject* self, PyObject* args)
+{
+    UNUSED(args);
+    Py_INCREF(self);
+    return self;
+}
+
+static char exit_doc[] = "__exit__(*excinfo) -> None.  Commits the connection if necessary..";
+static PyObject* Cursor_exit(PyObject* self, PyObject* args)
+{
+    Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cursor)
+        return 0;
+
+    // If an error has occurred, `args` will be a tuple of 3 values.  Otherwise it will be a tuple of 3 `None`s.
+    I(PyTuple_Check(args));
+
+    if (cursor->cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF && PyTuple_GetItem(args, 0) == Py_None)
+    {
+        SQLRETURN ret;
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLEndTran(SQL_HANDLE_DBC, cursor->cnxn->hdbc, SQL_COMMIT);
+        Py_END_ALLOW_THREADS
+
+        if (!SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle("SQLEndTran(SQL_COMMIT)", cursor->cnxn->hdbc, cursor->hstmt);
+    }
+    
+    Py_RETURN_NONE;
+}
+
+    
 static PyMethodDef Cursor_methods[] =
 {
     { "close",            (PyCFunction)Cursor_close,            METH_NOARGS,                close_doc            },
@@ -2078,6 +2112,8 @@ static PyMethodDef Cursor_methods[] =
     { "skip",             (PyCFunction)Cursor_skip,             METH_VARARGS,               skip_doc             },
     { "commit",           (PyCFunction)Cursor_commit,           METH_NOARGS,                commit_doc           },
     { "rollback",         (PyCFunction)Cursor_rollback,         METH_NOARGS,                rollback_doc         },
+    { "__enter__",        Cursor_enter,                         METH_NOARGS,                enter_doc            },
+    { "__exit__",         Cursor_exit,                          METH_VARARGS,               exit_doc             },
     { 0, 0, 0, 0 }
 };
 

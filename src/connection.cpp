@@ -902,7 +902,7 @@ static PyObject* Connection_enter(PyObject* self, PyObject* args)
     return self;
 }
 
-static char exit_doc[] = "__exit__(*excinfo) -> None.  Closes the connection.";
+static char exit_doc[] = "__exit__(*excinfo) -> None.  Commits the connection if necessary.";
 static PyObject* Connection_exit(PyObject* self, PyObject* args)
 {
     Connection* cnxn = (Connection*)self;
@@ -911,8 +911,16 @@ static PyObject* Connection_exit(PyObject* self, PyObject* args)
     I(PyTuple_Check(args));
 
     if (cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF && PyTuple_GetItem(args, 0) == Py_None)
-        SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, SQL_COMMIT);
+    {
+        SQLRETURN ret;
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, SQL_COMMIT);
+        Py_END_ALLOW_THREADS
 
+        if (!SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle("SQLEndTran(SQL_COMMIT)", cnxn->hdbc, SQL_NULL_HANDLE);
+    }
+    
     Py_RETURN_NONE;
 }
 
