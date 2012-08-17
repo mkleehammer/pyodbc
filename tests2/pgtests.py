@@ -41,10 +41,11 @@ class PGTestCase(unittest.TestCase):
     SMALL_STRING = _generate_test_string(SMALL_READ)
     LARGE_STRING = _generate_test_string(LARGE_READ)
 
-    def __init__(self, connection_string, ansi, method_name):
+    def __init__(self, connection_string, ansi, unicode_results, method_name):
         unittest.TestCase.__init__(self, method_name)
         self.connection_string = connection_string
-        self.ansi = ansi
+        self.ansi    = ansi
+        self.unicode = unicode_results
 
     def setUp(self):
         self.cnxn   = pyodbc.connect(self.connection_string, ansi=self.ansi)
@@ -110,13 +111,17 @@ class PGTestCase(unittest.TestCase):
 
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(?)", value)
-        v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), type(value))
+        result = self.cursor.execute("select * from t1").fetchone()[0]
+
+        if self.unicode and value != None:
+            self.assertEqual(type(result), unicode)
+        else:
+            self.assertEqual(type(result), type(value))
 
         if value is not None:
-            self.assertEqual(len(v), len(value))
+            self.assertEqual(len(result), len(value))
 
-        self.assertEqual(v, value)
+        self.assertEqual(result, value)
 
     #
     # varchar
@@ -211,7 +216,7 @@ class PGTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s char(7))")
         self.cursor.execute("insert into t1 values(?)", "testing")
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), str)
+        self.assertEqual(type(v), self.unicode and unicode or str)
         self.assertEqual(len(v), len(value)) # If we alloc'd wrong, the test below might work because of an embedded NULL
         self.assertEqual(v, value)
 
@@ -374,6 +379,7 @@ def main():
     parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
     parser.add_option("-t", "--test", help="Run only the named test")
     parser.add_option('-a', '--ansi', help='ANSI only', default=False, action='store_true')
+    parser.add_option('-u', '--unicode', help='Expect results in Unicode', default=False, action='store_true')
 
     (options, args) = parser.parse_args()
 
@@ -403,13 +409,13 @@ def main():
         if not options.test.startswith('test_'):
             options.test = 'test_%s' % (options.test)
 
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.test) ])
+        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.unicode, options.test) ])
     else:
         # Run all tests in the class
 
         methods = [ m for m in dir(PGTestCase) if m.startswith('test_') ]
         methods.sort()
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, m) for m in methods ])
+        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.unicode, m) for m in methods ])
 
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
     result = testRunner.run(s)
