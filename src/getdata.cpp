@@ -327,8 +327,8 @@ static PyObject* GetDataString(Cursor* cur, Py_ssize_t iCol)
         break;
     }
 
-    char tempBuffer[1024];
-    DataBuffer buffer(nTargetType, tempBuffer, sizeof(tempBuffer));
+    char tempBuffer[1026]; // Pad with 2 bytes for driver bugs
+    DataBuffer buffer(nTargetType, tempBuffer, sizeof(tempBuffer)-2);
 
     for (int iDbg = 0; iDbg < 10; iDbg++) // failsafe
     {
