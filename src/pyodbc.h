@@ -45,6 +45,10 @@ typedef unsigned long long UINT64;
 #include <unicodeobject.h>
 #include <structmember.h>
 
+#ifdef __CYGWIN__
+#include <windows.h>
+#endif
+
 #include <sql.h>
 #include <sqlext.h>
 
