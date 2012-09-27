@@ -257,7 +257,7 @@ public:
         I(bufferOwner == 0);
         PyObject* result = PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, bytesUsed / element_size);
         if (result == 0)
-            return false;
+            return 0;
         pyodbc_free(buffer);
         buffer = 0;
         return result;

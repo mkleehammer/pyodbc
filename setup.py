@@ -147,6 +147,14 @@ def get_compiler_settings(version_str):
         # OS/X now ships with iODBC.
         settings['libraries'].append('iodbc')
 
+        # Apple has decided they won't maintain the iODBC system in OS/X and has added deprecation warnings in 10.8.
+        # For now target 10.7 to eliminate the warnings.
+
+        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
+        settings['extra_compile_args'] = ['-Wno-write-strings', '-Wno-deprecated-declarations']
+
+        settings['define_macros'].append( ('MAC_OS_X_VERSION_10_7',) )
+
     else:
         # Other posix-like: Linux, Solaris, etc.
 

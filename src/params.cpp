@@ -343,7 +343,7 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
     long count = (long)PyTuple_GET_SIZE(digits);
 
     char* pch;
-    int len;
+    long len;
 
     if (exp >= 0)
     {
