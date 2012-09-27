@@ -57,7 +57,7 @@ class PGTestCase(unittest.TestCase):
                 self.cnxn.commit()
             except:
                 pass
-        
+
         self.cnxn.rollback()
 
 
@@ -192,7 +192,7 @@ class PGTestCase(unittest.TestCase):
 
     def _exec(self):
         self.cursor.execute(self.sql)
-        
+
     def test_close_cnxn(self):
         """Make sure using a Cursor after closing its connection doesn't crash."""
 
@@ -201,7 +201,7 @@ class PGTestCase(unittest.TestCase):
         self.cursor.execute("select * from t1")
 
         self.cnxn.close()
-        
+
         # Now that the connection is closed, we expect an exception.  (If the code attempts to use
         # the HSTMT, we'll get an access violation instead.)
         self.sql = "select * from t1"
@@ -263,13 +263,13 @@ class PGTestCase(unittest.TestCase):
     # PostgreSQL driver fails here?
     # def test_rowcount_reset(self):
     #     "Ensure rowcount is reset to -1"
-    # 
+    #
     #     self.cursor.execute("create table t1(i int)")
     #     count = 4
     #     for i in range(count):
     #         self.cursor.execute("insert into t1 values (?)", i)
     #     self.assertEquals(self.cursor.rowcount, 1)
-    # 
+    #
     #     self.cursor.execute("create table t2(i int)")
     #     self.assertEquals(self.cursor.rowcount, -1)
 
@@ -291,7 +291,7 @@ class PGTestCase(unittest.TestCase):
 
         # Put it back so other tests don't fail.
         pyodbc.lowercase = False
-        
+
     def test_row_description(self):
         """
         Ensure Cursor.description is accessible as Row.cursor_description.
@@ -303,7 +303,7 @@ class PGTestCase(unittest.TestCase):
 
         row = self.cursor.execute("select * from t1").fetchone()
         self.assertEquals(self.cursor.description, row.cursor_description)
-        
+
 
     def test_executemany(self):
         self.cursor.execute("create table t1(a int, b varchar(10))")
@@ -336,10 +336,34 @@ class PGTestCase(unittest.TestCase):
         params = [ (1, 'good'),
                    ('error', 'not an int'),
                    (3, 'good') ]
-        
+
         self.failUnlessRaises(pyodbc.Error, self.cursor.executemany, "insert into t1(a, b) value (?, ?)", params)
 
-        
+
+    def test_executemany_generator(self):
+        self.cursor.execute("create table t1(a int)")
+
+        self.cursor.executemany("insert into t1(a) values (?)", ((i,) for i in range(4)))
+
+        row = self.cursor.execute("select min(a) mina, max(a) maxa from t1").fetchone()
+
+        self.assertEqual(row.mina, 0)
+        self.assertEqual(row.maxa, 3)
+
+
+    def test_executemany_iterator(self):
+        self.cursor.execute("create table t1(a int)")
+
+        values = [ (i,) for i in range(4) ]
+
+        self.cursor.executemany("insert into t1(a) values (?)", iter(values))
+
+        row = self.cursor.execute("select min(a) mina, max(a) maxa from t1").fetchone()
+
+        self.assertEqual(row.mina, 0)
+        self.assertEqual(row.maxa, 3)
+
+
     def test_row_slicing(self):
         self.cursor.execute("create table t1(a int, b int, c int, d int)");
         self.cursor.execute("insert into t1 values(1,2,3,4)")

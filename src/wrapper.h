@@ -31,10 +31,13 @@ public:
 
     bool IsValid() const { return p != 0; }
 
-    void Attach(PyObject* _p)
+    bool Attach(PyObject* _p)
     {
+        // Returns true if the new pointer is non-zero.
+
         Py_XDECREF(p);
         p = _p;
+        return (_p != 0);
     }
 
     PyObject* Detach()

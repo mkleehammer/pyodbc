@@ -25,6 +25,7 @@
 #include "dbspecific.h"
 #include "sqlwchar.h"
 #include <datetime.h>
+#include "wrapper.h"
 
 enum
 {
@@ -959,32 +960,66 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
         return 0;
     }
 
-    if (!IsSequence(param_seq))
+    if (IsSequence(param_seq))
     {
-        PyErr_SetString(ProgrammingError, "The second parameter to executemany must be a sequence.");
-        return 0;
-    }
+        Py_ssize_t c = PySequence_Size(param_seq);
 
-    Py_ssize_t c = PySequence_Size(param_seq);
-
-    if (c == 0)
-    {
-        PyErr_SetString(ProgrammingError, "The second parameter to executemany must not be empty.");
-        return 0;
-    }
-
-    for (Py_ssize_t i = 0; i < c; i++)
-    {
-        PyObject* params = PySequence_GetItem(param_seq, i);
-        PyObject* result = execute(cursor, pSql, params, false);
-        bool success = result != 0;
-        Py_XDECREF(result);
-        Py_DECREF(params);
-        if (!success)
+        if (c == 0)
         {
-            cursor->rowcount = -1;
+            PyErr_SetString(ProgrammingError, "The second parameter to executemany must not be empty.");
             return 0;
         }
+
+        for (Py_ssize_t i = 0; i < c; i++)
+        {
+            PyObject* params = PySequence_GetItem(param_seq, i);
+            PyObject* result = execute(cursor, pSql, params, false);
+            bool success = result != 0;
+            Py_XDECREF(result);
+            Py_DECREF(params);
+            if (!success)
+            {
+                cursor->rowcount = -1;
+                return 0;
+            }
+        }
+    }
+    else if (PyGen_Check(param_seq) || PyIter_Check(param_seq))
+    {
+        Object iter;
+
+        if (PyGen_Check(param_seq))
+        {
+            iter = PyObject_GetIter(param_seq);
+        }
+        else
+        {
+            iter = param_seq;
+            Py_INCREF(param_seq);
+        }
+
+        Object params;
+
+        while (params.Attach(PyIter_Next(iter)))
+        {
+            PyObject* result = execute(cursor, pSql, params, false);
+            bool success = result != 0;
+            Py_XDECREF(result);
+
+            if (!success)
+            {
+                cursor->rowcount = -1;
+                return 0;
+            }
+        }
+        
+        if (PyErr_Occurred())
+            return 0;
+    }
+    else
+    {
+        PyErr_SetString(ProgrammingError, "The second parameter to executemany must be a sequence, iterator, or generator.");
+        return 0;
     }
 
     cursor->rowcount = -1;
