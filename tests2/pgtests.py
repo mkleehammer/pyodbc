@@ -396,6 +396,18 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(result, "(1,)")
 
 
+    def test_int_limits(self):
+        values = [ (-sys.maxint - 1), -1, 0, 1, 3230392212, sys.maxint ]
+
+        self.cursor.execute("create table t1(a bigint)")
+
+        for value in values:
+            self.cursor.execute("delete from t1")
+            self.cursor.execute("insert into t1 values(?)", value)
+            v = self.cursor.execute("select a from t1").fetchone()[0]
+            self.assertEqual(v, value)
+
+
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage="usage: %prog [options] connection_string")
