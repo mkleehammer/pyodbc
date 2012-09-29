@@ -55,10 +55,16 @@ class SqlServerTestCase(unittest.TestCase):
 
     SMALL_FENCEPOST_SIZES = [ 0, 1, 255, 256, 510, 511, 512, 1023, 1024, 2047, 2048, 4000 ]
     LARGE_FENCEPOST_SIZES = [ 4095, 4096, 4097, 10 * 1024, 20 * 1024 ]
+    MAX_FENCEPOST_SIZES   = [ 5 * 1024 * 1024, 50 * 1024 * 1024 ]
 
-    ANSI_FENCEPOSTS    = [ _generate_test_string(size) for size in SMALL_FENCEPOST_SIZES ]
-    UNICODE_FENCEPOSTS = [ unicode(s) for s in ANSI_FENCEPOSTS ]
-    IMAGE_FENCEPOSTS   = ANSI_FENCEPOSTS + [ _generate_test_string(size) for size in LARGE_FENCEPOST_SIZES ]
+    ANSI_SMALL_FENCEPOSTS    = [ _generate_test_string(size) for size in SMALL_FENCEPOST_SIZES ]
+    UNICODE_SMALL_FENCEPOSTS = [ unicode(s) for s in ANSI_SMALL_FENCEPOSTS ]
+    ANSI_LARGE_FENCEPOSTS    = ANSI_SMALL_FENCEPOSTS    + [ _generate_test_string(size) for size in LARGE_FENCEPOST_SIZES ]
+    UNICODE_LARGE_FENCEPOSTS = UNICODE_SMALL_FENCEPOSTS + [ unicode(s) for s in [_generate_test_string(size) for size in LARGE_FENCEPOST_SIZES ]]
+
+    ANSI_MAX_FENCEPOSTS    = ANSI_LARGE_FENCEPOSTS + [ _generate_test_string(size) for size in MAX_FENCEPOST_SIZES ]
+    UNICODE_MAX_FENCEPOSTS = UNICODE_LARGE_FENCEPOSTS + [ unicode(s) for s in [_generate_test_string(size) for size in MAX_FENCEPOST_SIZES ]]
+
 
     def __init__(self, method_name, connection_string):
         unittest.TestCase.__init__(self, method_name)
@@ -190,8 +196,8 @@ class SqlServerTestCase(unittest.TestCase):
         """
         The implementation for string, Unicode, and binary tests.
         """
-        assert colsize is None or isinstance(colsize, int), colsize
-        assert colsize is None or (value is None or colsize >= len(value))
+        assert colsize in (None, 'max') or isinstance(colsize, int), colsize
+        assert colsize in (None, 'max') or (value is None or colsize >= len(value))
 
         if colsize:
             sql = "create table t1(s %s(%s))" % (sqltype, colsize)
@@ -262,8 +268,16 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strtype('varchar', value, colsize=len(value))
         return t
-    for value in ANSI_FENCEPOSTS:
+    for value in ANSI_SMALL_FENCEPOSTS:
         locals()['test_varchar_%s' % len(value)] = _maketest(value)
+
+    # Also test varchar(max)
+    def _maketest(value):
+        def t(self):
+            self._test_strtype('varchar', value, colsize='max')
+        return t
+    for value in ANSI_MAX_FENCEPOSTS:
+        locals()['test_varcharmax_%s' % len(value)] = _maketest(value)
 
     def test_varchar_many(self):
         self.cursor.execute("create table t1(c1 varchar(300), c2 varchar(300), c3 varchar(300))")
@@ -294,8 +308,16 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strtype('nvarchar', value, colsize=len(value))
         return t
-    for value in UNICODE_FENCEPOSTS:
+    for value in UNICODE_SMALL_FENCEPOSTS:
         locals()['test_unicode_%s' % len(value)] = _maketest(value)
+
+    # Also test nvarchar(max)
+    def _maketest(value):
+        def t(self):
+            self._test_strtype('nvarchar', value, colsize='max')
+        return t
+    for value in UNICODE_MAX_FENCEPOSTS:
+        locals()['test_nvarcharmax_%s' % len(value)] = _maketest(value)
 
     def test_unicode_upperlatin(self):
         self._test_strtype('nvarchar', u'á')
@@ -329,7 +351,7 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strtype('varbinary', buffer(value), resulttype=pyodbc.BINARY, colsize=len(value))
         return t
-    for value in ANSI_FENCEPOSTS:
+    for value in ANSI_SMALL_FENCEPOSTS:
         locals()['test_binary_buffer_%s' % len(value)] = _maketest(value)
 
     # bytearray
@@ -339,8 +361,26 @@ class SqlServerTestCase(unittest.TestCase):
             def t(self):
                 self._test_strtype('varbinary', bytearray(value), colsize=len(value))
             return t
-        for value in ANSI_FENCEPOSTS:
+        for value in ANSI_SMALL_FENCEPOSTS:
             locals()['test_binary_bytearray_%s' % len(value)] = _maketest(value)
+
+    # varbinary(max)
+    def _maketest(value):
+        def t(self):
+            self._test_strtype('varbinary', buffer(value), resulttype=pyodbc.BINARY, colsize='max')
+        return t
+    for value in ANSI_MAX_FENCEPOSTS:
+        locals()['test_binarymax_buffer_%s' % len(value)] = _maketest(value)
+
+    # bytearray
+
+    if sys.hexversion >= 0x02060000:
+        def _maketest(value):
+            def t(self):
+                self._test_strtype('varbinary', bytearray(value), colsize='max')
+            return t
+        for value in ANSI_MAX_FENCEPOSTS:
+            locals()['test_binarymax_bytearray_%s' % len(value)] = _maketest(value)
 
     #
     # image
@@ -354,7 +394,7 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strliketype('image', buffer(value), pyodbc.BINARY)
         return t
-    for value in IMAGE_FENCEPOSTS:
+    for value in ANSI_LARGE_FENCEPOSTS:
         locals()['test_image_buffer_%s' % len(value)] = _maketest(value)
 
     if sys.hexversion >= 0x02060000:
@@ -365,7 +405,7 @@ class SqlServerTestCase(unittest.TestCase):
             def t(self):
                 self._test_strtype('image', bytearray(value))
             return t
-        for value in IMAGE_FENCEPOSTS:
+        for value in ANSI_LARGE_FENCEPOSTS:
             locals()['test_image_bytearray_%s' % len(value)] = _maketest(value)
 
     def test_image_upperlatin(self):
@@ -386,7 +426,7 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strliketype('text', value)
         return t
-    for value in ANSI_FENCEPOSTS:
+    for value in ANSI_SMALL_FENCEPOSTS:
         locals()['test_text_buffer_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
@@ -407,7 +447,7 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strliketype('xml', value)
         return t
-    for value in ANSI_FENCEPOSTS:
+    for value in ANSI_SMALL_FENCEPOSTS:
         locals()['test_xml_buffer_%s' % len(value)] = _maketest(value)
 
     def test_xml_upperlatin(self):
