@@ -263,6 +263,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->varchar_maxlength      = p->varchar_maxlength;
     cnxn->wvarchar_maxlength     = p->wvarchar_maxlength;
     cnxn->binary_maxlength       = p->binary_maxlength;
+    cnxn->need_long_data_len     = p->need_long_data_len;
 
     return reinterpret_cast<PyObject*>(cnxn);
 }

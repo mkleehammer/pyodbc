@@ -1,4 +1,5 @@
 
+
 #include "pyodbc.h"
 #include "pyodbcmodule.h"
 #include "params.h"
@@ -151,7 +152,7 @@ static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
     {
         // Too long to pass all at once, so we'll provide the data at execute.
         info.ParameterType     = SQL_LONGVARBINARY;
-        info.StrLen_or_Ind     = SQL_LEN_DATA_AT_EXEC((SQLLEN)len);
+        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len) : SQL_DATA_AT_EXEC;
         info.ParameterValuePtr = param;
     }
 
@@ -169,7 +170,7 @@ static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
     {
         // Too long to pass all at once, so we'll provide the data at execute.
         info.ParameterType     = SQL_LONGVARCHAR;
-        info.StrLen_or_Ind     = SQL_LEN_DATA_AT_EXEC((SQLLEN)len);
+        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len) : SQL_DATA_AT_EXEC;
         info.ParameterValuePtr = param;
     }
 #endif
@@ -215,7 +216,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
         // Too long to pass all at once, so we'll provide the data at execute.
 
         info.ParameterType     = SQL_WLONGVARCHAR;
-        info.StrLen_or_Ind     = SQL_LEN_DATA_AT_EXEC((SQLLEN)(len * sizeof(SQLWCHAR)));
+        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len * sizeof(SQLWCHAR)) : SQL_DATA_AT_EXEC;
         info.ParameterValuePtr = param;
     }
 
@@ -495,7 +496,7 @@ static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamI
         info.ParameterValuePtr = param;
         info.ColumnSize        = (SQLUINTEGER)PyBuffer_Size(param);
         info.BufferLength      = sizeof(PyObject*); // How big is ParameterValuePtr; ODBC copies it and gives it back in SQLParamData
-        info.StrLen_or_Ind     = SQL_LEN_DATA_AT_EXEC(PyBuffer_Size(param));
+        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)PyBuffer_Size(param)) : SQL_DATA_AT_EXEC;
     }
 
     return true;
@@ -522,7 +523,7 @@ static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
         info.ParameterValuePtr = param;
         info.ColumnSize        = (SQLUINTEGER)cb;
         info.BufferLength      = sizeof(PyObject*); // How big is ParameterValuePtr; ODBC copies it and gives it back in SQLParamData
-        info.StrLen_or_Ind     = SQL_LEN_DATA_AT_EXEC(cb);
+        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)cb) : SQL_DATA_AT_EXEC;
     }
     return true;
 }

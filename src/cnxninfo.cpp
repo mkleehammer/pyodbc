@@ -51,17 +51,17 @@ static PyObject* GetHash(PyObject* p)
         Object hash(PyObject_CallMethod(hashlib, "new", "s", "sha1"));
         if (!hash.IsValid())
             return 0;
-        
+
         PyObject_CallMethodObjArgs(hash, update, p, 0);
         return PyObject_CallMethod(hash, "hexdigest", 0);
     }
-    
+
     if (sha)
     {
         Object hash(PyObject_CallMethod(sha, "new", 0));
         if (!hash.IsValid())
             return 0;
-        
+
         PyObject_CallMethodObjArgs(hash, update, p, 0);
         return PyObject_CallMethod(hash, "hexdigest", 0);
     }
@@ -85,6 +85,7 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
     p->odbc_minor             = 50;
     p->supports_describeparam = false;
     p->datetime_precision     = 19; // default: "yyyy-mm-dd hh:mm:ss"
+    p->need_long_data_len     = false;
 
     // WARNING: The GIL lock is released for the *entire* function here.  Do not touch any objects, call Python APIs,
     // etc.  We are simply making ODBC calls and setting atomic values (ints & chars).  Also, make sure the lock gets
@@ -108,11 +109,11 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
     }
 
     char szYN[2];
-    ret = SQLGetInfo(cnxn->hdbc, SQL_DESCRIBE_PARAMETER, szYN, _countof(szYN), &cch);
-    if (SQL_SUCCEEDED(ret))
-    {
+    if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_DESCRIBE_PARAMETER, szYN, _countof(szYN), &cch)))
         p->supports_describeparam = szYN[0] == 'Y';
-    }
+
+    if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_NEED_LONG_DATA_LEN, szYN, _countof(szYN), &cch)))
+        p->need_long_data_len = (szYN[0] == 'Y');
 
     // These defaults are tiny, but are necessary for Access.
     p->varchar_maxlength = 255;
@@ -124,42 +125,28 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
     {
         SQLINTEGER columnsize;
         if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_TYPE_TIMESTAMP)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
-        {
             if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
                 p->datetime_precision = (int)columnsize;
 
-            SQLFreeStmt(hstmt, SQL_CLOSE);
-        }
-
         if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_VARCHAR)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
-        {
             if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
                 p->varchar_maxlength = (int)columnsize;
-        
-            SQLFreeStmt(hstmt, SQL_CLOSE);
-        }
-        
+
         if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_WVARCHAR)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
-        {
             if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
                 p->wvarchar_maxlength = (int)columnsize;
-        
-            SQLFreeStmt(hstmt, SQL_CLOSE);
-        }
-        
+
         if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_BINARY)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
-        {
             if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
                 p->binary_maxlength = (int)columnsize;
-        
-            SQLFreeStmt(hstmt, SQL_CLOSE);
-        }
+
+        SQLFreeStmt(hstmt, SQL_CLOSE);
     }
 
     Py_END_ALLOW_THREADS
 
     // WARNING: Released the lock now.
-    
+
     return info.Detach();
 }
 
