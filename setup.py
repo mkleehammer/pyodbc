@@ -269,7 +269,7 @@ def _get_version_git():
         numbers[-2] += 1
         name = '%s.%s.%s-beta%02d' % tuple(numbers)
 
-    n, result = getoutput('git branch')
+    n, result = getoutput('git branch --color=never')
     branch = re.search(r'\* (\w+)', result).group(1)
     if branch != 'master' and not re.match('^v\d+$', branch):
         name = branch + '-' + name
