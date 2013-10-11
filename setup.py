@@ -1,6 +1,10 @@
 #!/usr/bin/python
 
-import sys, os, re
+import os
+import re
+import subprocess as subp
+import sys
+
 from os.path import exists, abspath, dirname, join
 
 try:
@@ -144,16 +148,26 @@ def get_compiler_settings(version_str):
         settings['libraries'].append('odbc32')
 
     elif sys.platform == 'darwin':
-        # OS/X now ships with iODBC.
-        settings['libraries'].append('iodbc')
+        IODBC = 'iodbc'
+        UNIXODBC = 'odbc.2'
+        odbc_lib = IODBC # OS/X ships with iODBC, so default to that lib.
 
-        # Apple has decided they won't maintain the iODBC system in OS/X and has added deprecation warnings in 10.8.
-        # For now target 10.7 to eliminate the warnings.
+        # Determine if unixODBC is installed and use that instead if available.
+        proc = subp.Popen(('gcc', '-l{0}'.format(UNIXODBC)), stderr=subp.PIPE)
+        _, stderr = proc.communicate()
+        if 'ld: library not found for' not in stderr:
+            odbc_lib = UNIXODBC
+        settings['libraries'].append(odbc_lib)
 
-        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
+        # Python functions take a lot of 'char *' that really should be const.
+        # gcc complains about this *a lot*.
         settings['extra_compile_args'] = ['-Wno-write-strings', '-Wno-deprecated-declarations']
 
-        settings['define_macros'].append( ('MAC_OS_X_VERSION_10_7',) )
+        # Apple has decided they won't maintain the iODBC system in OS/X
+        # and has added deprecation warnings in 10.8.
+        # For now target 10.7 to eliminate the warnings with iODBC.
+        if odbc_lib == 'iodbc':
+            settings['define_macros'].append( ('MAC_OS_X_VERSION_10_7',) )
 
     else:
         # Other posix-like: Linux, Solaris, etc.
