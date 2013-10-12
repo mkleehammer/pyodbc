@@ -161,6 +161,9 @@ def get_compiler_settings(version_str):
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'] = ['-Wno-write-strings']
 
+        # This makes UnixODBC use UCS-4 instead of UCS-2, which works better with sizeof(wchar_t)==4
+        settings['extra_compile_args'].append('-DSQL_WCHART_CONVERT=1')
+
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
         settings['libraries'].append('odbc')
 
