@@ -302,7 +302,7 @@ static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
     info.Data.l = PyInt_AsLong(param);
 
 #if LONG_BIT == 64
-    info.ValueType     = SQL_C_SBIGINT;
+    info.ValueType     = SQL_C_LONG;
     info.ParameterType = SQL_BIGINT;
 #elif LONG_BIT == 32
     info.ValueType     = SQL_C_LONG;
