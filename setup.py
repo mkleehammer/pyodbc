@@ -12,6 +12,11 @@ except ImportError:
 from distutils.extension import Extension
 from distutils.errors import *
 
+if sys.hexversion >= 0x03000000:
+    from configparser import ConfigParser
+else:
+    from ConfigParser import ConfigParser
+
 OFFICIAL_BUILD = 9999
 
 def _print(s):
@@ -111,6 +116,7 @@ def main():
 def get_compiler_settings(version_str):
 
     settings = { 'libraries': [],
+                 'include_dirs': [],
                  'define_macros' : [ ('PYODBC_VERSION', version_str) ] }
 
     # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
@@ -147,12 +153,27 @@ def get_compiler_settings(version_str):
         # OS/X now ships with iODBC.
         settings['libraries'].append('iodbc')
 
-        # Apple has decided they won't maintain the iODBC system in OS/X and has added deprecation warnings in 10.8.
-        # For now target 10.7 to eliminate the warnings.
+        # Until I figure out how Apple expects people to find the system include files (xcode-
+        # select, xcodebuild?) you'll need to create a setup.cfg file with the following:
+        #
+        # [build_settings]
+        # include_dirs: /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/usr/include
+
+        path = join(dirname(abspath(__file__)), 'setup.cfg')
+        print(path, exists(path))
+        if exists(path):
+            config = ConfigParser()
+            config.read(path)
+
+            if config.has_option('build_settings', 'include_dirs'):
+                value = config.get('build_settings', 'include_dirs').split(os.pathsep)
+                settings['include_dirs'] = value
 
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'] = ['-Wno-write-strings', '-Wno-deprecated-declarations']
 
+        # Apple has decided they won't maintain the iODBC system in OS/X and has added deprecation warnings in 10.8.
+        # For now target 10.7 to eliminate the warnings.
         settings['define_macros'].append( ('MAC_OS_X_VERSION_10_7',) )
 
     else:
