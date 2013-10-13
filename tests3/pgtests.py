@@ -3,6 +3,8 @@
 # Unit tests for PostgreSQL on Linux (Fedora)
 # This is a stripped down copy of the SQL Server tests.
 
+from __future__ import print_function
+
 import sys, os, re
 import unittest
 from decimal import Decimal
@@ -23,7 +25,7 @@ def _generate_test_string(length):
     if length <= len(_TESTSTR):
         return _TESTSTR[:length]
 
-    c = (length + len(_TESTSTR)-1) / len(_TESTSTR)
+    c = int((length + len(_TESTSTR)-1) / len(_TESTSTR))
     v = _TESTSTR * c
     return v[:length]
 
@@ -370,7 +372,7 @@ class PGTestCase(unittest.TestCase):
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage="usage: %prog [options] connection_string")
-    parser.add_option("-v", "--verbose", action="count", help="Increment test verbosity (can be used multiple times)")
+    parser.add_option("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
     parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
     parser.add_option("-t", "--test", help="Run only the named test")
     parser.add_option('-a', '--ansi', help='ANSI only', default=False, action='store_true')
@@ -391,11 +393,12 @@ def main():
 
     if options.verbose:
         cnxn = pyodbc.connect(connection_string, ansi=options.ansi)
-        print 'library:', os.path.abspath(pyodbc.__file__)
-        print 'odbc:    %s' % cnxn.getinfo(pyodbc.SQL_ODBC_VER)
-        print 'driver:  %s %s' % (cnxn.getinfo(pyodbc.SQL_DRIVER_NAME), cnxn.getinfo(pyodbc.SQL_DRIVER_VER))
-        print 'driver supports ODBC version %s' % cnxn.getinfo(pyodbc.SQL_DRIVER_ODBC_VER)
-        print 'unicode:', pyodbc.UNICODE_SIZE, 'sqlwchar:', pyodbc.SQLWCHAR_SIZE
+        print_library_info(cnxn)
+        # print 'library:', os.path.abspath(pyodbc.__file__)
+        # print 'odbc:    %s' % cnxn.getinfo(pyodbc.SQL_ODBC_VER)
+        # print 'driver:  %s %s' % (cnxn.getinfo(pyodbc.SQL_DRIVER_NAME), cnxn.getinfo(pyodbc.SQL_DRIVER_VER))
+        # print 'driver supports ODBC version %s' % cnxn.getinfo(pyodbc.SQL_DRIVER_ODBC_VER)
+        # print 'unicode:', pyodbc.UNICODE_SIZE, 'sqlwchar:', pyodbc.SQLWCHAR_SIZE
         cnxn.close()
 
     if options.test:

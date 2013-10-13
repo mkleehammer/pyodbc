@@ -115,9 +115,12 @@ def main():
 
 def get_compiler_settings(version_str):
 
-    settings = { 'libraries': [],
-                 'include_dirs': [],
-                 'define_macros' : [ ('PYODBC_VERSION', version_str) ] }
+    settings = { 
+        'extra_compile_args' : [],
+        'libraries': [],
+        'include_dirs': [],
+        'define_macros' : [ ('PYODBC_VERSION', version_str) ] 
+    }
 
     # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
     # command.
@@ -128,21 +131,27 @@ def get_compiler_settings(version_str):
         except ValueError:
             pass
 
+    from array import array
+    UNICODE_WIDTH = array('u').itemsize
+    settings['define_macros'].append(('PYODBC_UNICODE_WIDTH', str(UNICODE_WIDTH)))
+
     if os.name == 'nt':
-        settings['extra_compile_args'] = ['/Wall',
-                                          '/wd4668',
-                                          '/wd4820',
-                                          '/wd4711', # function selected for automatic inline expansion
-                                          '/wd4100', # unreferenced formal parameter
-                                          '/wd4127', # "conditional expression is constant" testing compilation constants
-                                          '/wd4191', # casts to PYCFunction which doesn't have the keywords parameter
-                                          ]
-        settings['libraries'].append('odbc32')
-        settings['libraries'].append('advapi32')
+        settings['extra_compile_args'].extend([
+            '/Wall',
+            '/wd4668',
+            '/wd4820',
+            '/wd4711', # function selected for automatic inline expansion
+            '/wd4100', # unreferenced formal parameter
+            '/wd4127', # "conditional expression is constant" testing compilation constants
+            '/wd4191', # casts to PYCFunction which doesn't have the keywords parameter
+        ])
 
         if '--debug' in sys.argv:
             sys.argv.remove('--debug')
             settings['extra_compile_args'].extend('/Od /Ge /GS /GZ /RTC1 /Wp64 /Yd'.split())
+
+        settings['libraries'].append('odbc32')
+        settings['libraries'].append('advapi32')
 
     elif os.environ.get("OS", '').lower().startswith('windows'):
         # Windows Cygwin (posix on windows)
@@ -153,24 +162,11 @@ def get_compiler_settings(version_str):
         # OS/X now ships with iODBC.
         settings['libraries'].append('iodbc')
 
-        # Until I figure out how Apple expects people to find the system include files (xcode-
-        # select, xcodebuild?) you'll need to create a setup.cfg file with the following:
-        #
-        # [build_settings]
-        # include_dirs: /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.8.sdk/usr/include
-
-        path = join(dirname(abspath(__file__)), 'setup.cfg')
-        print(path, exists(path))
-        if exists(path):
-            config = ConfigParser()
-            config.read(path)
-
-            if config.has_option('build_settings', 'include_dirs'):
-                value = config.get('build_settings', 'include_dirs').split(os.pathsep)
-                settings['include_dirs'] = value
-
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
-        settings['extra_compile_args'] = ['-Wno-write-strings', '-Wno-deprecated-declarations']
+        settings['extra_compile_args'].extend([
+            '-Wno-write-strings',
+            '-Wno-deprecated-declarations'
+        ])
 
         # Apple has decided they won't maintain the iODBC system in OS/X and has added deprecation warnings in 10.8.
         # For now target 10.7 to eliminate the warnings.
@@ -180,7 +176,12 @@ def get_compiler_settings(version_str):
         # Other posix-like: Linux, Solaris, etc.
 
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
-        settings['extra_compile_args'] = ['-Wno-write-strings']
+        settings['extra_compile_args'].append('-Wno-write-strings')
+
+        if UNICODE_WIDTH == 4:
+            # This makes UnixODBC use UCS-4 instead of UCS-2, which works better with sizeof(wchar_t)==4.
+            # Thanks to Marc-Antoine Parent
+            settings['define_macros'].append(('SQL_WCHART_CONVERT', '1'))
 
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
         settings['libraries'].append('odbc')
