@@ -20,6 +20,7 @@
 // SQL Server 2008 time type
 
 #define SQL_SS_TIME2 -154
+#define SQL_DATETIME_OFFSET -155
 
 struct SQL_SS_TIME2_STRUCT
 {

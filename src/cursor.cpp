@@ -152,6 +152,7 @@ static PyObject* PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMAL
     case SQL_LONGVARCHAR:
     case SQL_GUID:
     case SQL_SS_XML:
+    case SQL_DATETIME_OFFSET:
         if (unicode_results)
             pytype = (PyObject*)&PyUnicode_Type;
         else

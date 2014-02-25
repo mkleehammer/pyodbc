@@ -304,7 +304,7 @@ static PyObject* GetDataString(Cursor* cur, Py_ssize_t iCol)
     case SQL_VARCHAR:
     case SQL_LONGVARCHAR:
     case SQL_GUID:
-    case SQL_SS_XML:
+    case SQL_SS_XML:    
 #if PY_MAJOR_VERSION < 3
         if (cur->cnxn->unicode_results)
             nTargetType  = SQL_C_WCHAR;
@@ -319,6 +319,7 @@ static PyObject* GetDataString(Cursor* cur, Py_ssize_t iCol)
     case SQL_WCHAR:
     case SQL_WVARCHAR:
     case SQL_WLONGVARCHAR:
+    case SQL_DATETIME_OFFSET:
         nTargetType  = SQL_C_WCHAR;
         break;
 
@@ -693,6 +694,7 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_BINARY:
     case SQL_VARBINARY:
     case SQL_LONGVARBINARY:
+    case SQL_DATETIME_OFFSET:
 #endif
         return GetDataString(cur, iCol);
 
