@@ -330,7 +330,7 @@ static PyObject* GetDataString(Cursor* cur, Py_ssize_t iCol)
     char tempBuffer[1026]; // Pad with 2 bytes for driver bugs
     DataBuffer buffer(nTargetType, tempBuffer, sizeof(tempBuffer)-2);
 
-    for (int iDbg = 0; iDbg < 10; iDbg++) // failsafe
+    for(;;)
     {
         SQLRETURN ret;
         SQLLEN cbData = 0;
@@ -399,14 +399,15 @@ static PyObject* GetDataString(Cursor* cur, Py_ssize_t iCol)
         {
             // For some reason, the NULL terminator is used in intermediate buffers but not in this final one.
             buffer.AddUsed(cbData);
-        }
-
-        if (ret == SQL_SUCCESS || ret == SQL_NO_DATA)
             return buffer.DetachValue();
+        }
+        else if (ret == SQL_NO_DATA) {
+            return buffer.DetachValue();
+        }
+        else {
+            return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+        }
     }
-
-    // REVIEW: Add an error message.
-    return 0;
 }
 
 
