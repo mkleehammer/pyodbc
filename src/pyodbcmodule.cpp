@@ -180,11 +180,14 @@ static bool import_types()
     if (!Params_init())
         return false;
 
-    PyObject* decimalmod = PyImport_ImportModule("decimal");
+    PyObject* decimalmod = PyImport_ImportModule("cdecimal");
     if (!decimalmod)
     {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to import decimal");
-        return false;
+        decimalmod = PyImport_ImportModule("decimal");
+        if (!decimalmod) {
+            PyErr_SetString(PyExc_RuntimeError, "Unable to import cdecimal or decimal");
+            return false;
+        }
     }
 
     decimal_type = PyObject_GetAttrString(decimalmod, "Decimal");
