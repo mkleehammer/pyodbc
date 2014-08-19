@@ -462,7 +462,8 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 
     // TODO: Is Unicode a good idea for Python 2.7?  We need to know which drivers support Unicode.
 
-    SQLWCHAR buffer[100];
+    int buffsize = 100;
+    SQLWCHAR buffer[buffsize];
     SQLLEN cbFetched = 0; // Note: will not include the NULL terminator.
 
     SQLRETURN ret;
@@ -472,7 +473,7 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
     if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
-    if (cbFetched == SQL_NULL_DATA)
+    if (cbFetched == SQL_NULL_DATA || cbFetched > (buffsize * sizeof(SQLWCHAR)))
         Py_RETURN_NONE;
 
     // Remove non-digits and convert the databases decimal to a '.' (required by decimal ctor).
