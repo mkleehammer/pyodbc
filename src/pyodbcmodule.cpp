@@ -251,7 +251,11 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     Object pConnectString = 0;
     int fAutoCommit = 0;
     int fAnsi = 0;              // force ansi
-    int fUnicodeResults = 0;
+#if PY_MAJOR_VERSION < 3
+		int fUnicodeResults = 0;
+#else
+		int fUnicodeResults = 1;
+#endif
     int fReadOnly = 0;
     long timeout = 0;
 
