@@ -182,6 +182,12 @@ class SqlServerTestCase(unittest.TestCase):
         for i, row in enumerate(self.cursor):
             self.assertEqual(i + 2, row.i)
 
+    def test_nextset_with_raiserror(self):
+        self.cursor.execute("select i = 1; RAISERROR('c', 16, 1);")
+        row = next(self.cursor)
+        self.assertEqual(1, row.i)
+        self.assertRaises(pyodbc.ProgrammingError, self.cursor.nextset)
+    
     def test_fixed_unicode(self):
         value = u"t\xebsting"
         self.cursor.execute("create table t1(s nchar(7))")

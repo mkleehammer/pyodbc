@@ -544,7 +544,6 @@ bool InitColumnInfo(Cursor* cursor, SQLUSMALLINT iCol, ColumnInfo* pinfo)
         RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
         return false;
     }
-
     if (!SQL_SUCCEEDED(ret))
     {
         RaiseErrorFromHandle("SQLDescribeCol", cursor->cnxn->hdbc, cursor->hstmt);
@@ -1711,6 +1710,37 @@ static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
     if (ret == SQL_NO_DATA)
     {
         free_results(cur, FREE_STATEMENT | KEEP_PREPARED);
+        Py_RETURN_FALSE;
+    }
+    if (!SQL_SUCCEEDED(ret))
+    {
+        TRACE("nextset: %d not SQL_SUCCEEDED\n", ret);
+        // Note: The SQL Server driver sometimes returns HY007 here if multiple statements (separated by ;) were
+        // submitted.  This is not documented, but I've seen it with multiple successful inserts.
+
+        PyObject* pError = GetErrorFromHandle("SQLMoreResults", cur->cnxn->hdbc, cur->hstmt);
+        //
+        // free_results must be run after the error has been collected
+        // from the cursor as it's lost otherwise. 
+        // If free_results raises an error (eg a lost connection) report that instead.
+        //
+        if (!free_results(cur, FREE_STATEMENT | KEEP_PREPARED)) {
+            return 0;
+        }
+        //
+        // Return any error from the GetErrorFromHandle call above.
+        //
+        if (pError)
+        {
+            RaiseErrorFromException(pError);
+            Py_DECREF(pError);
+            return 0;
+        }
+        
+        //
+        // Not clear how we'd get here, but if we're in an error state
+        // without an error, behave as if we had no nextset
+        //
         Py_RETURN_FALSE;
     }
 
