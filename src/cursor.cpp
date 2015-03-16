@@ -199,8 +199,8 @@ static PyObject* PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMAL
     case SQL_BINARY:
     case SQL_VARBINARY:
     case SQL_LONGVARBINARY:
-#if PY_MAJOR_VERSION >= 3
-        pytype = (PyObject*)&PyBytes_Type;
+#if PY_VERSION_HEX >= 0x02060000
+        pytype = (PyObject*)&PyByteArray_Type;
 #else
         pytype = (PyObject*)&PyBuffer_Type;
 #endif
