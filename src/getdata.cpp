@@ -462,7 +462,7 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 
     // TODO: Is Unicode a good idea for Python 2.7?  We need to know which drivers support Unicode.
 
-    int buffsize = 100;
+    const int buffsize = 100;
     SQLWCHAR buffer[buffsize];
     SQLLEN cbFetched = 0; // Note: will not include the NULL terminator.
 
