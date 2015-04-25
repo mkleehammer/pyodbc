@@ -159,8 +159,9 @@ def get_compiler_settings(version_str):
         settings['libraries'].append('odbc32')
 
     elif sys.platform == 'darwin':
-        # OS/X now ships with iODBC.
-        settings['libraries'].append('iodbc')
+        # The latest versions of OS X no longer ship with iodbc.  Assume
+        # unixODBC for now.
+        settings['libraries'].append('odbc')
 
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].extend([
