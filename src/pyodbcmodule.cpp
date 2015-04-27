@@ -183,6 +183,8 @@ static bool import_types()
     PyObject* decimalmod = PyImport_ImportModule("cdecimal");
     if (!decimalmod)
     {
+        // Clear the error from the failed import of cdecimal.
+        PyErr_Clear();
         decimalmod = PyImport_ImportModule("decimal");
         if (!decimalmod) {
             PyErr_SetString(PyExc_RuntimeError, "Unable to import cdecimal or decimal");
