@@ -11,4 +11,4 @@ To install, use pip or setuputils::
 
     pip install pyodbc
 
-The module documentation is currently being updated for the move to GitHub.
+[Documentation](http://mkleehammer.github.io/pyodbc Documentation)
