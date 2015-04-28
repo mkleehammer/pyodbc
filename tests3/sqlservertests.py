@@ -807,6 +807,18 @@ class SqlServerTestCase(unittest.TestCase):
     # misc
     #
 
+    def table_with_spaces(self):
+        "Ensure we can select using [x z] syntax"
+
+        try:
+            self.cursor.execute("create table [test one](int n)")
+            self.cursor.execute("insert into [test one] values(1)")
+            self.cursor.execute("select * from [test one]")
+            v = self.cursor.fetchone()[0]
+            self.assertEquals(v, 1)
+        finally:
+            self.cnxn.rollback()
+
     def test_lower_case(self):
         "Ensure pyodbc.lowercase forces returned column names to lowercase."
 
