@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>pyodbc</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css" rel="stylesheet">
+    <link href="pyodbc.css" rel="stylesheet">
+  </head>
+  <body>
+
+    <div class="navbar navbar-default">
+      <div class="container">
+        <div class="navbar-header">
+          <button class="navbar-toggle collapsed" type="button" data-toggle="collapse" data-target=".bs-navbar-collapse">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <a href="../" class="navbar-brand">pyodbc</a>
+        </div>
+        <nav class="collapse navbar-collapse bs-navbar-collapse">
+          <ul class="nav navbar-nav">
+            <li><a href="index.html">Overview</a></li>
+            <li><a href="releases.html">Releases</a></li>
+            <li class="active"><a href="api.html">API</a></li>
+            <!-- <li><a href="faq.html">FAQ</a></li> -->
+          </ul>
+        </nav>
+      </div>
+    </div>
+
+    <div class="container">
+      <h1>API</h1>
+
+      <ul>
+        <li><a href="module">module</a></li>
+        <li><a href="connection">Connection</a></li>
+        <li><a href="Cursor">Cursor</a></li>
+        <li><a href="Row">Row</a></li>
+      </ul>
+
+      <h1>Module</h1>
+
+      <h2>Variables</h2>
+
+      <dl>
+
+        <dt>version</dt>
+        <dd>The module version string in <i>major.minor.patch</i> format such as "3.1.2"</dd>
+
+        <dt>apilevel</dt>
+        <dd>The string constant "2.0" indicating this module supports the DB API level 2.0</dd>
+
+        <dt>lowercase</dt>
+        <dd>A Boolean that controls whether column names in result rows are
+        lowercased. This can be changed any time and affects queries executed
+        after the change. The default is False. This can be useful when database
+          columns have inconsistent capitalization.</dd>
+
+        <dt>pooling</dt>
+        <dd>A Boolean indicating whether connection pooling is enabled. This is
+        a global (HENV) setting, so it can only be modified before the first
+        connection is made. The default is True, which enables ODBC connection
+        pooling.</dd>
+
+        <dt>threadsafety</dt>
+        <dd>The integer 1, indicating that threads may share the module but not
+        connections. Note that connections and cursors may be used by different
+        threads, just not at the same time.</dd>
+
+        <dt>paramstyle</dt>
+        <dd>The string constant 'qmark' to indicate parameters are identified
+        using question marks.</dd>
+
+      </dl>
+
+      <h2 id="connect">connect</h2>
+
+      <pre>connect(*connectionstring, **kwargs) --> Connection</pre>
+
+      <p>Creates and returns a new connection to the database.</p>
+
+      <p>The connection string and keywords are put together to construct an
+        ODBC connection string.  Python 2 accepts both ANSI and Unicode
+        strings.  (In Python 3 all strings are Unicode.)</p>
+
+<pre>
+# a string
+cnxn = connect('driver={SQL Server};server=localhost;database=test;uid=me;pwd=me2')
+# keywords
+cnxn = connect(driver='{SQL Server}', server='localhost', database='test', uid='me', pwd='me2')
+# both
+cnxn = connect('driver={SQL Server};server=localhost;database=test', uid='me', pwd='me2')
+</pre>
+
+<p>The DB API recommends some keywords that are not usually used in ODBC
+  connection strings, so they are converted:</p>
+
+<table class="table table-condensed">
+  <thead>
+    <tr><th>keyword</th><th>converts to</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>host</td><td>server</td></tr>
+    <tr><td>user</td><td>uid</td></tr>
+    <tr><td>password</td><td>pwd</td></tr>
+  </tbody>
+</table>
+
+<p>Some keywords are reserved by pyodbc and are not passed to the odbc
+driver:</p>
+
+<table class="table table-condensed">
+  <thead>
+    <tr><th>keyword</th><th>notes</th><th>default</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>autocommit</td><td>If False, Connection.commit must be called; otherwise each statement is automatically commited  False</td></tr>
+    <tr><td>ansi</td><td>If True, the driver does not support Unicode and SQLDriverConnectA should be used   False</td></tr>
+    <tr><td>unicode_results</td><td>    If True, strings returned in result sets are always Unicode (2.1.5+)    False</td></tr>
+    <tr><td>readonly</td><td>If True, the connection is set to readonly  False</td></tr>
+  </tbody>
+</table>
+
+<p>The ansi keyword should only be used to work around driver bugs. pyodbc will
+determine if the Unicode connection function (SQLDriverConnectW) exists and
+always attempt to call it. If the driver returns IM001 indicating it does not
+support the Unicode version, the ANSI version is tried (SQLDriverConnectA). Any
+other SQLSTATE is turned into an exception. Setting ansi to true skips the
+Unicode attempt and only connects using the ANSI version. This is useful for
+drivers that return the wrong SQLSTATE (or if pyodbc is out of date and should
+support other SQLSTATEs).</p>
+
+<!--
+<p>For help on connection strings, see <a href="https://code.google.com/p/pyodbc/wiki/ConnectionStrings">ConnectionStrings</a></p>
+-->
+
+<h2 id="dataSources">dataSources</h2>
+
+<pre>dataSources() -> { DSN : Description }</pre>
+
+<p>Returns a dictionary mapping available DSNs to their descriptions.</p>
+
+<p>Note: unixODBC may have a bug that only returns items from the users odbc.ini
+  file without merging the system one.</p>
+
+
+      <h1 id="connection">Connection</h1>
+
+      <p>Connection objects manage connections to the database.</p>
+
+      <p>Each manages a single ODBC HDBC.</p>
+
+      <p>There is no constructor; Connections can only be created by the
+        <a href="#connect">module's connect</a> function.</p>
+
+      <h2>variables</h2>
+
+      <dl>
+
+        <dt>autocommit</dt>
+
+        <dd>True if the connection is in autocommit mode; False otherwise.
+          Changing this value updates the ODBC autocommit setting.  The default
+          is False.</dd>
+
+        <dt>searchescape</dt>
+
+        <dd>The ODBC search pattern escape character, as returned by
+          SQLGetInfo(SQL_SEARCH_PATTERN_ESCAPE), used to escape special characters such as
+          '%' and '_'.  These are driver specific.</dd>
+
+        <dt>timeout</dt>
+        <dd><p>An optional integer query timeout, in seconds.  Use zero, the
+          default, to disable.</p>
+
+        <p>The timeout is applied to all cursors created by the connection, so
+          it cannot be changed for a given connection.</p>
+
+        <p>If a query timeout occurs, the database should raise an <a
+          href="api.html#operationalerror">OperationalError</a> with SQLSTATE
+          HYT00 or HYT01.</p>
+
+        <p>Note: This attribute only affects queries.  To set the timeout for
+          the actual connection process, use the <tt>timeout</tt> keyword of the
+          <a href="#connect">connect</a> function.</p>
+        </dd>
+
+      </dl>
+
+      <h2 id="connection_cursor">cursor</h2>
+
+      <pre>cnxn.cursor() --> Cursor</pre>
+
+      <p>Returns a new Cursor Object using the connection.</p>
+
+      <p>pyodbc supports multiple cursors per connection but your database or
+      driver may not.</p>
+
+      <h2 id="connection_commit">commit</h2>
+
+      <pre>cnxn.commit()</pre>
+
+      <p>Commits any pending transaction to the database.</p>
+
+      <p>Pending transactions are automatically rolled back when a connection is closed,
+        so be sure to call this.</p>
+
+      <h2 id="connection_rollback">rollback</h2>
+
+      <pre>cnxn.rollback()</pre>
+
+      <p>Causes the the database to roll back to the start of any pending transaction.</p>
+
+      <p>You can call this even if no work has been performed on the cursor, allowing it
+        to be used in finally statements, etc.</p>
+
+      <h2 id="connection_close">close</h2>
+
+      <pre>cnxn.close()</pre>
+
+      <p>Closes the connection.  Connections are automatically closed when they
+        are deleted, but you should call this if the connection is referenced in
+        more than one place.</p>
+
+      <p>The connection will be unusable from this point forward and a ProgrammingError
+        will be raised if any operation is attempted with the connection.  The same
+        applies to all cursor objects trying to use the connection.</p>
+
+      <p>Note that closing a connection without committing the changes first will cause
+        an implicit rollback to be performed.</p>
+
+      <h2 id="connection_getinfo">getinfo</h2>
+
+      <pre>getinfo(type) --> str | int | bool
+
+cnxn.getinfo(pyodbc.SQL_ACCESSIBLE_PROCEDURES)</pre>
+
+      <p>Returns general information about the driver and data source associated with a
+        connection by calling
+        <a href="http://msdn.microsoft.com/en-us/library/ms711681%28VS.85%29.aspx">SQLGetInfo</a>
+        and returning its results.  See Microsoft's SQLGetInfo documentation for the
+        types of information available.</p>
+
+      <p>pyodbc provides constants for the supported types.</p>
+
+      <div class="toggle-top">
+        <p><a href="#toggle-show">Click here to toggle the table of supported types.</a></p>
+
+        <table class="table table-condensed toggle-show hide">
+          <thead>
+            <tr><th>type</th><th>result type</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>SQL_ACCESSIBLE_PROCEDURES</td><td>bool</td></tr>
+            <tr><td>SQL_ACCESSIBLE_TABLES</td><td>bool</td></tr>
+            <tr><td>SQL_ACTIVE_ENVIRONMENTS</td><td>int</td></tr>
+            <tr><td>SQL_AGGREGATE_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_ALTER_DOMAIN</td><td>int</td></tr>
+            <tr><td>SQL_ALTER_TABLE</td><td>int</td></tr>
+            <tr><td>SQL_ASYNC_MODE</td><td>int</td></tr>
+            <tr><td>SQL_BATCH_ROW_COUNT</td><td>int</td></tr>
+            <tr><td>SQL_BATCH_SUPPORT</td><td>int</td></tr>
+            <tr><td>SQL_BOOKMARK_PERSISTENCE</td><td>int</td></tr>
+            <tr><td>SQL_CATALOG_LOCATION</td><td>int</td></tr>
+            <tr><td>SQL_CATALOG_NAME</td><td>bool</td></tr>
+            <tr><td>SQL_CATALOG_NAME_SEPARATOR</td><td>str</td></tr>
+            <tr><td>SQL_CATALOG_TERM</td><td>str</td></tr>
+            <tr><td>SQL_CATALOG_USAGE</td><td>int</td></tr>
+            <tr><td>SQL_COLLATION_SEQ</td><td>str</td></tr>
+            <tr><td>SQL_COLUMN_ALIAS</td><td>bool</td></tr>
+            <tr><td>SQL_CONCAT_NULL_BEHAVIOR</td><td>int</td></tr>
+            <tr><td>SQL_CONVERT_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_CONVERT_VARCHAR</td><td>int</td></tr>
+            <tr><td>SQL_CORRELATION_NAME</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_ASSERTION</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_CHARACTER_SET</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_COLLATION</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_DOMAIN</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_SCHEMA</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_TABLE</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_TRANSLATION</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_VIEW</td><td>int</td></tr>
+            <tr><td>SQL_CURSOR_COMMIT_BEHAVIOR</td><td>int</td></tr>
+            <tr><td>SQL_CURSOR_ROLLBACK_BEHAVIOR</td><td>int</td></tr>
+            <tr><td>SQL_DATABASE_NAME</td><td>str</td></tr>
+            <tr><td>SQL_DATA_SOURCE_NAME</td><td>str</td></tr>
+            <tr><td>SQL_DATA_SOURCE_READ_ONLY</td><td>bool</td></tr>
+            <tr><td>SQL_DATETIME_LITERALS</td><td>int</td></tr>
+            <tr><td>SQL_DBMS_NAME</td><td>str</td></tr>
+            <tr><td>SQL_DBMS_VER</td><td>str</td></tr>
+            <tr><td>SQL_DDL_INDEX</td><td>int</td></tr>
+            <tr><td>SQL_DEFAULT_TXN_ISOLATION</td><td>int</td></tr>
+            <tr><td>SQL_DESCRIBE_PARAMETER</td><td>bool</td></tr>
+            <tr><td>SQL_DM_VER</td><td>str</td></tr>
+            <tr><td>SQL_DRIVER_NAME</td><td>str</td></tr>
+            <tr><td>SQL_DRIVER_ODBC_VER</td><td>str</td></tr>
+            <tr><td>SQL_DRIVER_VER</td><td>str</td></tr>
+            <tr><td>SQL_DROP_ASSERTION</td><td>int</td></tr>
+            <tr><td>SQL_DROP_CHARACTER_SET</td><td>int</td></tr>
+            <tr><td>SQL_DROP_COLLATION</td><td>int</td></tr>
+            <tr><td>SQL_DROP_DOMAIN</td><td>int</td></tr>
+            <tr><td>SQL_DROP_SCHEMA</td><td>int</td></tr>
+            <tr><td>SQL_DROP_TABLE</td><td>int</td></tr>
+            <tr><td>SQL_DROP_TRANSLATION</td><td>int</td></tr>
+            <tr><td>SQL_DROP_VIEW</td><td>int</td></tr>
+            <tr><td>SQL_DYNAMIC_CURSOR_ATTRIBUTES1</td><td>int</td></tr>
+            <tr><td>SQL_DYNAMIC_CURSOR_ATTRIBUTES2</td><td>int</td></tr>
+            <tr><td>SQL_EXPRESSIONS_IN_ORDERBY</td><td>bool</td></tr>
+            <tr><td>SQL_FILE_USAGE</td><td>int</td></tr>
+            <tr><td>SQL_FORWARD_ONLY_CURSOR_ATTRIBUTES1</td><td>int</td></tr>
+            <tr><td>SQL_FORWARD_ONLY_CURSOR_ATTRIBUTES2</td><td>int</td></tr>
+            <tr><td>SQL_GETDATA_EXTENSIONS</td><td>int</td></tr>
+            <tr><td>SQL_GROUP_BY</td><td>int</td></tr>
+            <tr><td>SQL_IDENTIFIER_CASE</td><td>int</td></tr>
+            <tr><td>SQL_IDENTIFIER_QUOTE_CHAR</td><td>str</td></tr>
+            <tr><td>SQL_INDEX_KEYWORDS</td><td>int</td></tr>
+            <tr><td>SQL_INFO_SCHEMA_VIEWS</td><td>int</td></tr>
+            <tr><td>SQL_INSERT_STATEMENT</td><td>int</td></tr>
+            <tr><td>SQL_INTEGRITY</td><td>bool</td></tr>
+            <tr><td>SQL_KEYSET_CURSOR_ATTRIBUTES1</td><td>int</td></tr>
+            <tr><td>SQL_KEYSET_CURSOR_ATTRIBUTES2</td><td>int</td></tr>
+            <tr><td>SQL_KEYWORDS</td><td>str</td></tr>
+            <tr><td>SQL_LIKE_ESCAPE_CLAUSE</td><td>bool</td></tr>
+            <tr><td>SQL_MAX_ASYNC_CONCURRENT_STATEMENTS</td><td>int</td></tr>
+            <tr><td>SQL_MAX_BINARY_LITERAL_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_CATALOG_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_CHAR_LITERAL_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMNS_IN_GROUP_BY</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMNS_IN_INDEX</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMNS_IN_ORDER_BY</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMNS_IN_SELECT</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMNS_IN_TABLE</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMN_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_CONCURRENT_ACTIVITIES</td><td>int</td></tr>
+            <tr><td>SQL_MAX_CURSOR_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_DRIVER_CONNECTIONS</td><td>int</td></tr>
+            <tr><td>SQL_MAX_IDENTIFIER_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_INDEX_SIZE</td><td>int</td></tr>
+            <tr><td>SQL_MAX_PROCEDURE_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_ROW_SIZE</td><td>int</td></tr>
+            <tr><td>SQL_MAX_ROW_SIZE_INCLUDES_LONG</td><td>bool</td></tr>
+            <tr><td>SQL_MAX_SCHEMA_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_STATEMENT_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_TABLES_IN_SELECT</td><td>int</td></tr>
+            <tr><td>SQL_MAX_TABLE_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_USER_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MULTIPLE_ACTIVE_TXN</td><td>bool</td></tr>
+            <tr><td>SQL_MULT_RESULT_SETS</td><td>bool</td></tr>
+            <tr><td>SQL_NEED_LONG_DATA_LEN</td><td>bool</td></tr>
+            <tr><td>SQL_NON_NULLABLE_COLUMNS</td><td>int</td></tr>
+            <tr><td>SQL_NULL_COLLATION</td><td>int</td></tr>
+            <tr><td>SQL_NUMERIC_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_ODBC_INTERFACE_CONFORMANCE</td><td>int</td></tr>
+            <tr><td>SQL_ODBC_VER</td><td>str</td></tr>
+            <tr><td>SQL_OJ_CAPABILITIES</td><td>int</td></tr>
+            <tr><td>SQL_ORDER_BY_COLUMNS_IN_SELECT</td><td>bool</td></tr>
+            <tr><td>SQL_PARAM_ARRAY_ROW_COUNTS</td><td>int</td></tr>
+            <tr><td>SQL_PARAM_ARRAY_SELECTS</td><td>int</td></tr>
+            <tr><td>SQL_PROCEDURES</td><td>bool</td></tr>
+            <tr><td>SQL_PROCEDURE_TERM</td><td>str</td></tr>
+            <tr><td>SQL_QUOTED_IDENTIFIER_CASE</td><td>int</td></tr>
+            <tr><td>SQL_ROW_UPDATES</td><td>bool</td></tr>
+            <tr><td>SQL_SCHEMA_TERM</td><td>str</td></tr>
+            <tr><td>SQL_SCHEMA_USAGE</td><td>int</td></tr>
+            <tr><td>SQL_SCROLL_OPTIONS</td><td>int</td></tr>
+            <tr><td>SQL_SEARCH_PATTERN_ESCAPE</td><td>str</td></tr>
+            <tr><td>SQL_SERVER_NAME</td><td>str</td></tr>
+            <tr><td>SQL_SPECIAL_CHARACTERS</td><td>str</td></tr>
+            <tr><td>SQL_SQL92_DATETIME_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_FOREIGN_KEY_DELETE_RULE</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_FOREIGN_KEY_UPDATE_RULE</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_GRANT</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_NUMERIC_VALUE_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_PREDICATES</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_RELATIONAL_JOIN_OPERATORS</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_REVOKE</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_ROW_VALUE_CONSTRUCTOR</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_STR_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_VALUE_EXPRESSIONS</td><td>int</td></tr>
+            <tr><td>SQL_SQL_CONFORMANCE</td><td>int</td></tr>
+            <tr><td>SQL_STANDARD_CLI_CONFORMANCE</td><td>int</td></tr>
+            <tr><td>SQL_STATIC_CURSOR_ATTRIBUTES1</td><td>int</td></tr>
+            <tr><td>SQL_STATIC_CURSOR_ATTRIBUTES2</td><td>int</td></tr>
+            <tr><td>SQL_STR_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_SUBQUERIES</td><td>int</td></tr>
+            <tr><td>SQL_SYSTEM_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_TABLE_TERM</td><td>str</td></tr>
+            <tr><td>SQL_TIMEDATE_ADD_INTERVALS</td><td>int</td></tr>
+            <tr><td>SQL_TIMEDATE_DIFF_INTERVALS</td><td>int</td></tr>
+            <tr><td>SQL_TIMEDATE_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_TXN_CAPABLE</td><td>int</td></tr>
+            <tr><td>SQL_TXN_ISOLATION_OPTION</td><td>int</td></tr>
+            <tr><td>SQL_UNION</td><td>int</td></tr>
+            <tr><td>SQL_USER_NAME</td><td>str</td></tr>
+            <tr><td>SQL_XOPEN_CLI_YEAR</td><td>str</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+<h2 id="connection_execute">execute</h2>
+
+<pre>execute(sql, *params) --> Cursor</pre>
+
+<p>This is just a convenience function for creating a new Cursor, executing the
+SQL using the cursor, then discarding the cursor.  Since a new Cursor
+is allocated by each call, this should not be used if more than one SQL
+statement needs to be executed.
+
+  <h2 id="connection_add_output_converter">add_output_converter</h2>
+
+  <pre>add_output_converter(sqltype, func)</pre>
+
+  <p>Register an output converter function that will be called whenever a value with
+    the given SQL type is read from the database.</p>
+
+  <dl>
+    <dt>sqltype</dt>
+    <dd>The integer SQL type value to convert, which can be one of the defined
+      standard constants (e.g. pyodbc.SQL_VARCHAR) or a database-specific value
+      (e.g. -151 for the SQL Server 2008 geometry data type).</dd>
+
+    <dt>func</dt>
+    <dd>The converter function which will be called with a single parameter, the
+      value, and should return the converted value.  If the value is NULL, the
+      parameter will be None.  Otherwise it will be a Python string.</dd>
+  </dl>
+
+  <h2 id="connection_clear_output_converters">clear_output_converters</h2>
+
+  <pre>clear_output_converters()</pre>
+
+  <p>Remove all output converter functions added by <a
+  href="connection_add_output_converter">add_output_converter</a>.</p>
+
+      <h1 id="cursor">Cursor</h1>
+
+      <p>Cursors represent a database cursor (and map to ODBC HSTMTs), which is
+        used to manage the context of a fetch operation.  Cursors created from
+        the same connection are not isolated, i.e., any changes done to the
+        database by a cursor are immediately visible by the other cursors.</p>
+
+      <h2>variables</h2>
+
+      <dl>
+
+        <dt>description</dt>
+        <dd>
+
+          <p>This read-only attribute is a list of 7-item tuples, each
+            containing <tt>(name, type_code, display_size, internal_size, precision,
+            scale, null_ok)</tt>.  pyodbc only provides values for name, type_code,
+            internal_size, and null_ok.  The other values are set to None.</p>
+
+          <p>This attribute will be None for operations that do not return rows
+            or if one of the execute methods has not been called.</p>
+
+          <p>The type_code member is the class type used to create the Python
+            objects when reading rows.  For example, a varchar column's type
+            will be <tt>str</tt>.</p>
+        </dd>
+
+        <dt>rowcount</dt>
+        <dd>
+          <p>The number of rows modified by the previous DDL statement.</p>
+
+          <p>This is -1 if no SQL has been executed or if the number of rows is
+            unknown.  Note that it is not uncommon for databases to report -1
+            after a select statement for performance reasons.  (The exact number
+            may not be known before the first records are returned to the
+            application.)</p>
+        </dd>
+
+      </dl>
+
+      <h2 id=cursor_execute">execute</h2>
+
+      <pre>cursor.execute(sql, *parameters) --> Cursor</pre>
+
+      <dl>
+        <dt>sql</dt>
+        <dd>The SQL statement to execute with optional <code>?</code> parameter
+          markers.  Note that pyodbc <em>never</em> modifies the SQL statement.</dd>
+
+        <dt>parameters</dt>
+        <dd>Optional parameters for the markers in the SQL.  They can be passed
+        in a single sequence as defined by the DB API.  For convenience,
+          however, they can also be passed individually.</dd>
+      </dl>
+
+<pre>
+# as a sequence
+cursor.execute("select a from tbl where b=? and c=?", <b>(x, y)</b>)
+
+# passed individually
+cursor.execute("select a from tbl where b=? and c=?", <b>x, y</b>)
+</pre>
+
+<p>You should use parameters when possible instead of inserting them directly
+into the SQL to protect against <a
+href="http://en.wikipedia.org/wiki/SQL_injection">SQL injection attacks</a>.
+Parameters are passed to the database <em>separately</em> using an ODBC
+  parameter binding specifically designed for this.</p>
+
+<p>The return value is always the cursor itself which allows chaining.</p>
+
+<pre>
+for row in cursor.execute("select user_id, user_name from users"):
+    print()row.user_id, row.user_name)
+
+row  = cursor.execute("select * from tmp").fetchone()
+rows = cursor.execute("select * from tmp").fetchall()
+val  = cursor.execute("select count(*) from tmp").fetchone()[0]
+
+count = cursor.execute("update users set last_logon=? where user_id=?", now, user_id).rowcount
+count = cursor.execute("delete from users where user_id=1").rowcount
+</pre>
+
+<p>The last prepared statement is kept and reused if you execute the same SQL
+again, making executing the same SQL with different parameters will be more
+efficient.</p>
+
+<h2 id="cursor_executemany">executemany</h2>
+
+<pre>cursor.executemany(sql, seq_of_parameters) --> Cursor</pre>
+
+<p>Executes the same SQL statement for each set of parameters.
+
+  <dl>
+    <dt>seq_of_parameters</dt>
+    <dd>a sequence of sequences</dd>
+  </dl>
+
+<pre>
+params = [ ('A', 1), ('B', 2) ]
+executemany("insert into t(name, id) values (?, ?)", params)
+</pre>
+
+<p>This will execute the SQL statement twice, once with <code>('A', 1)</code>
+  and once with <code>('B', 2)</code>.</p>
+
+<h2 id="cursor_fetchone">fetchone</h2>
+
+<pre>cursor.fetchone() --> Row or None</pre>
+
+<p>Returns the next <a href="#row">Row</a> or <tt>None</tt> if no more data is
+available.</p>
+
+<p>A ProgrammingError exception is raised if no SQL has been executed or if it
+  did not return a result set (e.g. was not a SELECT statement).</p>
+
+<pre>
+cursor.execute("select user_name from users where user_id=?", userid)
+row = cursor.fetchone()
+if row:
+    print(row.user_name)
+</pre>
+
+<h2 id="cursor_fetchall">fetchall</h2>
+
+<pre>cursor.fetchall() --> list of rows</pre>
+
+<p>Returns a list of all remaining <a href="#row">Rows</a>.  If there are no
+more rows, an empty list is returned.</p>
+
+<p>Since this reads all rows into memory, it should not be used if there are a
+lot of rows.  Consider iterating over the rows instead.  However, it is useful
+for freeing up a Cursor so you can perform a second query before processing the
+resulting rows.</p>
+
+<p>A ProgrammingError exception is raised if no SQL has been executed or if it
+  did not return a result set (e.g. was not a SELECT statement).</p>
+
+<pre>
+cursor.execute("select user_id, user_name from users where user_id < 100")
+rows = cursor.fetchall()
+for row in rows:
+    print(row.user_id, row.user_name)
+</pre>
+
+<h2 id="cursor_fetchmany">fetchmany</h2>
+
+<pre>cursor.fetchmany([size=cursor.arraysize]) --> list of rows</pre>
+
+<p>Similar to <a href="#cursor_fetchall">fetchall</a> but limits the returned
+list size to <code>size</code>.  The default for cursor.arraysize is 1 which is
+no different than calling <a href="#cursor_fetchone">fetchone</a>.</p>
+
+<p>A ProgrammingError exception is raised if no SQL has been executed or if it
+  did not return a result set (e.g. was not a SELECT statement).</p>
+
+
+<h2 id="cursor_commit">commit</h2>
+
+<pre>cursor.commit()</pre>
+
+<p>A convenience function that calls commit on the Connection that created this
+cursor.  Since <tt>cursor</tt> and <tt>commit</tt> is usually the only two
+functions called on a connection, this function often allows you to work with
+cursors only.</p>
+
+<div class="alert alert-warning">
+This affects all cursors created by the same connection.
+</div>
+
+<h2 id="cursor_rollback">rollback</h2>
+
+<pre>cursor.rollback()</pre>
+
+<p>A convenience function that calls commit on the Connection that created this
+  cursor.</p>
+
+<div class="alert alert-warning">
+This affects all cursors created by the same connection.
+</div>
+
+<h2 id="cursor_skip">skip</h2>
+
+<pre>cursor.skip(count)</pre>
+
+<p>Skips the next <code>count</code> records by calling SQLFetchScroll with
+  SQL_FETCH_NEXT.</p>
+
+<p>For convenience, <tt>skip(0)</tt> is accepted and will do nothing.</p>
+
+<h2 id="cursor_nextset">nextste</h2>
+
+<pre>cursor.nextset() --> True or None</pre>
+
+<p>This method will make the cursor skip to the next available set, discarding
+  any remaining rows from the current set.</p>
+
+<p>If there are no more sets, the method returns <tt>None</tt>. Otherwise, it
+returns a true value and subsequent calls to the fetch methods will return rows
+  from the next result set.</p>
+
+<p>This method is useful if you have stored procedures that return multiple
+results.  If your database supports it, you may be able to send multiple SQL
+statements in a single batch and use this method to move through each result
+set.</p>
+
+<pre>cursor.execute("select * from users; select * from albumts")
+users = cursor.fetchall()
+cursor.nextset()
+albums = cursor.fetchall()</pre>
+
+<h2 id="cursor_close">close</h2>
+
+<pre>cursor.close()</pre>
+
+<p>Closes the cursor.  A ProgrammingError exception will be raised if any
+  operation is attempted with the cursor.</p>
+
+<p>Cursors are closed automatically when they are deleted, so calling this is
+  not usually necessary when using C Python.</p>
+
+<h2 id="cursor_setinputsize">setinputsizes, setoutputsize</h2>
+
+<p>These are optional in the API and are not supported.</p>
+
+<h2 id="cursor_callproc">callproc</h2>
+
+<pre>cursor.callproc(procname[,parameters])</pre>
+
+<p>This is not yet supported since there is no way for pyodbc to determine which
+  parameters are input, output, or both.</p>
+
+<p>You will need to call stored procedures using execute().  You can use your
+  database's format or the ODBC escape format.</p>
+
+<h2 id="cursor_tables">tables</h2>
+
+<pre>cursor.tables(table=None, catalog=None, schema=None, tableType=None) --> Cursor</pre>
+
+<p>Creates a result set of tables in the database that match the given criteria.</p>
+
+<p>Each row has the following columns.  See the <a
+  href="http://msdn.microsoft.com/en-us/library/ms711831.aspx">SQLTables</a>
+  documentation for more information.</p>
+
+<table class="table table-condensed">
+  <thead>
+    <tr><th>column</th><th>notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>table_cat</td><td>The catalog name.</td></tr>
+    <tr><td>table_schem</td><td>The schema name.</td></tr>
+    <tr><td>table_name</td><td>The table name.</td></tr>
+    <tr><td>table_type</td><td>One of TABLE, VIEW, SYSTEM TABLE, GLOBAL TEMPORARY, LOCAL TEMPORARY, ALIAS, SYNONYM, or a data source-specific type name.</td></tr>
+    <tr><td>remarks</td><td>A description of the table.</td></tr>
+  </tbody>
+</table>
+
+<pre>
+for row in cursor.tables():
+    print(row.table_name)
+
+# Does table 'x' exist?
+if cursor.tables(table='x').fetchone():
+   print('yes it does')
+</pre>
+
+<p>The table, catalog, and schema interpret the '_' and '%' characters as
+  wildcards.  The escape character is driver specific, so use
+  Connection.searchescape.</p>
+
+<h2 id="cursor_columns">columns</h2>
+
+<pre>cursor.columns(table=None, catalog=None, schema=None, column=None) --> Cursor</pre>
+
+<p>Creates a result set of column information in the specified tables using the
+  <a href="http://msdn.microsoft.com/en-us/library/ms711683%28VS.85%29.aspx">SQLColumns</a>
+  function.</p>
+
+<p>Each row has the following columns:</p>
+<table class="table table-condensed">
+  <thead>
+    <tr><th>column</th><th>notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>table_cat</td></tr>
+    <tr><td>table_schem</td></tr>
+    <tr><td>table_name</td></tr>
+    <tr><td>column_name</td></tr>
+    <tr><td>data_type</td></tr>
+    <tr><td>type_name</td></tr>
+    <tr><td>column_size</td></tr>
+    <tr><td>buffer_length</td></tr>
+    <tr><td>decimal_digits</td></tr>
+    <tr><td>num_prec_radix</td></tr>
+    <tr><td>nullable</td></tr>
+    <tr><td>remarks</td></tr>
+    <tr><td>column_def</td></tr>
+    <tr><td>sql_data_type</td></tr>
+    <tr><td>sql_datetime_sub</td></tr>
+    <tr><td>char_octet_length</td></tr>
+    <tr><td>ordinal_position</td></tr>
+    <tr><td>is_nullable</td><td>One of the pyodbc constants SQL_NULLABLE, SQL_NO_NULLS, SQL_NULLS_UNKNOWN.</td></tr>
+  </tbody>
+</table>
+
+<pre>
+# columns in table x
+for row in cursor.columns(table='x'):
+    print(row.column_name, 'is nullable?', row.is_nullable == pyodbc.SQL_NULLABLE)
+</pre>
+
+<h2 id="cursor_statistics">statistics</h2>
+
+<pre>cursor.statistics(table, catalog=None, schema=None, unique=False, quick=True) --> Cursor</pre>
+
+<p>Creates a result set of statistics about a single table and the indexes
+  associated with the table by executing <a
+  href="http://msdn.microsoft.com/en-us/library/ms711022%28VS.85%29.aspx">SQLStatistics</a>.</p>
+
+<dl>
+  <dt>unique</dt>
+  <dd>If True only unique indexes are returned.  If False all indexes are returned.</dd>
+
+  <dt>quick</dt>
+  <dd>If True values for CARDINALITY and PAGES are returned only if they are
+    readily available.  Otherwise <tt>None</tt> is returned for those
+    columns.</dd>
+</dl>
+
+  <p>Each row has the following columns:</p>
+
+<table class="table table-condensed">
+  <thead>
+    <tr><th>column</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>table_cat</td></tr>
+    <tr><td>table_schem</td></tr>
+    <tr><td>table_name</td></tr>
+    <tr><td>non_unique</td></tr>
+    <tr><td>index_qualifier</td></tr>
+    <tr><td>index_name</td></tr>
+    <tr><td>type</td></tr>
+    <tr><td>ordinal_position</td></tr>
+    <tr><td>column_name</td></tr>
+    <tr><td>asc_or_desc</td></tr>
+    <tr><td>cardinality</td></tr>
+    <tr><td>pages</td></tr>
+    <tr><td>filter_condition</td></tr>
+  </tbody>
+</table>
+
+<h2 id="cursor_rowIdColumns">rowIdColumns</h2>
+
+<pre>cursor.rowIdColumns(table, catalog=None, schema=None, nullable=True) --> Cursor</pre>
+
+<p>Executes <a
+  href="http://msdn.microsoft.com/en-us/library/ms714602%28VS.85%29.aspx">SQLSpecialColumns</a>
+  with <tt>SQL_BEST_ROWID</tt> which creates a result set of columns that
+  uniquely identify a row.</p>
+
+<p>Each row has the following columns.</p>
+
+<table class="table table-condensed">
+  <thead>
+    <tr><th>column</th><th>notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>scope</td><td>One of SQL_SCOPE_CURROW, SQL_SCOPE_TRANSACTION, or SQL_SCOPE_SESSION</td></tr>
+    <tr><td>column_name</td></tr>
+    <tr><td>data_type</td><td>The ODBC SQL data type constant (e.g. SQL_CHAR)</td></tr>
+    <tr><td>type_name</td></tr>
+    <tr><td>column_size</td></tr>
+    <tr><td>buffer_length</td></tr>
+    <tr><td>decimal_digits</td></tr>
+    <tr><td>pseudo_column</td><td>One of SQL_PC_UNKNOWN, SQL_PC_NOT_PSEUDO, SQL_PC_PSEUDO</td></tr>
+  </tbody>
+</table>
+
+<h2 id="cursor_rowVerColumns">rowVerColumns</h2>
+
+  <pre>cursor.rowVerColumns(table, catalog=None, schema=None, nullable=True) --> Cursor</pre>
+
+  <p>Executes <a
+    href="http://msdn.microsoft.com/en-us/library/ms714602%28VS.85%29.aspx">SQLSpecialColumns</a>
+    with <tt>SQL_ROWVER</tt> which creates a result set of columns that are
+    automatically updated when any value in the row is updated.  Each row has
+    the following columns.</p>
+
+<table class="table table-condensed">
+  <thead>
+    <tr><th>keyword</th><th>converts to</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>scope</td><td>One of SQL_SCOPE_CURROW, SQL_SCOPE_TRANSACTION, or SQL_SCOPE_SESSION</td></tr>
+    <tr><td>column_name</td></tr>
+    <tr><td>data_type</td><td>The ODBC SQL data type constant (e.g. SQL_CHAR)</td></tr>
+    <tr><td>type_name</td></tr>
+    <tr><td>column_size</td></tr>
+    <tr><td>buffer_length</td></tr>
+    <tr><td>decimal_digits</td></tr>
+    <tr><td>pseudo_column</td><td>One of SQL_PC_UNKNOWN, SQL_PC_NOT_PSEUDO, SQL_PC_PSEUDO</td></tr>
+  </tbody>
+</table>
+
+<h2 id="cursor_primaryKeys">primaryKeys</h2>
+
+  <pre>cursor.primaryKeys(table, catalog=None, schema=None) --> Cursor</pre>
+
+<p>Creates a result set of column names that make up the primary key for a table
+by executing the
+<a href="http://msdn.microsoft.com/en-us/library/ms711005%28VS.85%29.aspx">
+  SQLPrimaryKeys</h2> function.</a>
+
+<p>Each row has the following columns:</p>
+
+<table class="table table-condensed">
+  <thead>
+    <tr><th>column</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>table_cat</td></tr>
+    <tr><td>table_schem</td></tr>
+    <tr><td>table_name</td></tr>
+    <tr><td>column_name</td></tr>
+    <tr><td>key_seq</td></tr>
+    <tr><td>pk_name</td></tr>
+  </tbody>
+</table>
+
+<h2 id="cursor_foreignKeys">foreignKeys</h2>
+
+<pre>cursor.foreignKeys(table=None, catalog=None, schema=None, foreignTable=None,
+                   foreignCatalog=None, foreignSchema=None) --> Cursor</pre>
+
+<p>Executes the <a
+  href="http://msdn.microsoft.com/en-us/library/ms709315%28VS.85%29.aspx">
+  SQLForeignKeys</a> function and creates a result set of column names that are
+  foreign keys in the specified table (columns in the specified table that refer
+  to primary keys in other tables) or foreign keys in other tables that refer to
+  the primary key in the specified table.</p>
+
+<p>Each row has the following columns:</p>
+
+<table class="table table-condensed">
+  <thead>
+    <tr><th>column</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>pktable_cat</td></tr>
+    <tr><td>pktable_schem</td></tr>
+    <tr><td>pktable_name</td></tr>
+    <tr><td>pkcolumn_name</td></tr>
+    <tr><td>fktable_cat</td></tr>
+    <tr><td>fktable_schem</td></tr>
+    <tr><td>fktable_name</td></tr>
+    <tr><td>fkcolumn_name</td></tr>
+    <tr><td>key_seq</td></tr>
+    <tr><td>update_rule</td></tr>
+    <tr><td>delete_rule</td></tr>
+    <tr><td>fk_name</td></tr>
+    <tr><td>pk_name</td></tr>
+    <tr><td>deferrability</td></tr>
+  </tbody>
+</table>
+
+<h2 id="cursor_procedures">procedures</h2>
+
+<pre>cursor.procedures(procedure=None, catalog=None, schema=None) --> Cursor</pre>
+
+<p>Executes <a href="http://msdn.microsoft.com/en-us/library/ms715368%28VS.85%29.aspx">SQLProcedures</a>
+and creates a result set of information about the procedures in the data source.  Each row has
+  the following columns:</p>
+
+<table class="table table-condensed">
+  <thead>
+    <tr><th>column</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>procedure_cat</td></tr>
+    <tr><td>procedure_schem</td></tr>
+    <tr><td>procedure_name</td></tr>
+    <tr><td>num_input_params</td></tr>
+    <tr><td>num_output_params</td></tr>
+    <tr><td>num_result_sets</td></tr>
+    <tr><td>remarks</td></tr>
+    <tr><td>procedure_type</td></tr>
+  </tbody>
+</table>
+
+<h2 id="cursor_getTypeInfo">getTypeInfo</h2>
+
+<pre>cursor.getTypeInfo(sqlType=None) --> Cursor</pre>
+
+<p>Executes <a href="http://msdn.microsoft.com/en-us/library/ms714632%28VS.85%29.aspx">SQLGetTypeInfo</a>
+a creates a result set with information about the specified data type or all data types
+  supported by the ODBC driver if not specified.  Each row has the following columns:</p>
+
+<table class="table table-condensed">
+  <thead>
+    <tr><th>column</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>type_name</td></tr>
+    <tr><td>data_type</td></tr>
+    <tr><td>column_size</td></tr>
+    <tr><td>literal_prefix</td></tr>
+    <tr><td>literal_suffix</td></tr>
+    <tr><td>create_params</td></tr>
+    <tr><td>nullable</td></tr>
+    <tr><td>case_sensitive</td></tr>
+    <tr><td>searchable</td></tr>
+    <tr><td>unsigned_attribute</td></tr>
+    <tr><td>fixed_prec_scale</td></tr>
+    <tr><td>auto_unique_value</td></tr>
+    <tr><td>local_type_name</td></tr>
+    <tr><td>minimum_scale</td></tr>
+    <tr><td>maximum_scale</td></tr>
+    <tr><td>sql_data_type</td></tr>
+    <tr><td>sql_datetime_sub</td></tr>
+    <tr><td>num_prec_radix</td></tr>
+    <tr><td>interval_precision</td></tr>
+  </tbody>
+</table>
+
+      <h1 id="row">Row</h1>
+
+      <p>Row objects are returned from Cursor fetch functions.  As specified in
+        the DB API, they are tuple-like.</p>
+
+<pre>
+row = cursor.fetchone()
+print row[0]
+</pre>
+
+<p>However, there are some pyodbc additions that make them very convenient:</p>
+
+<ul>
+  <li>Values can be accessed by column name.</li>
+  <li>The Cursor.description values can be accessed even after the cursor is closed.</li>
+  <li>Values can be replaced</li>
+  <li>Rows from the same select share memory.</li>
+</ul>
+
+<p>Accessing rows by column name is very convenient, readable, and Pythonish:</p>
+
+<pre>
+cursor.execute("select album_id, photo_id from photos where user_id=1")
+row = cursor.fetchone()
+print(row.album_id, row.photo_id)
+print(row[0], row[1]) # same as above, but less readable
+</pre>
+
+<p>Having access to the cursor's description even after the Cursor is closed
+makes Rows very convenient data structures -- you can pass them around and they
+are self describing:</p>
+
+<pre>
+def getuser(userid):
+    cnxn = pyodbc.connect(...)
+    cursor = cnxn.cursor()
+    return cursor.execute(
+        """
+        select album_id, photo_id
+          from photos
+         where user_id = ?
+        """, userid).fetchall()
+
+row = getuser(7)
+# At this point the cursor has been closed and deleted
+# But the columns and datatypes can still be accessed:
+print('columns:', ', '.join(t[0] for t in row.cursor_description))
+</pre>
+
+<p>Unlike normal tuples, values in Row objects can be replaced.  (This means you
+  shouldn't use rows as dictionary keys!)</p>
+
+<p>The intention is to make Rows convenient data structures to replace small or
+short-lived classes.  While SQL is powerful, there are sometimes slight changes
+that need to be made after reading values:</p>
+
+<pre>
+# Replace the 'start_date' datetime in each row with one that has a time zone.
+rows = cursor.fetchall()
+for row in rows:
+    row.start_date = row.start_date.astimezone(tz)
+</pre>
+
+<p>Note that slicing rows returns tuples, not Row objects!</p>
+
+<h3 id="variables">variables</h3>
+
+<dl>
+  <dt>cursor_description</dt>
+  <dd>A copy of the Cursor.description object from the Cursor that created this
+    row.  This contains the column names and data types of the columns.</dd>
+</dl>
+
+    </div>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+    <script src="pyodbc.js"></script>
+  </body>
+</html>

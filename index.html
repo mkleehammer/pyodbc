@@ -1,191 +1,291 @@
 <!DOCTYPE html>
-<html lang="en-us">
+<html lang="en">
   <head>
-    <meta charset="UTF-8">
-    <title>Pyodbc by mkleehammer</title>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" type="text/css" href="stylesheets/normalize.css" media="screen">
-    <link href='http://fonts.googleapis.com/css?family=Open+Sans:400,700' rel='stylesheet' type='text/css'>
-    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen">
-    <link rel="stylesheet" type="text/css" href="stylesheets/github-light.css" media="screen">
+    <title>pyodbc</title>
+    <link href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css" rel="stylesheet">
   </head>
   <body>
-    <section class="page-header">
-      <h1 class="project-name">Pyodbc</h1>
-      <h2 class="project-tagline">Python ODBC bridge</h2>
-      <a href="https://github.com/mkleehammer/pyodbc" class="btn">View on GitHub</a>
-      <a href="https://github.com/mkleehammer/pyodbc/zipball/master" class="btn">Download .zip</a>
-      <a href="https://github.com/mkleehammer/pyodbc/tarball/master" class="btn">Download .tar.gz</a>
-    </section>
 
-    <section class="main-content">
-      <h1>
-<a id="overview" class="anchor" href="#overview" aria-hidden="true"><span class="octicon octicon-link"></span></a>Overview</h1>
+    <div class="navbar navbar-default">
+      <div class="container">
+        <div class="navbar-header">
+          <button class="navbar-toggle collapsed" type="button" data-toggle="collapse" data-target=".bs-navbar-collapse">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <a href="../" class="navbar-brand">pyodbc</a>
+        </div>
+        <nav class="collapse navbar-collapse bs-navbar-collapse">
+          <ul class="nav navbar-nav">
+            <li class="active"><a href="index.html">Overview</a></li>
+            <li><a href="releases.html">Releases</a></li>
+            <li><a href="api.html">API</a></li>
+            <!-- <li><a href="faq.html">FAQ</a></li> -->
+          </ul>
+        </nav>
+      </div>
+    </div>
 
-<p>This project is a Python database module for ODBC that implements the Python DB API 2.0
-specification.</p>
+    <div class="container">
+      <h1>Overview</h1>
 
-<p><a href="https://github.com/mkleehammer/pyodbc">https://github.com/mkleehammer/pyodbc</a></p>
+      <ul>
+        <li><a href="#installing">Installing</a></li>
+        <li><a href="#getting-started">Getting Started</a></li>
+        <ul>
+          <li><a href="#connecting">Connect To A Database</a></li>
+          <li><a href="#select">Select Some Data</a></li>
+          <li><a href="#params">Parameters</a></li>
+          <li><a href="#insert">Insert Data</a></li>
+          <li><a href="#update">Update and Delete</a></li>
+        </ul>
+        <li><a href="#tips">Tips and Tricks</a></li>
+      </ul>
 
-<p>This module requires:</p>
+      <p>pyodbc is an open source Python module that makes accessing ODBC
+        databases simple.  It implements the
+        <a href="https://www.python.org/dev/peps/pep-0249/">DB API 2.0
+        specification</a> but is packed with even more Pythonic convenience.</p>
 
-<ul>
-<li>Python 2.4 or greater</li>
-<li>ODBC 3.0 or greater</li>
-</ul>
+      <h2 id="installing">Installing</h2>
 
-<h1>
-<a id="module-specific-behavior" class="anchor" href="#module-specific-behavior" aria-hidden="true"><span class="octicon octicon-link"></span></a>Module Specific Behavior</h1>
+      <p>The easiest way to install is using pip.  Windows binaries will be
+        downloaded but other operating systems will need to compile from
+        source.</p>
 
-<h2>
-<a id="general" class="anchor" href="#general" aria-hidden="true"><span class="octicon octicon-link"></span></a>General</h2>
+      <pre>pip install pyodbc</pre>
 
-<ul>
-<li>
-<p>The pyodbc.connect function accepts a single parameter: the ODBC connection string.  This
-string is not read or modified by pyodbc, so consult the ODBC documentation or your ODBC
-driver's documentation for details.  The general format is::</p>
+      <p>Development is on GitHub:
+        <a href="https://github.com/mkleehammer/pyodbc">https://github.com/mkleehammer/pyodbc</a>
+      </p>
 
-<p>cnxn = pyodbc.connect('DSN=mydsn;UID=userid;PWD=pwd')</p>
-</li>
-<li><p>Connection caching in the ODBC driver manager is automatically enabled.</p></li>
-<li><p>Call cnxn.commit() since the DB API specification requires a rollback when a connection
-is closed that was not specifically committed.</p></li>
-<li><p>When a connection is closed, all cursors created from the connection are closed.</p></li>
-</ul>
+      <h2 id="getting-started">Getting Started</h2>
 
-<h2>
-<a id="data-types" class="anchor" href="#data-types" aria-hidden="true"><span class="octicon octicon-link"></span></a>Data Types</h2>
+      <h3 id="connecting">Connect to a Database</h3>
 
-<ul>
-<li><p>Dates, times, and timestamps use the Python datetime module's date, time, and datetime
-classes.  These classes can be passed directly as parameters and will be returned when
-querying date/time columns.</p></li>
-<li><p>Binary data is passed and returned in Python buffer objects.</p></li>
-<li><p>Decimal and numeric columns are passed and returned using the Python 2.4 decimal class.</p></li>
-</ul>
+      <p>Pass an <a href="connectionstrings.html">ODBC connection string</a> to
+        the <a href="api.html#connect">connect</a> function which will return a <a
+        href="api.html#connection">Connection</a>.  Once you have a connection
+        you can ask it for a <a href="api.html#cursor">Cursor</a>.</p>
 
-<h2>
-<a id="convenient-additions" class="anchor" href="#convenient-additions" aria-hidden="true"><span class="octicon octicon-link"></span></a>Convenient Additions</h2>
+<pre>
+cnxn = pyodbc.connect('DRIVER={SQL Server};SERVER=localhost;DATABASE=testdb;UID=me;PWD=pass')
+cursor = cnxn.cursor()</pre>
 
-<ul>
-<li>
-<p>Cursors are iterable and returns Row objects.</p>
+<pre>cnxn = pyodbc.connect('DSN=test;PWD=password')
+cursor = cnxn.cursor()</pre>
 
-<p>::</p>
+<p>The parameter is a standard
+  so the keywords depend on the driver you are using.</p>
 
-<p>cursor.execute("select a,b from tmp")
-  for row in cursor:
-      print row</p>
-</li>
-<li>
-<p>The DB API specifies that results must be tuple-like, so columns are normally accessed by
-indexing into the sequence (e.g. row[0]) and pyodbc supports this. However, columns can also
-be accessed by name::</p>
+<h3 id="select">Select Some Data</h3>
 
-<p>cursor.execute("select album_id, photo_id from photos where user_id=1")
-  row = cursor.fetchone()
-  print row.album_id, row.photo_id
-  print row[0], row[1] # same as above, but less readable</p>
+<p>All SQL statements are executed using <a
+href="api.html#cursor_execute">Cursor.execute</a>.  If the statement returns
+rows, such as a select statement, you can retreive them using the Cursor fetch
+functions (<a href="api.html#cursor_fetchone">fetchone</a>, <a
+href="api.html#cursor_fetchall">fetchall</a>, <a
+href="api.html#cursor_fetchmany">fetchmany</a>).</p>
 
-<p>This makes the code easier to maintain when modifying SQL, more readable, and allows rows to
-be used where a custom class might otherwise be used. All rows from a single execute share
-the same dictionary of column names, so using Row objects to hold a large result set may also
-use less memory than creating a object for each row.</p>
+<p>Cursor.fetchone is used to return a single <a href="api.html#row">Row</a>.</p>
 
-<p>The SQL "as" keyword allows the name of a column in the result set to be specified. This is
-useful if a column name has spaces or if there is no name::</p>
+  <pre>cursor.execute("select user_id, user_name from users")
+row = cursor.fetchone()
+if row:
+    print(row)</pre>
 
-<p>cursor.execute("select count(*) as photo_count from photos where user_id &lt; 100")
-  row = cursor.fetchone()
-  print row.photo_count</p>
-</li>
-<li>
-<p>The DB API specification does not specify the return value of Cursor.execute. Previous
-versions of pyodbc (2.0.x) returned different values, but the 2.1 versions always return the
-Cursor itself.</p>
+  <p><a href="api.htm.row">Row</a> objects are similar to tuples, but they also
+    allow access to columns by name:</p>
 
-<p>This allows for compact code such as::</p>
+    <pre>cursor.execute("select user_id, user_name from users")
+row = cursor.fetchone()
+print('name:', row[1])         # access by column index
+print('name:', row.user_name)  # or access by name</pre>
 
-<p>for row in cursor.execute("select album_id, photo_id from photos where user_id=1"):
-      print row.album_id, row.photo_id</p>
+    <p><tt>fetchone</tt> returns <tt>None</tt> when all rows have been retrieved.</p>
 
-<p>row  = cursor.execute("select * from tmp").fetchone()
-  rows = cursor.execute("select * from tmp").fetchall()</p>
+  <pre>while 1:
+    row = cursor.fetchone()
+    if not row:
+        break
+    print('id:', row.user_id)</pre>
 
-<p>count = cursor.execute("update photos set processed=1 where user_id=1").rowcount
-  count = cursor.execute("delete from photos where user_id=1").rowcount</p>
-</li>
-<li>
-<p>Though SQL is very powerful, values sometimes need to be modified before they can be
-used. Rows allow their values to be replaced, which makes them even more convenient ad-hoc
-data structures.</p>
+  <p><a href="api.html#cursor_fetchall">Cursor.fetchall</a> returns all
+remaining rows in a list.  If there are no rows, an empty list is returned.  (If
+there are a lot of rows, this will use a lot of memory.  Unread rows are stored
+by the database driver in a compact format and are often sent in batches from
+the database server.  Reading in only the rows you need at one time will save a
+lot of memory.)</p>
 
-<p>::</p>
+    <pre>cursor.execute("select user_id, user_name from users")
+rows = cursor.fetchall()
+for row in rows:
+    print(row.user_id, row.user_name)</pre>
 
-<p># Replace the 'start_date' datetime in each row with one that has a time zone.
-  rows = cursor.fetchall()
-  for row in rows:
-      row.start_date = row.start_date.astimezone(tz)</p>
+    <p>If you are going to process the rows one at a time, you can use the
+      cursor itself as an iterator:</p>
 
-<p>Note that columns cannot be added to rows; only values for existing columns can be modified.</p>
-</li>
-<li>
-<p>As specified in the DB API, Cursor.execute accepts an optional sequence of parameters::</p>
+  <pre>cursor.execute("select user_id, user_name from users"):
+for row in cursor:
+    print(row.user_id, row.user_name)</pre>
 
-<p>cursor.execute("select a from tbl where b=? and c=?", (x, y))</p>
+  <p>Since <tt>Cursor.execute</tt> always returns the cursor, you can simplify
+    this even more:</p>
 
-<p>However, this seems complicated for something as simple as passing parameters, so pyodbc also
-accepts the parameters directly. Note in this example that x &amp; y are not in a tuple::</p>
+<pre>for row in cursor.execute("select user_id, user_name from users"):
+    print(row.user_id, row.user_name)</pre>
 
-<p>cursor.execute("select a from tbl where b=? and c=?", x, y)</p>
-</li>
-<li>
-<p>The DB API specifies that connections require a manual commit and pyodbc complies with
-this. However, connections also support autocommit, using the autocommit keyword of the
-connection function or the autocommit attribute of the Connection object::</p>
+<p>A lot of SQL statements are not very readable on a single line, which is
+  where Python's triple quoted strings really shine:</p>
 
-<p>cnxn = pyodbc.connect(cstring, autocommit=True)</p>
+  <pre>cursor.execute(
+    """
+    select user_id, user_name
+      from users
+     where last_logon < '2001-01-01'
+           and bill_overdue = 1
+    """)</pre>
 
-<p>or</p>
+  <h3 id="params">Parameters</h3>
 
-<p>::</p>
+  <p>ODBC supports query parameters using a question mark as a place holder in the
+    SQL.  You provide the values for the question marks by passing them after
+    the SQL:</p>
 
-<p>cnxn.autocommit = True
-  cnxn.autocommit = False</p>
-</li>
-</ul>
+<pre>cursor.execute(
+    """
+    select user_id, user_name
+      from users
+     where last_logon < ?
+           and bill_overdue = ?
+    """, '2001-01-01', 1)</pre>
 
-<h1>
-<a id="goals--design" class="anchor" href="#goals--design" aria-hidden="true"><span class="octicon octicon-link"></span></a>Goals / Design</h1>
+<p>This is safer than putting the values into the string because the parameters
+  are passed to the database separately, protecting against
+  <a href="http://en.wikipedia.org/wiki/SQL_injection">SQL injection attacks</a>.
+  It is also more efficient if you execute the same SQL repeatedly with different
+  parameters.  The SQL will be
+  <a href="http://en.wikipedia.org/wiki/Prepared_statements#Parameterized_statements">
+    prepared</a> only once.  (pyodbc only keeps the last statement prepared, so if you
+  switch between statements, each will be prepared multiple times.)</p>
 
-<ul>
-<li><p>This module should not require any 3rd party modules other than ODBC.</p></li>
-<li>
-<p>Only built-in data types should be used where possible.</p>
+<p>The Python DB API specifies that parameters should be passed in a sequence,
+  so this is also supported by pyodbc:</p>
 
-<p>a) Reduces the number of libraries to learn.</p>
+  <pre>cursor.execute(
+    """
+    select user_id, user_name
+      from users
+     where last_logon < ?
+           and bill_overdue = ?
+    """, ['2001-01-01', 1])</pre>
 
-<p>b) Reduces the number of modules and libraries to install.</p>
+<h3 id="insert">Insert Data</h3>
 
-<p>c) Eventually a standard is usually introduced.  For example, many previous database drivers
-   used the mxDate classes.  Now that Python 2.3 has introduced built-in date/time classes,
-   using those modules is more complicated than using the built-ins.</p>
-</li>
-<li><p>It should adhere to the DB API specification, but be more "Pythonic" when convenient.
-The most common usages should be optimized for convenience and speed.</p></li>
-<li><p>All ODBC functionality should (eventually) be exposed.</p></li>
-</ul>
+<p>Inserting data uses the same function - pass the insert SQL to execute along with any parameters.</p>
 
-      <footer class="site-footer">
-        <span class="site-footer-owner"><a href="https://github.com/mkleehammer/pyodbc">Pyodbc</a> is maintained by <a href="https://github.com/mkleehammer">mkleehammer</a>.</span>
+  <pre>cursor.execute("insert into products(id, name) values ('pyodbc', 'awesome library')")
+cnxn.commit()</pre>
 
-        <span class="site-footer-credits">This page was generated by <a href="https://pages.github.com">GitHub Pages</a> using the <a href="https://github.com/jasonlong/cayman-theme">Cayman theme</a> by <a href="https://twitter.com/jasonlong">Jason Long</a>.</span>
-      </footer>
+    <pre>cursor.execute("insert into products(id, name) values (?, ?)", 'pyodbc', 'awesome library')
+cnxn.commit()</pre>
 
-    </section>
+    <p>Note the calls to <a href="api.html#connection_commit">cnxn.commit()</a>.
+       Connections maintain a transaction that is rolled back if commit is not
+      called.  This makes error recovery easy (and finally is not needed).</p>
 
-  
+    <div class="alert alert-warning">
+      You must call <a href="api.html#connection_commit">commit</a> or your changes will be lost!
+    </div>
+
+    <h3 id="update">Update and Delete</h3>
+
+    <p>Updating and deleting work the same way: pass the SQL to execute.
+However, you often want to know how many records were affected when updating and
+deleting, in which case you can use <a
+href="api.html#cursor_rowcount">Cursor.rowcount</a> value:</p>
+
+  <pre>cursor.execute("delete from products where id <> ?", 'pyodbc')
+print('Deleted {} inferior products'.format(cursor.rowcount))
+cnxn.commit()</pre>
+
+  <p>Since <tt>execute</tt> returns the cursor (allowing you to chain calls or
+  use in an iterator), you will sometimes see code with
+    rowcount on the end:</p>
+
+<pre>deleted = cursor.execute("delete from products where id <> 'pyodbc'")<b>.rowcount</b>
+cnxn.commit()</pre>
+
+  <div class="alert alert-warning">
+    You must call <a href="api.html#connection_commit">commit</a> or your changes will be lost!
+  </div>
+
+  <h2 id="tips">Tips and Tricks</h2>
+
+  <h3>Quotes</h3>
+
+  <p>Since single quotes are valid in SQL, use double quotes to surround your SQL:</p>
+
+  <pre>cursor.execute("delete from products where id <> 'pyodbc'")</pre>
+
+  <p>If you are using triple quotes, you can use either:</p>
+
+    <pre>cursor.execute(
+    """
+    delete
+      from products
+     where id <> 'pyodbc'
+    """)</pre>
+
+    <h3>Column names</h3>
+
+    <p>Some databases like Microsoft SQL Server do not generate column names for
+calculations, in which case you need to access the columns by index.  You can
+also use the 'as' keyword to name columns (the "as user_count" in the SQL
+below).</p>
+
+    <pre>row = cursor.execute("select count(*) <b>as user_count</b> from users").fetchone()
+print('{} users'.format(row.user_count)</pre>
+
+    <p>Of course you can always extract the value by index:</p>
+
+    <pre>count = cursor.execute("select count(*) from users").<b>fetchone()[0]</b>
+print('{} users'.format(row.user_count)</pre>
+
+    <p>This will not work if the first column can be <tt>NULL</tt>.  In that
+      case, <tt>fetchone</tt> will return <tt>None</tt>and you'll get a cryptic
+      error about <tt>NoneType</tt> not supporting indexing.  If there is a
+      default value, often you can is <tt>ISNULL</tt> or <tt>coalesce</tt>:</p>
+
+<pre>maxid = cursor.execute("select <b>coalesce(max(id), 0)</b> from users").fetchone()[0]</pre>
+
+<h3>Automatic Cleanup</h3>
+
+<p>Connections (by default) are always in a transaction.  If a connection is
+  closed without being committed, the current transaction is rolled back.
+  Because connections are closed immediately when they go out of scope (due to C
+  Python's reference counting implementation) cleanup rarely requires
+  <tt>except</tt> or <tt>finally</tt> clauses.</p>
+
+<p>For example, if either of the SQL statements fails in the example below, an
+  exception would be raised causing both the connection cursor to go out of
+  scope as the exception leaves the function and unwinds the stack.  Either both
+  inserts take place or neither, all with no clean up code to write.</p>
+
+<pre>cnxn = pyodbc.connect(...)
+cursor = cnxn.cursor()
+cursor.execute("insert into t(col) values (1)")
+cursor.execute("insert into t(col) values (2)")
+cnxn.commit()</pre>
+
+    </div>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
   </body>
 </html>
-
