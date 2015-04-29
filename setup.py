@@ -262,7 +262,7 @@ def get_version():
 def _get_version_pkginfo():
     filename = join(dirname(abspath(__file__)), 'PKG-INFO')
     if exists(filename):
-        re_ver = re.compile(r'^Version: \s+ (\d+)\.(\d+)\.(\d+) (?: -beta(\d+))?', re.VERBOSE)
+        re_ver = re.compile(r'^Version: \s+ (\d+)\.(\d+)\.(\d+) (?: b(\d+))?', re.VERBOSE)
         for line in open(filename):
             match = re_ver.search(line)
             if match:
@@ -290,12 +290,12 @@ def _get_version_git():
     if numbers[-1] != OFFICIAL_BUILD:
         # This is a beta of the next micro release, so increment the micro number to reflect this.
         numbers[-2] += 1
-        name = '%s.%s.%s-beta%02d' % tuple(numbers)
+        name = '%s.%s.%sb%d' % tuple(numbers)
 
     n, result = getoutput('git branch --color=never')
-    branch = re.search(r'\* (\w+)', result).group(1)
+    branch = re.search(r'\* (\S+)', result).group(1)
     if branch != 'master' and not re.match('^v\d+$', branch):
-        name = branch + '-' + name
+        name = name + '+' + branch.replace('-', '')
 
     return name, numbers
 
