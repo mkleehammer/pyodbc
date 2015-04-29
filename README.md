@@ -11,4 +11,4 @@ To install, use pip or setuputils::
 
     pip install pyodbc
 
-[Documentation](http://mkleehammer.github.io/pyodbc Documentation)
+[Documentation](http://mkleehammer.github.io/pyodbc)
