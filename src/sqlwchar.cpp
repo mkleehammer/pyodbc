@@ -165,8 +165,9 @@ PyObject* PyUnicode_FromSQLWCHAR(const SQLWCHAR* sz, Py_ssize_t cch)
         return 0;
 
     Py_UNICODE* pch = PyUnicode_AS_UNICODE(result.Get());
+    const ODBCCHAR* szT = (const ODBCCHAR*)sz;
     for (Py_ssize_t i = 0; i < cch; i++)
-        pch[i] = (Py_UNICODE)sz[i];
+        pch[i] = (Py_UNICODE)szT[i];
     
     return result.Detach();
 }

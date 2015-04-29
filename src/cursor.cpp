@@ -747,7 +747,7 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                 {
                     SQLLEN remaining = min(cur->cnxn->varchar_maxlength, length - offset);
                     Py_BEGIN_ALLOW_THREADS
-                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)wchar[offset], (SQLLEN)(remaining * sizeof(SQLWCHAR)));
+                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)wchar[offset], (SQLLEN)(remaining * sizeof(ODBCCHAR)));
                     Py_END_ALLOW_THREADS
                     if (!SQL_SUCCEEDED(ret))
                         return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
