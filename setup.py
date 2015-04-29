@@ -99,8 +99,7 @@ def main():
                        'Topic :: Database',
                        ],
 
-        'url': 'http://code.google.com/p/pyodbc',
-        'download_url': 'http://code.google.com/p/pyodbc/downloads/list',
+        'url': 'https://github.com/mkleehammer/pyodbc',
         'cmdclass': { 'version' : VersionCommand,
                      'tags'    : TagsCommand }
         }
