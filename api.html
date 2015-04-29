@@ -156,7 +156,7 @@ support other SQLSTATEs).</p>
       <p>Each manages a single ODBC HDBC.</p>
 
       <p>There is no constructor; Connections can only be created by the
-        <a href="#connect">module's connect</a> function.</p>
+        <a href="#connect">pyodbc.connect</a> function.</p>
 
       <h2>variables</h2>
 
@@ -199,7 +199,7 @@ support other SQLSTATEs).</p>
       <p>Returns a new Cursor Object using the connection.</p>
 
       <p>pyodbc supports multiple cursors per connection but your database or
-      driver may not.</p>
+      driver may not.  Check your documentation.</p>
 
       <h2 id="connection_commit">commit</h2>
 
@@ -441,7 +441,7 @@ statement needs to be executed.
 
       <p>Cursors represent a database cursor (and map to ODBC HSTMTs), which is
         used to manage the context of a fetch operation.  Cursors created from
-        the same connection are not isolated, i.e., any changes done to the
+        the same connection are not isolated, i.e., any changes made to the
         database by a cursor are immediately visible by the other cursors.</p>
 
       <h2>variables</h2>
@@ -512,12 +512,12 @@ Parameters are passed to the database <em>separately</em> using an ODBC
 for row in cursor.execute("select user_id, user_name from users"):
     print()row.user_id, row.user_name)
 
-row  = cursor.execute("select * from tmp").fetchone()
-rows = cursor.execute("select * from tmp").fetchall()
-val  = cursor.execute("select count(*) from tmp").fetchone()[0]
+row  = cursor.execute("select * from tmp")<b>.fetchone()</b>
+rows = cursor.execute("select * from tmp")<b>.fetchall()</b>
+val  = cursor.execute("select count(*) from tmp")<b>.fetchone()[0]</b>
 
-count = cursor.execute("update users set last_logon=? where user_id=?", now, user_id).rowcount
-count = cursor.execute("delete from users where user_id=1").rowcount
+count = cursor.execute("update users set last_logon=? where user_id=?", now, user_id)<b>.rowcount</b>
+count = cursor.execute("delete from users where user_id=1")<b>.rowcount</b>
 </pre>
 
 <p>The last prepared statement is kept and reused if you execute the same SQL
@@ -627,7 +627,7 @@ This affects all cursors created by the same connection.
 
 <p>For convenience, <tt>skip(0)</tt> is accepted and will do nothing.</p>
 
-<h2 id="cursor_nextset">nextste</h2>
+<h2 id="cursor_nextset">nextset</h2>
 
 <pre>cursor.nextset() --> True or None</pre>
 
@@ -657,10 +657,6 @@ albums = cursor.fetchall()</pre>
 
 <p>Cursors are closed automatically when they are deleted, so calling this is
   not usually necessary when using C Python.</p>
-
-<h2 id="cursor_setinputsize">setinputsizes, setoutputsize</h2>
-
-<p>These are optional in the API and are not supported.</p>
 
 <h2 id="cursor_callproc">callproc</h2>
 
@@ -970,14 +966,14 @@ a creates a result set with information about the specified data type or all dat
 
 <pre>
 row = cursor.fetchone()
-print row[0]
+print(row[0])
 </pre>
 
 <p>However, there are some pyodbc additions that make them very convenient:</p>
 
 <ul>
   <li>Values can be accessed by column name.</li>
-  <li>The Cursor.description values can be accessed even after the cursor is closed.</li>
+  <li>The Cursor.description values can be accessed from the row.</li>
   <li>Values can be replaced</li>
   <li>Rows from the same select share memory.</li>
 </ul>
@@ -987,11 +983,11 @@ print row[0]
 <pre>
 cursor.execute("select album_id, photo_id from photos where user_id=1")
 row = cursor.fetchone()
-print(row.album_id, row.photo_id)
+print(<b>row.album_id</b>, <b>row.photo_id</b>)
 print(row[0], row[1]) # same as above, but less readable
 </pre>
 
-<p>Having access to the cursor's description even after the Cursor is closed
+<p>Having access to the cursor's description, even after the curosr is closed,
 makes Rows very convenient data structures -- you can pass them around and they
 are self describing:</p>
 
@@ -1009,7 +1005,7 @@ def getuser(userid):
 row = getuser(7)
 # At this point the cursor has been closed and deleted
 # But the columns and datatypes can still be accessed:
-print('columns:', ', '.join(t[0] for t in row.cursor_description))
+print('columns:', ', '.join(t[0] for t in <b>row.cursor_description</b>))
 </pre>
 
 <p>Unlike normal tuples, values in Row objects can be replaced.  (This means you
@@ -1023,7 +1019,7 @@ that need to be made after reading values:</p>
 # Replace the 'start_date' datetime in each row with one that has a time zone.
 rows = cursor.fetchall()
 for row in rows:
-    row.start_date = row.start_date.astimezone(tz)
+    <b>row.start_date =</b> row.start_date.astimezone(tz)
 </pre>
 
 <p>Note that slicing rows returns tuples, not Row objects!</p>
