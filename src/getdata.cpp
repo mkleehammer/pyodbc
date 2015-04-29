@@ -27,13 +27,13 @@ class DataBuffer
     //
     //   1) Binary, which is a simple array of 8-bit bytes.
     //   2) ANSI text, which is an array of chars with a NULL terminator.
-    //   3) Unicode text, which is an array of SQLWCHARs with a NULL terminator.
+    //   3) Unicode text, which is an array of ODBCCHARs with a NULL terminator.
     //
-    // When dealing with Unicode, there are two widths we have to be aware of: (1) SQLWCHAR and (2) Py_UNICODE.  If
+    // When dealing with Unicode, there are two widths we have to be aware of: (1) ODBCCHAR and (2) Py_UNICODE.  If
     // these are the same we can use a PyUnicode object so we don't have to allocate our own buffer and then the
     // Unicode object.  If they are not the same (e.g. OS/X where wchar_t-->4 Py_UNICODE-->2) then we need to maintain
     // our own buffer and pass it to the PyUnicode object later.  Many Linux distros are now using UCS4, so Py_UNICODE
-    // will be larger than SQLWCHAR.
+    // will be larger than ODBCCHAR.
     //
     // To reduce heap fragmentation, we perform the initial read into an array on the stack since we don't know the
     // length of the data.  If the data doesn't fit, this class then allocates new memory.  If the first read gives us
@@ -61,7 +61,7 @@ public:
 
         this->dataType = dataType;
 
-        element_size = (int)((dataType == SQL_C_WCHAR)  ? sizeof(SQLWCHAR) : sizeof(char));
+        element_size = (int)((dataType == SQL_C_WCHAR)  ? ODBCCHAR_SIZE : sizeof(char));
         null_size    = (dataType == SQL_C_BINARY) ? 0 : element_size;
 
         buffer        = stackBuffer;
@@ -138,7 +138,7 @@ public:
                 buffer      = bufferOwner ? PyBytes_AS_STRING(bufferOwner) : 0;
 #endif
             }
-            else if (sizeof(SQLWCHAR) == Py_UNICODE_SIZE)
+            else if (ODBCCHAR_SIZE == Py_UNICODE_SIZE)
             {
                 // Allocate directly into a Unicode object.
                 bufferOwner = PyUnicode_FromUnicode(0, newSize / element_size);
@@ -146,7 +146,7 @@ public:
             }
             else
             {
-                // We're Unicode, but SQLWCHAR and Py_UNICODE don't match, so maintain our own SQLWCHAR buffer.
+                // We're Unicode, but ODBCCHAR and Py_UNICODE don't match, so maintain our own ODBCCHAR buffer.
                 bufferOwner = 0;
                 buffer      = (char*)pyodbc_malloc((size_t)newSize);
             }
@@ -214,9 +214,6 @@ public:
                 return PyBytes_FromStringAndSize(buffer, bytesUsed);
 #endif
             }
-
-            if (sizeof(SQLWCHAR) == Py_UNICODE_SIZE)
-                return PyUnicode_FromUnicode((const Py_UNICODE*)buffer, bytesUsed / element_size);
 
             return PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, bytesUsed / element_size);
         }
@@ -463,7 +460,7 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
     // TODO: Is Unicode a good idea for Python 2.7?  We need to know which drivers support Unicode.
 
     const int buffsize = 100;
-    SQLWCHAR buffer[buffsize];
+    ODBCCHAR buffer[buffsize];
     SQLLEN cbFetched = 0; // Note: will not include the NULL terminator.
 
     SQLRETURN ret;
@@ -473,14 +470,14 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
     if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
-    if (cbFetched == SQL_NULL_DATA || cbFetched > (buffsize * sizeof(SQLWCHAR)))
+    if (cbFetched == SQL_NULL_DATA || cbFetched > (buffsize * ODBCCHAR_SIZE))
         Py_RETURN_NONE;
 
     // Remove non-digits and convert the databases decimal to a '.' (required by decimal ctor).
     //
-    // We are assuming that the decimal point and digits fit within the size of SQLWCHAR.
+    // We are assuming that the decimal point and digits fit within the size of ODBCCHAR.
 
-    int cch = (int)(cbFetched / sizeof(SQLWCHAR));
+    int cch = (int)(cbFetched / ODBCCHAR_SIZE);
 
     for (int i = (cch - 1); i >= 0; i--)
     {
@@ -491,14 +488,14 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
         }
         else if ((buffer[i] < '0' || buffer[i] > '9') && buffer[i] != '-')
         {
-            memmove(&buffer[i], &buffer[i] + 1, (cch - i) * sizeof(SQLWCHAR));
+            memmove(&buffer[i], &buffer[i] + 1, (cch - i) * (size_t)ODBCCHAR_SIZE);
             cch--;
         }
     }
 
     I(buffer[cch] == 0);
 
-    Object str(PyUnicode_FromSQLWCHAR(buffer, cch));
+    Object str(PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, cch));
     if (!str)
         return 0;
 

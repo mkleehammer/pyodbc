@@ -311,11 +311,13 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                 fAnsi = PyObject_IsTrue(value);
                 continue;
             }
+#if PY_MAJOR_VERSION < 3
             if (Text_EqualsI(key, "unicode_results"))
             {
                 fUnicodeResults = PyObject_IsTrue(value);
                 continue;
             }
+#endif
             if (Text_EqualsI(key, "timeout"))
             {
                 timeout = PyInt_AsLong(value);

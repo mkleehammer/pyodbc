@@ -126,7 +126,7 @@ inline bool IsNumericType(SQLSMALLINT sqltype)
 }
 
 
-static PyObject* PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMALLINT type, bool unicode_results)
+static PyObject* PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMALLINT type)
 {
     // Returns a type object ('int', 'str', etc.) for the given ODBC C type.  This is used to populate
     // Cursor.description with the type of Python object that will be returned for each column.
@@ -152,10 +152,14 @@ static PyObject* PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMAL
     case SQL_LONGVARCHAR:
     case SQL_GUID:
     case SQL_SS_XML:
-        if (unicode_results)
+#if PY_MAJOR_VERSION < 3
+        if (cur->cnxn->unicode_results)
             pytype = (PyObject*)&PyUnicode_Type;
         else
             pytype = (PyObject*)&PyString_Type;
+#else
+        pytype = (PyObject*)&PyString_Type;
+#endif
         break;
 
     case SQL_DECIMAL:
@@ -278,7 +282,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
         if (lower)
             _strlwr((char*)name);
 
-        type = PythonTypeFromSqlType(cur, name, nDataType, cur->cnxn->unicode_results);
+        type = PythonTypeFromSqlType(cur, name, nDataType);
         if (!type)
             goto done;
 
@@ -687,7 +691,7 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
             if (!query)
                 return 0;
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLExecDirectW(cur->hstmt, query, SQL_NTS);
+            ret = SQLExecDirectW(cur->hstmt, query.get(), SQL_NTS);
             Py_END_ALLOW_THREADS
         }
     }

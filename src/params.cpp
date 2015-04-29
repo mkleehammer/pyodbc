@@ -188,7 +188,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
 
     if (len <= cur->cnxn->wvarchar_maxlength)
     {
-        if (SQLWCHAR_SIZE == Py_UNICODE_SIZE)
+        if (ODBCCHAR_SIZE == Py_UNICODE_SIZE)
         {
             info.ParameterValuePtr = pch;
         }
@@ -209,14 +209,14 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
         }
 
         info.ParameterType = SQL_WVARCHAR;
-        info.StrLen_or_Ind = (SQLINTEGER)(len * sizeof(SQLWCHAR));
+        info.StrLen_or_Ind = (SQLINTEGER)(len * ODBCCHAR_SIZE);
     }
     else
     {
         // Too long to pass all at once, so we'll provide the data at execute.
 
         info.ParameterType     = SQL_WLONGVARCHAR;
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len * sizeof(SQLWCHAR)) : SQL_DATA_AT_EXEC;
+        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len * ODBCCHAR_SIZE) : SQL_DATA_AT_EXEC;
         info.ParameterValuePtr = param;
     }
 
@@ -683,7 +683,7 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
         {
             SQLWChar sql(pSql);
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLPrepareW(cur->hstmt, sql, SQL_NTS);
+            ret = SQLPrepareW(cur->hstmt, sql.get(), SQL_NTS);
             if (SQL_SUCCEEDED(ret))
             {
                 szErrorFunc = "SQLNumParams";

@@ -40,11 +40,19 @@ struct Connection
     // The column size of datetime columns, obtained from SQLGetInfo(), used to determine the datetime precision.
     int datetime_precision;
 
-    // If true, then the strings in the rows are returned as unicode objects.
+#if PY_MAJOR_VERSION < 3
     bool unicode_results;
+    // If true, ANSI columns are returned as Unicode.
+#endif
 
     // The connection timeout in seconds.
     intptr_t timeout;
+
+    PyObject* unicode_encoding;
+    // The optional Unicode encoding of the database.  Unicode strings are
+    // encoded when sent and decoded when received.
+    //
+    // If not provided, UCS-2 is used.
 
     // These are copied from cnxn info for performance and convenience.
 

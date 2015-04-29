@@ -82,7 +82,7 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
     {
         SQLWChar connectString(pConnectString);
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLDriverConnectW(hdbc, 0, connectString, (SQLSMALLINT)connectString.size(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
+        ret = SQLDriverConnectW(hdbc, 0, connectString.get(), (SQLSMALLINT)connectString.size(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
         Py_END_ALLOW_THREADS
         if (SQL_SUCCEEDED(ret))
             return true;
@@ -198,7 +198,9 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->nAutoCommit     = fAutoCommit ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
     cnxn->searchescape    = 0;
     cnxn->timeout         = 0;
+#if PY_MAJOR_VERSION < 3
     cnxn->unicode_results = fUnicodeResults;
+#endif
     cnxn->conv_count      = 0;
     cnxn->conv_types      = 0;
     cnxn->conv_funcs      = 0;

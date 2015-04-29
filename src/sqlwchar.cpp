@@ -3,20 +3,17 @@
 #include "sqlwchar.h"
 #include "wrapper.h"
 
-Py_ssize_t SQLWCHAR_SIZE = sizeof(SQLWCHAR);
-
 #ifdef HAVE_WCHAR_H
-static int WCHAR_T_SIZE  = sizeof(wchar_t);
+static int WCHAR_T_SIZE = sizeof(wchar_t);
 #endif
-
 
 inline Py_UNICODE CalculateMaxSQL()
 {
-    if (SQLWCHAR_SIZE >= Py_UNICODE_SIZE)
+    if (ODBCCHAR_SIZE >= Py_UNICODE_SIZE)
         return 0;
 
     Py_UNICODE m = 0;
-    for (unsigned int i = 0; i < sizeof(SQLWCHAR); i++)
+    for (unsigned int i = 0; i < ODBCCHAR_SIZE; i++)
     {
         m <<= 8;
         m |= 0xFF;
@@ -25,30 +22,30 @@ inline Py_UNICODE CalculateMaxSQL()
 }
 
 
-// If SQLWCHAR is larger than Py_UNICODE, this is the largest value that can be held in a Py_UNICODE.  Because it is
-// stored in a Py_UNICODE, it is undefined when sizeof(SQLWCHAR) <= sizeof(Py_UNICODE).
-static Py_UNICODE MAX_SQLWCHAR = CalculateMaxSQL();
+// If ODBCCHAR is larger than Py_UNICODE, this is the largest value that can be held in a Py_UNICODE.  Because it is
+// stored in a Py_UNICODE, it is undefined when sizeof(ODBCCHAR) <= sizeof(Py_UNICODE).
+static Py_UNICODE MAX_ODBCCHAR = CalculateMaxSQL();
 
-// If SQLWCHAR is larger than Py_UNICODE, this is the largest value that can be held in a Py_UNICODE.  Because it is
-// stored in a Py_UNICODE, it is undefined when sizeof(SQLWCHAR) <= sizeof(Py_UNICODE).
-static const SQLWCHAR MAX_PY_UNICODE = (SQLWCHAR)PyUnicode_GetMax();
+// If ODBCCHAR is larger than Py_UNICODE, this is the largest value that can be held in a Py_UNICODE.  Because it is
+// stored in a Py_UNICODE, it is undefined when sizeof(ODBCCHAR) <= sizeof(Py_UNICODE).
+static const ODBCCHAR MAX_PY_UNICODE = (ODBCCHAR)PyUnicode_GetMax();
 
-static bool sqlwchar_copy(SQLWCHAR* pdest, const Py_UNICODE* psrc, Py_ssize_t len)
+static bool odbcchar_copy(ODBCCHAR* pdest, const Py_UNICODE* psrc, Py_ssize_t len)
 {
     // Copies a Python Unicode string to a SQLWCHAR buffer.  Note that this does copy the NULL terminator, but `len`
     // should not include it.  That is, it copies (len + 1) characters.
 
-    if (Py_UNICODE_SIZE == SQLWCHAR_SIZE)
+    if (Py_UNICODE_SIZE == ODBCCHAR_SIZE)
     {
-        memcpy(pdest, psrc, sizeof(SQLWCHAR) * (len + 1));
+        memcpy(pdest, psrc, (size_t)ODBCCHAR_SIZE * (len + 1));
     }
     else
     {
-        if (SQLWCHAR_SIZE < Py_UNICODE_SIZE)
+        if (ODBCCHAR_SIZE < Py_UNICODE_SIZE)
         {
             for (int i = 0; i < len; i++)
             {
-                if ((Py_ssize_t)psrc[i] > MAX_SQLWCHAR)
+                if ((Py_ssize_t)psrc[i] > MAX_ODBCCHAR)
                 {
                     PyErr_Format(PyExc_ValueError, "Cannot convert from Unicode %zd to SQLWCHAR.  Value is too large.", (Py_ssize_t)psrc[i]);
                     return false;
@@ -57,7 +54,7 @@ static bool sqlwchar_copy(SQLWCHAR* pdest, const Py_UNICODE* psrc, Py_ssize_t le
         }
         
         for (int i = 0; i <= len; i++) // ('<=' to include the NULL)
-            pdest[i] = (SQLWCHAR)psrc[i];
+            pdest[i] = (ODBCCHAR)psrc[i];
     }
     
     return true;
@@ -96,25 +93,25 @@ bool SQLWChar::Convert(PyObject* o)
     Py_UNICODE* pU   = (Py_UNICODE*)PyUnicode_AS_UNICODE(o);
     Py_ssize_t  lenT = PyUnicode_GET_SIZE(o);
 
-    if (SQLWCHAR_SIZE == Py_UNICODE_SIZE)
+    if (ODBCCHAR_SIZE == Py_UNICODE_SIZE)
     {
-        // The ideal case - SQLWCHAR and Py_UNICODE are the same, so we point into the Unicode object.
+        // The ideal case - ODBCCHAR_SIZE and Py_UNICODE are the same, so we point into the Unicode object.
 
-        pch         = (SQLWCHAR*)pU;
+        pch         = (ODBCCHAR*)pU;
         len         = lenT;
         owns_memory = false;
         return true;
     }
     else
     {
-        SQLWCHAR* pchT = (SQLWCHAR*)pyodbc_malloc(sizeof(SQLWCHAR) * (lenT + 1));
+        ODBCCHAR* pchT = (ODBCCHAR*)pyodbc_malloc((size_t)ODBCCHAR_SIZE * (lenT + 1));
         if (pchT == 0)
         {
             PyErr_NoMemory();
             return false;
         }
 
-        if (!sqlwchar_copy(pchT, pU, lenT))
+        if (!odbcchar_copy(pchT, pU, lenT))
         {
             pyodbc_free(pchT);
             return false;
@@ -131,15 +128,15 @@ PyObject* PyUnicode_FromSQLWCHAR(const SQLWCHAR* sz, Py_ssize_t cch)
 {
     // Create a Python Unicode object from a zero-terminated SQLWCHAR.
 
-    if (SQLWCHAR_SIZE == Py_UNICODE_SIZE)
+    if (ODBCCHAR_SIZE == Py_UNICODE_SIZE)
     {
-        // The ODBC Unicode and Python Unicode types are the same size.  Cast the ODBC type to the Python type and use
-        // a fast function.
+        // The ODBC Unicode and Python Unicode types are the same size.  Cast
+        // the ODBC type to the Python type and use a fast function.
         return PyUnicode_FromUnicode((const Py_UNICODE*)sz, cch);
     }
     
 #ifdef HAVE_WCHAR_H
-    if (WCHAR_T_SIZE == SQLWCHAR_SIZE)
+    if (WCHAR_T_SIZE == ODBCCHAR_SIZE)
     {
         // The ODBC Unicode is the same as wchar_t.  Python provides a function for that.
         return PyUnicode_FromWideChar((const wchar_t*)sz, cch);
@@ -148,7 +145,7 @@ PyObject* PyUnicode_FromSQLWCHAR(const SQLWCHAR* sz, Py_ssize_t cch)
 
     // There is no conversion, so we will copy it ourselves with a simple cast.
 
-    if (Py_UNICODE_SIZE < SQLWCHAR_SIZE)
+    if (Py_UNICODE_SIZE < ODBCCHAR_SIZE)
     {
         // We are casting from a larger size to a smaller one, so we'll make sure they all fit.
 
@@ -209,14 +206,14 @@ void SQLWChar::dump()
 
 SQLWCHAR* SQLWCHAR_FromUnicode(const Py_UNICODE* pch, Py_ssize_t len)
 {
-    SQLWCHAR* p = (SQLWCHAR*)pyodbc_malloc(sizeof(SQLWCHAR) * (len+1));
+    ODBCCHAR* p = (ODBCCHAR*)pyodbc_malloc((size_t)ODBCCHAR_SIZE * (len+1));
     if (p != 0)
     {
-        if (!sqlwchar_copy(p, pch, len))
+        if (!odbcchar_copy(p, pch, len))
         {
             pyodbc_free(p);
             p = 0;
         }
     }
-    return p;
+    return (SQLWCHAR*)p;
 }
