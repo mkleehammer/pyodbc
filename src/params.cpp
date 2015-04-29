@@ -302,7 +302,8 @@ static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
     info.Data.l = PyInt_AsLong(param);
 
 #if LONG_BIT == 64
-    info.ValueType     = SQL_C_LONG;
+    info.ValueType     = SQL_C_SBIGINT;
+    // info.ValueType     = SQL_C_LONG;
     info.ParameterType = SQL_BIGINT;
 #elif LONG_BIT == 32
     info.ValueType     = SQL_C_LONG;
@@ -341,6 +342,8 @@ static bool GetFloatInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
 
 static char* CreateDecimalString(long sign, PyObject* digits, long exp)
 {
+    // Allocate an ASCII string containing the given decimal.
+
     long count = (long)PyTuple_GET_SIZE(digits);
 
     char* pch;

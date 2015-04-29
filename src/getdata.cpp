@@ -442,7 +442,6 @@ static PyObject* GetDataBuffer(Cursor* cur, Py_ssize_t iCol)
 }
 #endif
 
-
 static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 {
     // The SQL_NUMERIC_STRUCT support is hopeless (SQL Server ignores scale on input parameters and output columns,
@@ -479,6 +478,29 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 
     int cch = (int)(cbFetched / ODBCCHAR_SIZE);
 
+    char ascii[buffsize];
+    size_t asciilen = 0;
+    for (int i = 0; i < cch; i++)
+    {
+        if (buffer[i] == chDecimal)
+        {
+            // Must force it to use '.' since the Decimal class doesn't pay attention to the locale.
+            ascii[asciilen++] = '.';
+        }
+        else if (buffer[i] > 0xFF || ((buffer[i] < '0' || buffer[i] > '9') && buffer[i] != '-'))
+        {
+            // We are expecting only digits, '.', and '-'.  This could be a
+            // Unicode currency symbol or group separator (',').  Ignore.
+        }
+        else
+        {
+            ascii[asciilen++] = (char)buffer[i];
+        }
+    }
+
+    ascii[asciilen] = 0;
+
+    /*
     for (int i = (cch - 1); i >= 0; i--)
     {
         if (buffer[i] == chDecimal)
@@ -498,6 +520,15 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
     Object str(PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, cch));
     if (!str)
         return 0;
+    */
+    Object str;
+
+#if PY_MAJOR_VERSION < 3
+    str.Attach(PyString_FromStringAndSize(ascii, (Py_ssize_t)asciilen));
+#else
+    // This treats the string like UTF-8 which is fine for a reall ASCII string.
+    str.Attach(PyString_FromStringAndSize(ascii, (Py_ssize_t)asciilen));
+#endif
 
     return PyObject_CallFunction(decimal_type, "O", str.Get());
 }

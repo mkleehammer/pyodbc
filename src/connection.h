@@ -3,7 +3,7 @@
 // documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
 // rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
 // permit persons to whom the Software is furnished to do so.
-// 
+//
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
 // WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
 // OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
@@ -21,7 +21,7 @@ struct Connection
     PyObject_HEAD
 
     // Set to SQL_NULL_HANDLE when the connection is closed.
-	HDBC hdbc;
+    HDBC hdbc;
 
     // Will be SQL_AUTOCOMMIT_ON or SQL_AUTOCOMMIT_OFF.
     uintptr_t nAutoCommit;
@@ -46,7 +46,7 @@ struct Connection
 #endif
 
     // The connection timeout in seconds.
-    intptr_t timeout;
+    long timeout;
 
     PyObject* unicode_encoding;
     // The optional Unicode encoding of the database.  Unicode strings are
