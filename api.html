@@ -38,8 +38,9 @@
       <ul>
         <li><a href="module">module</a></li>
         <li><a href="connection">Connection</a></li>
-        <li><a href="Cursor">Cursor</a></li>
-        <li><a href="Row">Row</a></li>
+        <li><a href="cursor">Cursor</a></li>
+        <li><a href="row">Row</a></li>
+        <li><a href="errors">Errors</a></li>
       </ul>
 
       <h1>Module</h1>
@@ -1034,6 +1035,40 @@ for row in rows:
   <dd>A copy of the Cursor.description object from the Cursor that created this
     row.  This contains the column names and data types of the columns.</dd>
 </dl>
+
+<h2 id="errors">Errors</h2>
+
+<p>Exceptions are raised when ODBC errors are detected. The exception classes
+  specified in the <a href="https://www.python.org/dev/peps/pep-0249/">DB API specification</a>
+  are used.</p>
+
+<ul>
+  <li>DatabaseError</li>
+  <li>DataError</li>
+  <li>OperationalError</li>
+  <li>IntegrityError</li>
+  <li>InternalError</li>
+  <li>ProgrammingError</li>
+</ul>
+
+<p>When an error occurs, the type of exception raised is based on the
+  SQLSTATE:</p>
+
+<table class="table table-condensed">
+  <thead>
+    <tr><th>SQLSTATE</th><th>Class</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>0A000</td><td>NotSupportedError</td></tr>
+    <tr><td>22xxx</td><td>DataError</td></tr>
+    <tr><td>23xxx 40002</td><td>IntegrityError</td></tr>
+    <tr><td>24xxx 25xxx 42xxx</td><td>ProgrammingError</td></tr>
+    <tr><td>All Others</td><td>DatabaseError</td></tr>
+  </tbody>
+</table>
+
+<p>A primary key error (attempting to insert a value when the key already
+exists) will raise an IntegrityError.</p>
 
     </div>
 
