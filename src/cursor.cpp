@@ -1753,8 +1753,9 @@ static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
         // Note: The SQL Server driver sometimes returns HY007 here if multiple statements (separated by ;) were
         // submitted.  This is not documented, but I've seen it with multiple successful inserts.
 
+        PyObject* pError = GetErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
         free_results(cur, FREE_STATEMENT | KEEP_PREPARED);
-        return RaiseErrorFromHandle("SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
+        return pError;
     }
     free_results(cur, KEEP_STATEMENT | KEEP_PREPARED);
 
