@@ -35,7 +35,8 @@ Driver Support"
   * PostgreSQL seems to correct use UCS-2.
     http://archives.postgresql.org/pgsql-odbc/2006-02/msg00112.php
 
-  * MS SQL Server on Windows & Linux.  Obviously correctly uses UCS-2.
+  * MS SQL Server on Windows & Linux.  Obviously correctly uses UCS-2.  SQL
+    Server 2012 and higher now support UTF16.
 
   * mysql: Seems to be broken.  To handle this, probably need to provide a 'charset' option
     that causes us to convert to the given charset and use the ANSI/ASCII calls and data types.
@@ -49,4 +50,4 @@ Driver Support"
     Definitely use 0.91 or later.
 
     Have seen reference to a new --wide-unicode flag for 0.92+ (broken in 0.91) which causes
-    SQL_WCHAR to equal wchar_t instead of UCS-16.
+    SQL_WCHAR to equal wchar_t instead of UTF16.
