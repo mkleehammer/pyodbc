@@ -255,7 +255,7 @@ print('{} users'.format(row.user_count)</pre>
     <p>Of course you can always extract the value by index:</p>
 
     <pre>count = cursor.execute("select count(*) from users").<b>fetchone()[0]</b>
-print('{} users'.format(row.user_count)</pre>
+print('{} users'.format(count)</pre>
 
     <p>This will not work if the first column can be <tt>NULL</tt>.  In that
       case, <tt>fetchone</tt> will return <tt>None</tt>and you'll get a cryptic
