@@ -226,6 +226,12 @@ class DatabaseAPI20Test(unittest.TestCase):
         finally:
             con.close()
 
+    def test_is_closed(self):
+        con = self._connect()
+        self.failUnless(con.is_closed() is True)
+        con.close()
+        self.failUnless(con.is_closed() is False)
+
     def test_rollback(self):
         con = self._connect()
         # If rollback is defined, it should either work or throw

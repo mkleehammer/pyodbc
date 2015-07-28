@@ -270,6 +270,23 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     return reinterpret_cast<PyObject*>(cnxn);
 }
 
+static char is_closed_doc[] =
+    "Check whether the connection is closed.";
+
+static PyObject* Connection_is_closed(PyObject* self, PyObject* args)
+{
+    UNUSED(args);
+
+    Connection* cnxn = (Connection*)self;
+    if (!cnxn)
+        return 0;
+
+    if (cnxn->hdbc == SQL_NULL_HANDLE)
+        Py_RETURN_TRUE;
+    else
+        Py_RETURN_FALSE;
+}
+
 static void _clear_conv(Connection* cnxn)
 {
     if (cnxn->conv_count != 0)
@@ -932,6 +949,7 @@ static struct PyMethodDef Connection_methods[] =
 {
     { "cursor",                  Connection_cursor,          METH_NOARGS,  cursor_doc     },
     { "close",                   Connection_close,           METH_NOARGS,  close_doc      },
+    { "is_closed",               Connection_is_closed,       METH_NOARGS,  is_closed_doc  },
     { "execute",                 Connection_execute,         METH_VARARGS, execute_doc    },
     { "commit",                  Connection_commit,          METH_NOARGS,  commit_doc     },
     { "rollback",                Connection_rollback,        METH_NOARGS,  rollback_doc   },
