@@ -291,10 +291,15 @@ def _get_version_git():
         numbers[-2] += 1
         name = '%s.%s.%sb%d' % tuple(numbers)
 
-    n, result = getoutput('git branch --color=never')
-    branch = re.search(r'\* (\S+)', result).group(1)
-    if branch != 'master' and not re.match('^v\d+$', branch):
-        name = name + '+' + branch.replace('-', '')
+    n, result = getoutput('git rev-parse --abbrev-ref HEAD')
+
+    if result == 'HEAD':
+        # We are not on a branch, so use the last revision instead
+        n, result = getoutput('git rev-parse --short HEAD')
+        name = name + '+commit' + result
+    else:
+        if result != 'master' and not re.match('^v\d+$', result):
+            name = name + '+' + result.replace('-', '')
 
     return name, numbers
 
