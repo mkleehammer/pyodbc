@@ -172,8 +172,20 @@ def get_compiler_settings(version_str):
         # For now target 10.7 to eliminate the warnings.
         settings['define_macros'].append( ('MAC_OS_X_VERSION_10_7',) )
 
+    elif sys.platform.startswith('linux'):
+        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
+        settings['extra_compile_args'] = ['-Wno-write-strings']
+
+        # Find a shared library in the usual places by the name of lib[i]odbc.so*
+        from subprocess import Popen, PIPE
+        print 'Detecting the available ODBC driver manager...'
+        p = Popen(['find', '/usr/lib', '/usr/local/lib', '-type', 'f', '-regex', r'.*/libi?odbc\.so.*'], stdout=PIPE, stderr=PIPE)
+        out = p.communicate()[0]
+        if not out:
+            print '''Warning: ODBC driver manager missing. Please install the development versions of either unixODBC or iODBC'''
+        settings['libraries'].append('iodbc' if re.search(r'.*/libiodbc\.so.*', out) else 'odbc')
     else:
-        # Other posix-like: Linux, Solaris, etc.
+        # Other posix-like: Solaris, etc.
 
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].append('-Wno-write-strings')

@@ -121,6 +121,10 @@ class FreeTDSTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", 1)
         self.cursor.execute("insert into t2 values (?)", datetime.now())
 
+    def test_drivers(self):
+        p = pyodbc.drivers()
+        self.assert_(isinstance(p, list))
+
     def test_datasources(self):
         p = pyodbc.dataSources()
         self.assert_(isinstance(p, dict))

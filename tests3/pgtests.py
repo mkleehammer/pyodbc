@@ -70,6 +70,10 @@ class PGTestCase(unittest.TestCase):
             # If we've already closed the cursor or connection, exceptions are thrown.
             pass
 
+    def test_drivers(self):
+        p = pyodbc.drivers()
+        self.assert_(isinstance(p, list))
+
     def test_datasources(self):
         p = pyodbc.dataSources()
         self.assert_(isinstance(p, dict))

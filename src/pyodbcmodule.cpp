@@ -379,6 +379,49 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
 }
 
 
+static PyObject* mod_drivers(PyObject* self)
+{
+    UNUSED(self);
+
+    if (henv == SQL_NULL_HANDLE && !AllocateEnv())
+        return 0;
+
+    PyObject* result = PyList_New(0);
+    if (!result)
+        return 0;
+
+    SQLCHAR szDriverDesc[SQL_MAX_DSN_LENGTH];
+    SWORD cbDriverDesc;
+    SQLCHAR szDesc[200];
+    SWORD cbDesc;
+
+    SQLUSMALLINT nDirection = SQL_FETCH_FIRST;
+
+    SQLRETURN ret;
+
+    for (;;)
+    {
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLDrivers(henv, nDirection, szDriverDesc,  _countof(szDriverDesc),  &cbDriverDesc, szDesc, _countof(szDesc), &cbDesc);
+        Py_END_ALLOW_THREADS
+        if (!SQL_SUCCEEDED(ret))
+            break;
+
+        if (PyList_Append(result, PyString_FromString((const char*)szDriverDesc)) != 0)
+            return 0;
+        nDirection = SQL_FETCH_NEXT;
+    }
+
+    if (ret != SQL_NO_DATA)
+    {
+        Py_DECREF(result);
+        return RaiseErrorFromHandle("SQLDrivers", SQL_NULL_HANDLE, SQL_NULL_HANDLE);
+    }
+
+    return result;
+}
+
+
 static PyObject* mod_datasources(PyObject* self)
 {
     UNUSED(self);
@@ -533,8 +576,13 @@ static char timestampfromticks_doc[] =
     "seconds since the epoch; see the documentation of the standard Python time\n" \
     "module for details";
 
+static char drivers_doc[] =
+    "drivers() --> [ DriverName1, DriverName2 ... DriverNameN ]\n" \
+    "\n" \
+    "Returns a list of installed drivers.";
+
 static char datasources_doc[] =
-    "dataSources() -> { DSN : Description }\n" \
+    "dataSources() --> { DSN : Description }\n" \
     "\n" \
     "Returns a dictionary mapping available DSNs to their descriptions.";
 
@@ -548,43 +596,6 @@ static PyObject* mod_leakcheck(PyObject* self, PyObject* args)
 }
 #endif
 
-#ifdef WINVER
-static char drivers_doc[] = "drivers() -> [ driver, ... ]\n\nReturns a list of installed drivers";
-
-static PyObject* mod_drivers(PyObject* self, PyObject* args)
-{
-    UNUSED(self, args);
-
-    RegKey key;
-    long ret = RegOpenKeyEx(HKEY_LOCAL_MACHINE, "SOFTWARE\\ODBC\\ODBCINST.INI\\ODBC Drivers", 0, KEY_QUERY_VALUE, &key.hkey);
-    if (ret != ERROR_SUCCESS)
-        return PyErr_Format(PyExc_RuntimeError, "Unable to access the driver list in the registry.  error=%ld", ret);
-
-    Object results(PyList_New(0));
-    DWORD index = 0;
-    char name[255];
-    DWORD length = _countof(name);
-
-    while (RegEnumValue(key, index++, name, &length, 0, 0, 0, 0) == ERROR_SUCCESS)
-    {
-        if (ret != ERROR_SUCCESS)
-            return PyErr_Format(PyExc_RuntimeError, "RegEnumKeyEx failed with error %ld\n", ret);
-
-        PyObject* oname = PyString_FromStringAndSize(name, (Py_ssize_t)length);
-        if (!oname)
-            return 0;
-
-        if (PyList_Append(results.Get(), oname) != 0)
-        {
-            Py_DECREF(oname);
-            return 0;
-        }
-        length = _countof(name);
-    }
-
-    return results.Detach();
-}
-#endif
 
 static PyMethodDef pyodbc_methods[] =
 {
@@ -592,11 +603,8 @@ static PyMethodDef pyodbc_methods[] =
     { "TimeFromTicks",      (PyCFunction)mod_timefromticks,      METH_VARARGS,               timefromticks_doc },
     { "DateFromTicks",      (PyCFunction)mod_datefromticks,      METH_VARARGS,               datefromticks_doc },
     { "TimestampFromTicks", (PyCFunction)mod_timestampfromticks, METH_VARARGS,               timestampfromticks_doc },
+    { "drivers",            (PyCFunction)mod_drivers,            METH_NOARGS,                drivers_doc },
     { "dataSources",        (PyCFunction)mod_datasources,        METH_NOARGS,                datasources_doc },
-
-#ifdef WINVER
-    { "drivers", (PyCFunction)mod_drivers, METH_NOARGS, drivers_doc },
-#endif
 
 #ifdef PYODBC_LEAK_CHECK
     { "leakcheck", (PyCFunction)mod_leakcheck, METH_NOARGS, 0 },
