@@ -1,7 +1,6 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
-# Unit tests for PostgreSQL on Linux (Fedora)
-# This is a stripped down copy of the SQL Server tests.
+# Unit tests for PostgreSQL on OS X and Linux.
 
 from __future__ import print_function
 
@@ -352,6 +351,15 @@ class PGTestCase(unittest.TestCase):
         result = row[0:4]
         self.failUnless(result is row)
 
+    def test_cnxn_execute_error(self):
+        """
+        Make sure that Connection.execute (not Cursor) errors are not "eaten".
+
+        GitHub issue #74
+        """
+        self.cursor.execute("create table t1(a int primary key)")
+        self.cursor.execute("insert into t1 values (1)")
+        self.failUnlessRaises(pyodbc.Error, self.cnxn.execute, "insert into t1 values (1)")
 
     def test_row_repr(self):
         self.cursor.execute("create table t1(a int, b int, c int, d int)");
