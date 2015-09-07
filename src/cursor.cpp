@@ -458,11 +458,16 @@ static void closeimpl(Cursor* cur)
     {
         HSTMT hstmt = cur->hstmt;
         cur->hstmt = SQL_NULL_HANDLE;
-        Py_BEGIN_ALLOW_THREADS
-        SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-        Py_END_ALLOW_THREADS
-    }
 
+        SQLRETURN ret;
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+        Py_END_ALLOW_THREADS
+
+        // If there is already an exception, don't overwrite it.
+        if (!SQL_SUCCEEDED(ret) && !PyErr_Occurred())
+            RaiseErrorFromHandle("SQLFreeHandle", cur->cnxn->hdbc, SQL_NULL_HANDLE);
+    }
 
     Py_XDECREF(cur->pPreparedSQL);
     Py_XDECREF(cur->description);
@@ -489,6 +494,9 @@ static PyObject* Cursor_close(PyObject* self, PyObject* args)
         return 0;
 
     closeimpl(cursor);
+
+    if (PyErr_Occurred())
+        return 0;
 
     Py_INCREF(Py_None);
     return Py_None;
