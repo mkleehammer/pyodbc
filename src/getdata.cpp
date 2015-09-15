@@ -12,7 +12,6 @@
 #include <datetime.h>
 #include <string.h> /* strdup */
 #include <stdlib.h> /* strtol, NULL */
-#include <vector> /* std::vector */
 
 void GetData_init()
 {
@@ -684,72 +683,102 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
     return PyDateTime_FromDateAndTime(value.year, value.month, value.day, value.hour, value.minute, value.second, micros);
 }
 
-
-static std::vector<long int> read_time_token_list(const char *deltastr)
+static PyObject* GetDataTimeInterval(Cursor* cur, Py_ssize_t iCol)
 {
-    const char* delim = " :.";
-    char* saveptr = NULL, *endptr = NULL;
-    char* current_token = NULL;
-    char* deltacopy = strdup(deltastr);
-    std::vector<long int> time_numbers;
-
-    current_token = strtok_r(deltacopy, delim, &saveptr);
-    while (current_token != NULL) {
-        errno = 0;
-        long int num = strtol(current_token, &endptr, 10);
-
-        /* There was an error, so return an empty vector of numbers. */
-        if (errno != 0)
-            return std::vector<long int>();
-
-        time_numbers.push_back(num);
-        current_token = strtok_r(NULL, delim, &saveptr);
-    }
-
-    free(deltacopy);
-    return time_numbers;
-}
-
-
-static PyObject* GetDataInterval(Cursor* cur, Py_ssize_t iCol)
-{
-    char value[1024] = { 0 };
-
-    SQLLEN cbFetched = 0;
+    SQL_INTERVAL_STRUCT interval_value;
     SQLRETURN ret;
 
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_CHAR, &value, sizeof(value), &cbFetched);
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1),
+                     SQL_C_INTERVAL_DAY_TO_SECOND,
+                     &interval_value, sizeof(interval_value), NULL);
     Py_END_ALLOW_THREADS
-
-    /* There were more than 1024 characters of date data. This is a problem. */
-    if (ret == SQL_SUCCESS_WITH_INFO)
-        return RaiseErrorFromHandle("SQLGetDataInterval", cur->cnxn->hdbc, cur->hstmt);
 
     if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
-    if (cbFetched == SQL_NULL_DATA)
-        Py_RETURN_NONE;
-
-    const unsigned int EXPECTED_NUM_TOKENS = 5;
-
-    std::vector<long int> time_numbers = read_time_token_list(value);
-    if (time_numbers.size() != EXPECTED_NUM_TOKENS)
-        Py_RETURN_NONE;
-
-    long int days    = time_numbers[0];
-    long int hours   = time_numbers[1];
-    long int mins    = time_numbers[2];
-    long int seconds = time_numbers[3];
-    long int micros  = time_numbers[4];
-
-    long int hours_in_seconds = hours * 60 * 60;
-    long int mins_in_seconds  = mins * 60;
-
-    return PyDelta_FromDSU(days,
-                           hours_in_seconds + mins_in_seconds + seconds,
-                           micros);
+    long int days    = 0;
+    long int seconds = 0;
+    long int micros  = 0;
+    const SQL_DAY_SECOND_STRUCT& day_second = interval_value.intval.day_second;
+    const SQL_YEAR_MONTH_STRUCT& year_month = interval_value.intval.year_month;
+    int sign = interval_value.interval_sign == SQL_TRUE ? -1 : 1;
+#ifdef _MSC_VER
+#pragma warning(disable : 4365)
+#endif
+    switch (interval_value.interval_type)
+    {
+    case SQL_IS_DAY_TO_SECOND:
+        days = day_second.day * sign;
+        seconds = (day_second.hour * 3600 + day_second.minute * 60 +
+                   day_second.second);
+        micros = day_second.fraction;
+        break;
+    case SQL_IS_DAY:
+        days = day_second.day * sign;
+        break;
+    case SQL_IS_HOUR:
+        seconds = day_second.hour * 3600 * sign;
+        break;
+    case SQL_IS_MINUTE:
+        seconds = day_second.minute * 60 * sign;
+        break;
+    case SQL_IS_SECOND:
+        seconds = day_second.second * sign;
+        micros = day_second.fraction;
+        break;
+    case SQL_IS_DAY_TO_HOUR:
+        days = day_second.day * sign;
+        seconds = day_second.hour * 3600;
+        break;
+    case SQL_IS_DAY_TO_MINUTE:
+        days = day_second.day * sign;
+        seconds = (day_second.hour * 3600 + day_second.minute * 60);
+        break;
+    case SQL_IS_HOUR_TO_MINUTE:
+        seconds = (day_second.hour * 3600 * sign + day_second.minute * 60);
+        break;
+    case SQL_IS_HOUR_TO_SECOND:
+        seconds = (day_second.hour * 3600 * sign + day_second.minute * 60 +
+                   day_second.second);
+        micros = day_second.fraction;
+        break;
+    case SQL_IS_MINUTE_TO_SECOND:
+        seconds = (day_second.minute * 60 * sign + day_second.second);
+        micros = day_second.fraction;
+        break;
+    case SQL_IS_YEAR_TO_MONTH:
+        // TODO: Represent YEAR-MONTH intervals.  Define a simple
+        // yearmonth_timedelta type here, from which caller can construct a
+        // python-dateutil.relativedelta, mx.DateTime.RelativeDateTime, or
+        // something else.
+        //
+        // This is a temporary hack.
+        days = year_month.year * 365 * sign + year_month.month * 30;
+        break;
+    case SQL_IS_YEAR:
+        days = year_month.year * 365 * sign;
+        break;
+    case SQL_IS_MONTH:
+        days = year_month.month * 30 * sign;
+        break;
+    default:
+        return RaiseErrorV(NULL, IntegrityError,
+                           "SQLINTERVAL type not recognized: %d",
+                           interval_value.interval_type);
+    }
+#ifdef _MSC_VER
+#pragma warning(default : 4365)
+#endif
+    if (seconds < 0) {
+        if (days != 0) {
+            return RaiseErrorV(NULL, InternalError, "Corrupt signed INTERVAL: "
+                               "days=%d, seconds=%d", days, seconds);
+        }
+        days = -1;
+        seconds = 24 * 60 * 60 - seconds;
+    }
+    return PyDelta_FromDSU(days, seconds, micros);
 }
 
 
@@ -836,18 +865,18 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
 
     case SQL_INTERVAL_YEAR:
     case SQL_INTERVAL_MONTH:
+    case SQL_INTERVAL_YEAR_TO_MONTH:
     case SQL_INTERVAL_DAY:
     case SQL_INTERVAL_HOUR:
     case SQL_INTERVAL_MINUTE:
     case SQL_INTERVAL_SECOND:
-    case SQL_INTERVAL_YEAR_TO_MONTH:
     case SQL_INTERVAL_DAY_TO_HOUR:
     case SQL_INTERVAL_DAY_TO_MINUTE:
     case SQL_INTERVAL_DAY_TO_SECOND:
     case SQL_INTERVAL_HOUR_TO_MINUTE:
     case SQL_INTERVAL_HOUR_TO_SECOND:
     case SQL_INTERVAL_MINUTE_TO_SECOND:
-        return GetDataInterval(cur, iCol);
+      return GetDataTimeInterval(cur, iCol);
 
     case SQL_SS_TIME2:
         return GetSqlServerTime(cur, iCol);
