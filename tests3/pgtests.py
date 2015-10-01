@@ -377,6 +377,29 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(result, "(1,)")
 
 
+    def test_autocommit(self):
+        self.assertEqual(self.cnxn.autocommit, False)
+        othercnxn = pyodbc.connect(self.connection_string, autocommit=True)
+        self.assertEqual(othercnxn.autocommit, True)
+        othercnxn.autocommit = False
+        self.assertEqual(othercnxn.autocommit, False)
+
+    def test_cnxn_set_attr_before(self):
+        # I don't have a getattr right now since I don't have a table telling me what kind of
+        # value to expect.  For now just make sure it doesn't crash.
+        # From the unixODBC sqlext.h header file.
+        SQL_ATTR_PACKET_SIZE = 112
+        othercnxn = pyodbc.connect(self.connection_string, attrs_before={ SQL_ATTR_PACKET_SIZE : 1024 * 32 })
+
+    def test_cnxn_set_attr(self):
+        # I don't have a getattr right now since I don't have a table telling me what kind of
+        # value to expect.  For now just make sure it doesn't crash.
+        # From the unixODBC sqlext.h header file.
+        SQL_ATTR_ACCESS_MODE = 101
+        SQL_MODE_READ_ONLY   = 1
+        self.cnxn.set_attr(SQL_ATTR_ACCESS_MODE, SQL_MODE_READ_ONLY)
+
+
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage="usage: %prog [options] connection_string")
