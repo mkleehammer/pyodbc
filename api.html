@@ -123,8 +123,11 @@ driver:</p>
     <tr><td>ansi</td><td>If True, the driver does not support Unicode and SQLDriverConnectA should be used   False</td></tr>
     <tr><td>unicode_results</td><td>    If True, strings returned in result sets are always Unicode (2.1.5+)    False</td></tr>
     <tr><td>readonly</td><td>If True, the connection is set to readonly  False</td></tr>
+    <tr><td>attrs_before</td><td>A dictionary of connection attributes to set before connecting.</td></tr>
   </tbody>
 </table>
+
+<h4>ansi</h4>
 
 <p>The ansi keyword should only be used to work around driver bugs. pyodbc will
 determine if the Unicode connection function (SQLDriverConnectW) exists and
@@ -134,6 +137,20 @@ other SQLSTATE is turned into an exception. Setting ansi to true skips the
 Unicode attempt and only connects using the ANSI version. This is useful for
 drivers that return the wrong SQLSTATE (or if pyodbc is out of date and should
 support other SQLSTATEs).</p>
+
+<h4>attrs_before</h4>
+
+<p>The <code>attrs_before</code> keyword is an optional dictionary of connection attributes.
+  These will be set on the connection via SQLSetConnectAttr before a connection is made.</p>
+
+<p>The dictionary keys must be the integer constant defined by ODBC or the driver.  Only
+  integer values are supported at this time.  Below is an example that sets the
+  SQL_ATTR_PACKET_SIZE connection attribute to 32K.</p>
+
+<pre>
+SQL_ATTR_PACKET_SIZE = 112
+cnxn = connect(cstring, attrs_before={ SQL_ATTR_PACKET_SIZE : 1024 * 32 })
+</pre>
 
 <!--
 <p>For help on connection strings, see <a href="https://code.google.com/p/pyodbc/wiki/ConnectionStrings">ConnectionStrings</a></p>
@@ -436,6 +453,22 @@ statement needs to be executed.
 
   <p>Remove all output converter functions added by <a
   href="connection_add_output_converter">add_output_converter</a>.</p>
+
+  <h2>set_attr</h2>
+
+  <pre>set_attr(attr_id, value)</pre>
+
+  <p>Calls SQLSetConnectAttr with the given values.</p>
+
+  <dl>
+    <dt>attr_id</dt>
+    <dd>The attribute ID (integer) to set.  These are ODBC or driver constants.  The ODBC
+      constants can usually be found in the sql.h or sqlext.h file.</dd>
+
+    <dt>value</dt>
+    <dd>The connection attribute value to set.  At this time only integer values are supported.</dd>
+  </dl>
+
 
       <h1 id="cursor">Cursor</h1>
 
