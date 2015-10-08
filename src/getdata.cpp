@@ -702,49 +702,48 @@ static PyObject* GetDataTimeInterval(Cursor* cur, Py_ssize_t iCol)
     long int micros  = 0;
     const SQL_DAY_SECOND_STRUCT& day_second = interval_value.intval.day_second;
     const SQL_YEAR_MONTH_STRUCT& year_month = interval_value.intval.year_month;
-    int sign = interval_value.interval_sign == SQL_TRUE ? -1 : 1;
 #ifdef _MSC_VER
 #pragma warning(disable : 4365)
 #endif
     switch (interval_value.interval_type)
     {
     case SQL_IS_DAY_TO_SECOND:
-        days = day_second.day * sign;
+        days = day_second.day;
         seconds = (day_second.hour * 3600 + day_second.minute * 60 +
                    day_second.second);
         micros = day_second.fraction;
         break;
     case SQL_IS_DAY:
-        days = day_second.day * sign;
+        days = day_second.day;
         break;
     case SQL_IS_HOUR:
-        seconds = day_second.hour * 3600 * sign;
+        seconds = day_second.hour * 3600;
         break;
     case SQL_IS_MINUTE:
-        seconds = day_second.minute * 60 * sign;
+        seconds = day_second.minute * 60;
         break;
     case SQL_IS_SECOND:
-        seconds = day_second.second * sign;
+        seconds = day_second.second;
         micros = day_second.fraction;
         break;
     case SQL_IS_DAY_TO_HOUR:
-        days = day_second.day * sign;
+        days = day_second.day;
         seconds = day_second.hour * 3600;
         break;
     case SQL_IS_DAY_TO_MINUTE:
-        days = day_second.day * sign;
+        days = day_second.day;
         seconds = (day_second.hour * 3600 + day_second.minute * 60);
         break;
     case SQL_IS_HOUR_TO_MINUTE:
-        seconds = (day_second.hour * 3600 * sign + day_second.minute * 60);
+        seconds = (day_second.hour * 3600 + day_second.minute * 60);
         break;
     case SQL_IS_HOUR_TO_SECOND:
-        seconds = (day_second.hour * 3600 * sign + day_second.minute * 60 +
+        seconds = (day_second.hour * 3600 + day_second.minute * 60 +
                    day_second.second);
         micros = day_second.fraction;
         break;
     case SQL_IS_MINUTE_TO_SECOND:
-        seconds = (day_second.minute * 60 * sign + day_second.second);
+        seconds = (day_second.minute * 60 + day_second.second);
         micros = day_second.fraction;
         break;
     case SQL_IS_YEAR_TO_MONTH:
@@ -754,13 +753,13 @@ static PyObject* GetDataTimeInterval(Cursor* cur, Py_ssize_t iCol)
         // something else.
         //
         // This is a temporary hack.
-        days = year_month.year * 365 * sign + year_month.month * 30;
+        days = year_month.year * 365 + year_month.month * 30;
         break;
     case SQL_IS_YEAR:
-        days = year_month.year * 365 * sign;
+        days = year_month.year * 365;
         break;
     case SQL_IS_MONTH:
-        days = year_month.month * 30 * sign;
+        days = year_month.month * 30;
         break;
     default:
         return RaiseErrorV(NULL, IntegrityError,
@@ -770,15 +769,8 @@ static PyObject* GetDataTimeInterval(Cursor* cur, Py_ssize_t iCol)
 #ifdef _MSC_VER
 #pragma warning(default : 4365)
 #endif
-    if (seconds < 0) {
-        if (days != 0) {
-            return RaiseErrorV(NULL, InternalError, "Corrupt signed INTERVAL: "
-                               "days=%d, seconds=%d", days, seconds);
-        }
-        days = -1;
-        seconds = 24 * 60 * 60 - seconds;
-    }
-    return PyDelta_FromDSU(days, seconds, micros);
+    int sign = interval_value.interval_sign == SQL_TRUE ? -1 : 1;
+    return PyDelta_FromDSU(days * sign, seconds * sign, micros * sign);
 }
 
 
