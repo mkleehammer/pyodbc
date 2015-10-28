@@ -78,6 +78,7 @@ PyObject* ProgrammingError;
 PyObject* IntegrityError;
 PyObject* DataError;
 PyObject* NotSupportedError;
+PyObject* ArrayBindingNotSupportedError;
 
 struct ExcInfo
 {
@@ -122,7 +123,9 @@ static ExcInfo aExcInfos[] = {
     MAKEEXCINFO(NotSupportedError, DatabaseError,
                 "Exception raised in case a method or database API was used which is not\n"
                 "supported by the database, e.g. requesting a .rollback() on a connection that\n"
-                "does not support transaction or has transactions turned off.")
+                "does not support transaction or has transactions turned off."),
+    MAKEEXCINFO(ArrayBindingNotSupportedError, DatabaseError,
+                "Exception raised when database does not support array binding.")
 };
 
 
@@ -286,6 +289,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     int fAnsi = 0;              // force ansi
     int fUnicodeResults = 0;
     int fReadOnly = 0;
+    int fParameterArrayBinding = 0;
     long timeout = 0;
 
     Object attrs_before; // Optional connect attrs set before connecting
@@ -360,6 +364,11 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                 fReadOnly = PyObject_IsTrue(value);
                 continue;
             }
+            if (Text_EqualsI(key, "parameterarraybinding"))
+            {
+                fParameterArrayBinding = PyObject_IsTrue(value);
+                continue;
+            }
             if (Text_EqualsI(key, "attrs_before"))
             {
                 attrs_before = _CheckAttrsDict(value);
@@ -413,7 +422,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     }
 
     return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, fUnicodeResults != 0, timeout,
-                                     fReadOnly != 0, attrs_before);
+                                     fReadOnly != 0, fParameterArrayBinding != 0, attrs_before);
 }
 
 static PyObject* mod_datasources(PyObject* self)
@@ -544,6 +553,14 @@ static char connect_doc[] =
     "    drivers that return the wrong SQLSTATE (or if pyodbc is out of date and\n"
     "    should support other SQLSTATEs).\n"
     "   \n"
+    "  parameterarraybinding\n"
+    "    If False or zero, the default, executemany does not attempt to use ODBC\n"
+    "    parameter array binding. If True or non-zero, executemany will attempt to\n"
+    "    use parameter array binding. This is necessary for drivers that do not\n"
+    "    handle parameter array binding correctly. Disabling parameter array binding\n"
+    "    causes executemany to behave as it did in earlier versions of PyODBC,\n"
+    "    as if execute was called multiple times.\n"
+    "   \n"
     "  timeout\n"
     "    An integer login timeout in seconds, used to set the SQL_ATTR_LOGIN_TIMEOUT\n"
     "    attribute of the connection.  The default is 0 which means the database's\n"
@@ -657,6 +674,7 @@ static void ErrorInit()
     IntegrityError = 0;
     DataError = 0;
     NotSupportedError = 0;
+    ArrayBindingNotSupportedError = 0;
     decimal_type = 0;
 }
 
@@ -676,6 +694,7 @@ static void ErrorCleanup()
     Py_XDECREF(IntegrityError);
     Py_XDECREF(DataError);
     Py_XDECREF(NotSupportedError);
+    Py_XDECREF(ArrayBindingNotSupportedError);
     Py_XDECREF(decimal_type);
 }
 

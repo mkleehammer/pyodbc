@@ -71,6 +71,8 @@ struct Connection
     int conv_count;             // how many items are in conv_types and conv_funcs.
     SQLSMALLINT* conv_types;            // array of SQL_TYPEs to convert
     PyObject** conv_funcs;      // array of Python functions
+
+    bool useParameterArrayBinding;  // allow executemany to use parameter array binding
 };
 
 #define Connection_Check(op) PyObject_TypeCheck(op, &ConnectionType)
@@ -81,7 +83,7 @@ struct Connection
  * exception is set and zero is returned.
  */
 PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, bool fUnicodeResults, long timeout, bool fReadOnly,
-                         PyObject* attrs_before);
+                         bool fParameterArrayBinding, PyObject* attrs_before);
 
 /*
  * Used by the Cursor to implement commit and rollback.

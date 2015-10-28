@@ -141,7 +141,7 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
 
 
 PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, bool fUnicodeResults, long timeout, bool fReadOnly,
-                         PyObject* attrs_before)
+                         bool fParameterArrayBinding, PyObject* attrs_before)
 {
     // pConnectString
     //   A string or unicode object.  (This must be checked by the caller.)
@@ -178,9 +178,9 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
             int ikey = 0, ivalue = 0;
 #if PY_MAJOR_VERSION < 3
             if (PyInt_Check(key))
-                ikey = PyInt_AsInt(key);
+                ikey = (int)PyInt_AsLong(key);
             if (PyInt_Check(value))
-                ivalue = PyInt_AsInt(value);
+                ivalue = (int)PyInt_AsLong(value);
 #endif
             if (PyLong_Check(key))
                 ikey = (int)PyLong_AsLong(key);
@@ -243,6 +243,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->conv_count      = 0;
     cnxn->conv_types      = 0;
     cnxn->conv_funcs      = 0;
+    cnxn->useParameterArrayBinding = fParameterArrayBinding;
 
     //
     // Initialize autocommit mode.

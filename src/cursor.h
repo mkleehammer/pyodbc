@@ -36,45 +36,37 @@ struct ColumnInfo
 
 struct ParamInfo
 {
+    // Number of parameter sets for array binding. This will be set to 1 for non-array binding.
+    Py_ssize_t  ParamSetSize;
+
     // The following correspond to the SQLBindParameter parameters.
     SQLSMALLINT ValueType;
     SQLSMALLINT ParameterType;
     SQLULEN     ColumnSize;
     SQLSMALLINT DecimalDigits;
+    SQLPOINTER  ParameterValuePtr;
+    SQLLEN      BufferLength;
+    SQLLEN*     StrLen_or_IndPtr;
 
-    // The value pointer that will be bound.  If `alloc` is true, this was allocated with malloc and must be freed.
-    // Otherwise it is zero or points into memory owned by the original Python parameter.
-    SQLPOINTER ParameterValuePtr;
+    // Python objects this parameter is bound to.
+    PyObject**  ParameterObjects;
 
-    SQLLEN BufferLength;
-    SQLLEN StrLen_or_Ind;
+    // Default buffers. For non-array binding of many values, these buffers provide enough storage to avoid extra
+    // allocations. Pointer values above are initialized to point at these buffers.
+    SQLCHAR     ParameterValueBuffer[64];
+    SQLLEN      StrLen_or_IndBuffer[1];
+    PyObject*   ParameterObjectBuffer[1];
 
-    // If true, the memory in ParameterValuePtr was allocated via malloc and must be freed.
-    bool allocated;
-
-    // The python object containing the parameter value.  A reference to this object should be held until we have
-    // finished using memory owned by it.
-    PyObject* pParam;
-
-    // Optional data.  If used, ParameterValuePtr will point into this.
-    union
-    {
-        unsigned char ch;
-        long l;
-        INT64 i64;
-        double dbl;
-        TIMESTAMP_STRUCT timestamp;
-        DATE_STRUCT date;
-        TIME_STRUCT time;
-    } Data;
+    // Flag to indicate that ParameterValuePtr points into data owned by the Python object.
+    bool        IsParameterValueBorrowed;
 };
 
 struct Cursor
 {
     PyObject_HEAD
 
-    // The Connection object (which is a PyObject) that created this cursor.
-    Connection* cnxn;
+        // The Connection object (which is a PyObject) that created this cursor.
+        Connection* cnxn;
 
     // Set to SQL_NULL_HANDLE when the cursor is closed.
     HSTMT hstmt;
@@ -82,7 +74,7 @@ struct Cursor
     //
     // SQL Parameters
     //
-    
+
     // If non-zero, a pointer to the previously prepared SQL string, allowing us to skip the prepare and gathering of
     // parameter data.
     PyObject* pPreparedSQL;
@@ -102,6 +94,7 @@ struct Cursor
     // Even if the same SQL statement is executed twice, the parameter bindings are redone from scratch since we try to
     // bind into the Python objects directly.
     ParamInfo* paramInfos;
+    Py_ssize_t paramSetSize;
 
     //
     // Result Information
