@@ -27,6 +27,10 @@ struct CnxnInfo
     bool supports_describeparam;
     int datetime_precision;
 
+    // Do we need to use SQL_LEN_DATA_AT_EXEC?  Some drivers (e.g. FreeTDS 0.91) have problems with long values, so
+    // we'll use SQL_DATA_AT_EXEC when possible.  If this is true, however, we'll need to pass the length.
+    bool need_long_data_len;
+
     // These are from SQLGetTypeInfo.column_size, so the char ones are in characters, not bytes.
     int varchar_maxlength;
     int wvarchar_maxlength;

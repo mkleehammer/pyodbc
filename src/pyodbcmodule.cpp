@@ -183,11 +183,16 @@ static bool import_types()
     if (!Params_init())
         return false;
 
-    PyObject* decimalmod = PyImport_ImportModule("decimal");
+    PyObject* decimalmod = PyImport_ImportModule("cdecimal");
     if (!decimalmod)
     {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to import decimal");
-        return false;
+        // Clear the error from the failed import of cdecimal.
+        PyErr_Clear();
+        decimalmod = PyImport_ImportModule("decimal");
+        if (!decimalmod) {
+            PyErr_SetString(PyExc_RuntimeError, "Unable to import cdecimal or decimal");
+            return false;
+        }
     }
 
     decimal_type = PyObject_GetAttrString(decimalmod, "Decimal");
@@ -230,6 +235,34 @@ static bool AllocateEnv()
     return true;
 }
 
+static PyObject* _CheckAttrsDict(PyObject* attrs)
+{
+    // The attrs_before dictionary must be keys to integer values.  If valid and non-empty,
+    // increment the reference count and return the pointer to indicate the calling code should
+    // keep it.  If empty, just return zero which indicates to the calling code it should not
+    // keep the value.  If an error occurs, set an error.  The calling code must look for this
+    // in the zero case.
+
+    // We already know this is a dictionary.
+
+    if (PyDict_Size(attrs) == 0)
+        return 0;
+
+    Py_ssize_t pos = 0;
+    PyObject* key = 0;
+    PyObject* value = 0;
+    while (PyDict_Next(attrs, &pos, &key, &value))
+    {
+        if (!IntOrLong_Check(key))
+            return PyErr_Format(PyExc_TypeError, "Attribute dictionary keys must be integers");
+        if (!IntOrLong_Check(value))
+            return PyErr_Format(PyExc_TypeError, "Attribute dictionary attrs must be integers");
+    }
+    Py_INCREF(attrs);
+    return attrs;
+}
+
+
 // Map DB API recommended keywords to ODBC keywords.
 
 struct keywordmap
@@ -258,6 +291,8 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     int fReadOnly = 0;
     int fParameterArrayBinding = 0;
     long timeout = 0;
+
+    Object attrs_before; // Optional connect attrs set before connecting
 
     Py_ssize_t size = args ? PyTuple_Size(args) : 0;
 
@@ -292,7 +327,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
         while (PyDict_Next(kwargs, &pos, &key, &value))
         {
             if (!Text_Check(key))
-                return PyErr_Format(PyExc_TypeError, "Dictionary items passed to connect must be strings");
+                return PyErr_Format(PyExc_TypeError, "Dictionary keys passed to connect must be strings");
 
             // // Note: key and value are *borrowed*.
             //
@@ -310,11 +345,13 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                 fAnsi = PyObject_IsTrue(value);
                 continue;
             }
+#if PY_MAJOR_VERSION < 3
             if (Text_EqualsI(key, "unicode_results"))
             {
                 fUnicodeResults = PyObject_IsTrue(value);
                 continue;
             }
+#endif
             if (Text_EqualsI(key, "timeout"))
             {
                 timeout = PyInt_AsLong(value);
@@ -332,7 +369,14 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                 fParameterArrayBinding = PyObject_IsTrue(value);
                 continue;
             }
-            
+            if (Text_EqualsI(key, "attrs_before"))
+            {
+                attrs_before = _CheckAttrsDict(value);
+                if (PyErr_Occurred())
+                    return 0;
+                continue;
+            }
+
             // Map DB API recommended names to ODBC names (e.g. user --> uid).
 
             for (size_t i = 0; i < _countof(keywordmaps); i++)
@@ -377,9 +421,9 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
             return 0;
     }
 
-    return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, fUnicodeResults != 0, timeout, fReadOnly != 0, fParameterArrayBinding != 0);
+    return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, fUnicodeResults != 0, timeout,
+                                     fParameterArrayBinding != 0, fReadOnly != 0, attrs_before);
 }
-
 
 static PyObject* mod_datasources(PyObject* self)
 {

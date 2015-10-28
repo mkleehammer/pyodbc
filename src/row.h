@@ -19,7 +19,7 @@ struct Row;
 /*
  * Used to make a new row from an array of column values.
  */
-Row* Row_New(PyObject* description, PyObject* map_name_to_index, Py_ssize_t cValues, PyObject** apValues);
+Row* Row_InternalNew(PyObject* description, PyObject* map_name_to_index, Py_ssize_t cValues, PyObject** apValues);
 
 /*
  * Dereferences each object in apValues and frees apValue.  This is the internal format used by rows.

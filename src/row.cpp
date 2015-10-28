@@ -59,8 +59,86 @@ static void Row_dealloc(PyObject* o)
     PyObject_Del(self);
 }
 
+static PyObject* Row_getstate(PyObject* self)
+{
+    // Returns a tuple containing the saved state.  We don't really support empty rows, but unfortunately they can be
+    // created now by the new constructor which was necessary for implementing pickling.  In that case (everything is
+    // zero), an empty tuple is returned.
 
-Row* Row_New(PyObject* description, PyObject* map_name_to_index, Py_ssize_t cValues, PyObject** apValues)
+    // Not exposed.
+
+    Row* row = (Row*)self;
+
+    if (row->description == 0)
+        return PyTuple_New(0);
+
+    Tuple state(PyTuple_New(2 + row->cValues));
+    if (!state.IsValid())
+        return 0;
+
+    state[0] = row->description;
+    state[1] = row->map_name_to_index;
+    for (int i = 0; i < row->cValues; i++)
+        state[i+2] = row->apValues[i];
+
+    for (int i = 0; i < 2 + row->cValues; i++)
+        Py_XINCREF(state[i]);
+
+    return state.Detach();
+}
+
+
+static PyObject* new_check(PyObject* args)
+{
+    // We don't support a normal constructor, so only allow this for unpickling.  There should be a single arg that was
+    // returned by Row_reduce.  Make sure the sizes match.  The desc and map should have one entry per column, which
+    // should equal the number of remaining items.
+
+    if (PyTuple_GET_SIZE(args) < 3)
+        return 0;
+
+    PyObject* desc = PyTuple_GET_ITEM(args, 0);
+    PyObject* map  = PyTuple_GET_ITEM(args, 1);
+
+    if (!PyTuple_CheckExact(desc) || !PyDict_CheckExact(map))
+        return 0;
+
+    Py_ssize_t cols = PyTuple_GET_SIZE(desc);
+
+    if (PyDict_Size(map) != cols || PyTuple_GET_SIZE(args) - 2 != cols)
+        return 0;
+
+    PyObject** apValues = (PyObject**)pyodbc_malloc(sizeof(PyObject*) * cols);
+    if (!apValues)
+        return 0;
+
+    for (int i = 0; i < cols; i++)
+    {
+        apValues[i] = PyTuple_GET_ITEM(args, i+2);
+        Py_INCREF(apValues[i]);
+    }
+
+    // Row_Internal will incref desc and map.
+
+    PyObject* self = (PyObject*)Row_InternalNew(desc, map, cols, apValues);
+    if (!self)
+        pyodbc_free(apValues);
+
+    return self;
+}
+
+static PyObject* Row_new(PyTypeObject* type, PyObject* args, PyObject* kwargs)
+{
+    UNUSED(kwargs);
+
+    PyObject* row = new_check(args);
+    if (row == 0)
+        PyErr_SetString(PyExc_TypeError, "cannot create 'pyodbc.Row' instances");
+    return row;
+
+}
+
+Row* Row_InternalNew(PyObject* description, PyObject* map_name_to_index, Py_ssize_t cValues, PyObject** apValues)
 {
     // Called by other modules to create rows.  Takes ownership of apValues.
 
@@ -374,6 +452,23 @@ static PyMemberDef Row_members[] =
     { 0 }
 };
 
+static PyObject* Row_reduce(PyObject* self, PyObject* args)
+{
+    PyObject* state = Row_getstate(self);
+    if (!state)
+        return 0;
+
+    return Py_BuildValue("ON", Py_TYPE(self), state);
+}
+
+
+static PyMethodDef Row_methods[] =
+{
+    { "__reduce__", (PyCFunction)Row_reduce, METH_NOARGS, 0 },
+    { 0, 0, 0, 0 }
+};
+
+
 static char row_doc[] =
     "Row objects are sequence objects that hold query results.\n"
     "\n"
@@ -428,22 +523,22 @@ PyTypeObject RowType =
     0,                                                      // tp_weaklistoffset
     0,                                                      // tp_iter
     0,                                                      // tp_iternext
-    0,                                                      // tp_methods
+    Row_methods,                                            // tp_methods
     Row_members,                                            // tp_members
-    // 0,                                                      // tp_getset
-    // 0,                                                      // tp_base
-    // 0,                                                      // tp_dict
-    // 0,                                                      // tp_descr_get
-    // 0,                                                      // tp_descr_set
-    // 0,                                                      // tp_dictoffset
-    // 0,                                                      // tp_init
-    // 0,                                                      // tp_alloc
-    // 0,                                                      // tp_new
-    // 0,                                                      // tp_free
-    // 0,                                                      // tp_is_gc
-    // 0,                                                      // tp_bases
-    // 0,                                                      // tp_mro
-    // 0,                                                      // tp_cache
-    // 0,                                                      // tp_subclasses
-    // 0,                                                      // tp_weaklist
+    0,                                                      // tp_getset
+    0,                                                      // tp_base
+    0,                                                      // tp_dict
+    0,                                                      // tp_descr_get
+    0,                                                      // tp_descr_set
+    0,                                                      // tp_dictoffset
+    0,                                                      // tp_init
+    0,                                                      // tp_alloc
+    Row_new,                                                // tp_new
+    0,                                                      // tp_free
+    0,                                                      // tp_is_gc
+    0,                                                      // tp_bases
+    0,                                                      // tp_mro
+    0,                                                      // tp_cache
+    0,                                                      // tp_subclasses
+    0,                                                      // tp_weaklist
 };

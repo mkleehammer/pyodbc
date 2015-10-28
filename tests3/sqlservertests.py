@@ -170,6 +170,12 @@ class SqlServerTestCase(unittest.TestCase):
         for i, row in enumerate(self.cursor):
             self.assertEqual(i + 2, row.i)
 
+    def test_nextset_with_raiserror(self):
+        self.cursor.execute("select i = 1; RAISERROR('c', 16, 1);")
+        row = next(self.cursor)
+        self.assertEqual(1, row.i)
+        self.assertRaises(pyodbc.ProgrammingError, self.cursor.nextset)
+    
     def test_fixed_unicode(self):
         value = "t\xebsting"
         self.cursor.execute("create table t1(s nchar(7))")
@@ -806,6 +812,18 @@ class SqlServerTestCase(unittest.TestCase):
     #
     # misc
     #
+
+    def table_with_spaces(self):
+        "Ensure we can select using [x z] syntax"
+
+        try:
+            self.cursor.execute("create table [test one](int n)")
+            self.cursor.execute("insert into [test one] values(1)")
+            self.cursor.execute("select * from [test one]")
+            v = self.cursor.fetchone()[0]
+            self.assertEquals(v, 1)
+        finally:
+            self.cnxn.rollback()
 
     def test_lower_case(self):
         "Ensure pyodbc.lowercase forces returned column names to lowercase."

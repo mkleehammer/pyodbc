@@ -1,7 +1,9 @@
 include src/*.h
 include src/*.cpp
-include tests/*
-include README.rst
+include tests2/*
+include tests3/*
+include README.*
+include LICENSE.txt
 
 # Include this file, needed for bdist_rpm
 include MANIFEST.in

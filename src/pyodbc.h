@@ -45,6 +45,10 @@ typedef unsigned long long UINT64;
 #include <unicodeobject.h>
 #include <structmember.h>
 
+#ifdef __CYGWIN__
+#include <windows.h>
+#endif
+
 #include <sql.h>
 #include <sqlext.h>
 
@@ -76,7 +80,9 @@ inline void UNUSED(...) { }
 #include <stdarg.h>
 
 #if defined(__SUNPRO_CC) || defined(__SUNPRO_C) || (defined(__GNUC__) && !defined(__MINGW32__))
+#ifndef __FreeBSD__
 #include <alloca.h>
+#endif
 #define CDECL cdecl
 #define min(X,Y) ((X) < (Y) ? (X) : (Y))
 #define max(X,Y) ((X) > (Y) ? (X) : (Y))

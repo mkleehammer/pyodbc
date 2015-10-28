@@ -41,10 +41,11 @@ class PGTestCase(unittest.TestCase):
     SMALL_STRING = _generate_test_string(SMALL_READ)
     LARGE_STRING = _generate_test_string(LARGE_READ)
 
-    def __init__(self, connection_string, ansi, method_name):
+    def __init__(self, connection_string, ansi, unicode_results, method_name):
         unittest.TestCase.__init__(self, method_name)
         self.connection_string = connection_string
-        self.ansi = ansi
+        self.ansi    = ansi
+        self.unicode = unicode_results
 
     def setUp(self):
         self.cnxn   = pyodbc.connect(self.connection_string, ansi=self.ansi)
@@ -56,7 +57,7 @@ class PGTestCase(unittest.TestCase):
                 self.cnxn.commit()
             except:
                 pass
-        
+
         self.cnxn.rollback()
 
 
@@ -110,13 +111,17 @@ class PGTestCase(unittest.TestCase):
 
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(?)", value)
-        v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), type(value))
+        result = self.cursor.execute("select * from t1").fetchone()[0]
+
+        if self.unicode and value != None:
+            self.assertEqual(type(result), unicode)
+        else:
+            self.assertEqual(type(result), type(value))
 
         if value is not None:
-            self.assertEqual(len(v), len(value))
+            self.assertEqual(len(result), len(value))
 
-        self.assertEqual(v, value)
+        self.assertEqual(result, value)
 
     #
     # varchar
@@ -187,7 +192,7 @@ class PGTestCase(unittest.TestCase):
 
     def _exec(self):
         self.cursor.execute(self.sql)
-        
+
     def test_close_cnxn(self):
         """Make sure using a Cursor after closing its connection doesn't crash."""
 
@@ -196,7 +201,7 @@ class PGTestCase(unittest.TestCase):
         self.cursor.execute("select * from t1")
 
         self.cnxn.close()
-        
+
         # Now that the connection is closed, we expect an exception.  (If the code attempts to use
         # the HSTMT, we'll get an access violation instead.)
         self.sql = "select * from t1"
@@ -211,7 +216,7 @@ class PGTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s char(7))")
         self.cursor.execute("insert into t1 values(?)", "testing")
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), str)
+        self.assertEqual(type(v), self.unicode and unicode or str)
         self.assertEqual(len(v), len(value)) # If we alloc'd wrong, the test below might work because of an embedded NULL
         self.assertEqual(v, value)
 
@@ -258,13 +263,13 @@ class PGTestCase(unittest.TestCase):
     # PostgreSQL driver fails here?
     # def test_rowcount_reset(self):
     #     "Ensure rowcount is reset to -1"
-    # 
+    #
     #     self.cursor.execute("create table t1(i int)")
     #     count = 4
     #     for i in range(count):
     #         self.cursor.execute("insert into t1 values (?)", i)
     #     self.assertEquals(self.cursor.rowcount, 1)
-    # 
+    #
     #     self.cursor.execute("create table t2(i int)")
     #     self.assertEquals(self.cursor.rowcount, -1)
 
@@ -286,7 +291,7 @@ class PGTestCase(unittest.TestCase):
 
         # Put it back so other tests don't fail.
         pyodbc.lowercase = False
-        
+
     def test_row_description(self):
         """
         Ensure Cursor.description is accessible as Row.cursor_description.
@@ -298,7 +303,7 @@ class PGTestCase(unittest.TestCase):
 
         row = self.cursor.execute("select * from t1").fetchone()
         self.assertEquals(self.cursor.description, row.cursor_description)
-        
+
 
     def test_executemany(self):
         self.cursor.execute("create table t1(a int, b varchar(10))")
@@ -331,10 +336,34 @@ class PGTestCase(unittest.TestCase):
         params = [ (1, 'good'),
                    ('error', 'not an int'),
                    (3, 'good') ]
-        
+
         self.failUnlessRaises(pyodbc.Error, self.cursor.executemany, "insert into t1(a, b) value (?, ?)", params)
 
-        
+
+    def test_executemany_generator(self):
+        self.cursor.execute("create table t1(a int)")
+
+        self.cursor.executemany("insert into t1(a) values (?)", ((i,) for i in range(4)))
+
+        row = self.cursor.execute("select min(a) mina, max(a) maxa from t1").fetchone()
+
+        self.assertEqual(row.mina, 0)
+        self.assertEqual(row.maxa, 3)
+
+
+    def test_executemany_iterator(self):
+        self.cursor.execute("create table t1(a int)")
+
+        values = [ (i,) for i in range(4) ]
+
+        self.cursor.executemany("insert into t1(a) values (?)", iter(values))
+
+        row = self.cursor.execute("select min(a) mina, max(a) maxa from t1").fetchone()
+
+        self.assertEqual(row.mina, 0)
+        self.assertEqual(row.maxa, 3)
+
+
     def test_row_slicing(self):
         self.cursor.execute("create table t1(a int, b int, c int, d int)");
         self.cursor.execute("insert into t1 values(1,2,3,4)")
@@ -367,6 +396,29 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(result, "(1,)")
 
 
+    def test_pickling(self):
+        row = self.cursor.execute("select 1 a, 'two' b").fetchone()
+
+        import pickle
+        s = pickle.dumps(row)
+
+        other = pickle.loads(s)
+
+        self.assertEqual(row, other)
+
+
+    def test_int_limits(self):
+        values = [ (-sys.maxint - 1), -1, 0, 1, 3230392212, sys.maxint ]
+
+        self.cursor.execute("create table t1(a bigint)")
+
+        for value in values:
+            self.cursor.execute("delete from t1")
+            self.cursor.execute("insert into t1 values(?)", value)
+            v = self.cursor.execute("select a from t1").fetchone()[0]
+            self.assertEqual(v, value)
+
+
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage="usage: %prog [options] connection_string")
@@ -374,6 +426,7 @@ def main():
     parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
     parser.add_option("-t", "--test", help="Run only the named test")
     parser.add_option('-a', '--ansi', help='ANSI only', default=False, action='store_true')
+    parser.add_option('-u', '--unicode', help='Expect results in Unicode', default=False, action='store_true')
 
     (options, args) = parser.parse_args()
 
@@ -403,13 +456,13 @@ def main():
         if not options.test.startswith('test_'):
             options.test = 'test_%s' % (options.test)
 
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.test) ])
+        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.unicode, options.test) ])
     else:
         # Run all tests in the class
 
         methods = [ m for m in dir(PGTestCase) if m.startswith('test_') ]
         methods.sort()
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, m) for m in methods ])
+        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.unicode, m) for m in methods ])
 
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
     result = testRunner.run(s)

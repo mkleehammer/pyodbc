@@ -82,7 +82,7 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
     {
         SQLWChar connectString(pConnectString);
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLDriverConnectW(hdbc, 0, connectString, (SQLSMALLINT)connectString.size(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
+        ret = SQLDriverConnectW(hdbc, 0, connectString.get(), (SQLSMALLINT)connectString.size(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
         Py_END_ALLOW_THREADS
         if (SQL_SUCCEEDED(ret))
             return true;
@@ -140,7 +140,8 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
 }
 
 
-PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, bool fUnicodeResults, long timeout, bool fReadOnly, bool fParameterArrayBinding)
+PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, bool fUnicodeResults, long timeout, bool fReadOnly,
+                         bool fParameterArrayBinding, PyObject* attrs_before)
 {
     // pConnectString
     //   A string or unicode object.  (This must be checked by the caller.)
@@ -162,6 +163,44 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     Py_END_ALLOW_THREADS
     if (!SQL_SUCCEEDED(ret))
         return RaiseErrorFromHandle("SQLAllocHandle", SQL_NULL_HANDLE, SQL_NULL_HANDLE);
+
+    //
+    // Attributes that must be set before connecting.
+    //
+
+    if (attrs_before)
+    {
+        Py_ssize_t pos = 0;
+        PyObject* key = 0;
+        PyObject* value = 0;
+        while (PyDict_Next(attrs_before, &pos, &key, &value))
+        {
+            int ikey = 0, ivalue = 0;
+#if PY_MAJOR_VERSION < 3
+            if (PyInt_Check(key))
+                ikey = (int)PyInt_AsLong(key);
+            if (PyInt_Check(value))
+                ivalue = (int)PyInt_AsLong(value);
+#endif
+            if (PyLong_Check(key))
+                ikey = (int)PyLong_AsLong(key);
+            if (PyLong_Check(value))
+                ivalue = (int)PyLong_AsLong(value);
+
+            SQLRETURN ret;
+            Py_BEGIN_ALLOW_THREADS
+            ret = SQLSetConnectAttr(hdbc, ikey, (SQLPOINTER)ivalue, SQL_IS_INTEGER);
+            Py_END_ALLOW_THREADS
+            if (!SQL_SUCCEEDED(ret))
+            {
+                RaiseErrorFromHandle("SQLSetConnectAttr", hdbc, SQL_NULL_HANDLE);
+                Py_BEGIN_ALLOW_THREADS
+                SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
+                Py_END_ALLOW_THREADS
+                return 0;
+            }
+        }
+    }
 
     if (!Connect(pConnectString, hdbc, fAnsi, timeout))
     {
@@ -198,7 +237,9 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->nAutoCommit     = fAutoCommit ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
     cnxn->searchescape    = 0;
     cnxn->timeout         = 0;
+#if PY_MAJOR_VERSION < 3
     cnxn->unicode_results = fUnicodeResults;
+#endif
     cnxn->conv_count      = 0;
     cnxn->conv_types      = 0;
     cnxn->conv_funcs      = 0;
@@ -264,6 +305,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->varchar_maxlength      = p->varchar_maxlength;
     cnxn->wvarchar_maxlength     = p->wvarchar_maxlength;
     cnxn->binary_maxlength       = p->binary_maxlength;
+    cnxn->need_long_data_len     = p->need_long_data_len;
 
     return reinterpret_cast<PyObject*>(cnxn);
 }
@@ -282,6 +324,34 @@ static void _clear_conv(Connection* cnxn)
 
         cnxn->conv_count = 0;
     }
+}
+
+static char set_attr_doc[] =
+    "set_attr(attr_id, value) -> None\n\n"
+    "Calls SQLSetConnectAttr with the given values.\n\n"
+    "attr_id\n"
+    "  The attribute id (integer) to set.  These are ODBC or driver constants.\n\n"
+    "value\n"
+    "  An integer value.\n\n"
+    "At this time, only integer values are supported and are always passed as SQLUINTEGER.";
+
+static PyObject* Connection_set_attr(PyObject* self, PyObject* args)
+{
+    int id;
+    int value;
+    if (!PyArg_ParseTuple(args, "ii", &id, &value))
+        return 0;
+
+    Connection* cnxn = (Connection*)self;
+
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLSetConnectAttr(cnxn->hdbc, id, (SQLPOINTER)value, SQL_IS_INTEGER);
+    Py_END_ALLOW_THREADS
+
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle("SQLSetConnectAttr", cnxn->hdbc, SQL_NULL_HANDLE);
+    Py_RETURN_NONE;
 }
 
 static char conv_clear_doc[] =
@@ -617,24 +687,21 @@ static PyObject* Connection_getinfo(PyObject* self, PyObject* args)
     return result;
 }
 
-
-static PyObject* Connection_endtrans(PyObject* self, PyObject* args, SQLSMALLINT type)
+PyObject* Connection_endtrans(Connection* cnxn, SQLSMALLINT type)
 {
-    UNUSED(args);
-    
-    Connection* cnxn = Connection_Validate(self);
-    if (!cnxn)
-        return 0;
-    
-    TRACE("%s: cnxn=%p hdbc=%d\n", (type == SQL_COMMIT) ? "commit" : "rollback", cnxn, cnxn->hdbc);
+    // If called from Cursor.commit, it is possible that `cnxn` is deleted by another thread when we release them
+    // below.  (The cursor has had its reference incremented by the method it is calling, but nothing has incremented
+    // the connections count.  We could, but we really only need the HDBC.)
+    HDBC hdbc = cnxn->hdbc;
 
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, type);
+    ret = SQLEndTran(SQL_HANDLE_DBC, hdbc, type);
     Py_END_ALLOW_THREADS
+
     if (!SQL_SUCCEEDED(ret))
     {
-        RaiseErrorFromHandle("SQLEndTran", cnxn->hdbc, SQL_NULL_HANDLE);
+        RaiseErrorFromHandle("SQLEndTran", hdbc, SQL_NULL_HANDLE);
         return 0;
     }
 
@@ -643,12 +710,28 @@ static PyObject* Connection_endtrans(PyObject* self, PyObject* args, SQLSMALLINT
 
 static PyObject* Connection_commit(PyObject* self, PyObject* args)
 {
-    return Connection_endtrans(self, args, SQL_COMMIT);
+    UNUSED(args);
+    
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
+    
+    TRACE("commit: cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
+
+    return Connection_endtrans(cnxn, SQL_COMMIT);
 }
 
 static PyObject* Connection_rollback(PyObject* self, PyObject* args)
 {
-    return Connection_endtrans(self, args, SQL_ROLLBACK);
+    UNUSED(args);
+    
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
+    
+    TRACE("rollback: cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
+
+    return Connection_endtrans(cnxn, SQL_ROLLBACK);
 }
 
 static char cursor_doc[] = 
@@ -770,7 +853,7 @@ static int Connection_settimeout(PyObject* self, PyObject* value, void* closure)
         PyErr_SetString(PyExc_TypeError, "Cannot delete the timeout attribute.");
         return -1;
     }
-    intptr_t timeout = PyInt_AsLong(value);
+    long timeout = PyInt_AsLong(value);
     if (timeout == -1 && PyErr_Occurred())
         return -1;
     if (timeout < 0)
@@ -890,7 +973,7 @@ static PyObject* Connection_enter(PyObject* self, PyObject* args)
     return self;
 }
 
-static char exit_doc[] = "__exit__(*excinfo) -> None.  Closes the connection.";
+static char exit_doc[] = "__exit__(*excinfo) -> None.  Commits the connection if necessary.";
 static PyObject* Connection_exit(PyObject* self, PyObject* args)
 {
     Connection* cnxn = (Connection*)self;
@@ -899,8 +982,16 @@ static PyObject* Connection_exit(PyObject* self, PyObject* args)
     I(PyTuple_Check(args));
 
     if (cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF && PyTuple_GetItem(args, 0) == Py_None)
-        SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, SQL_COMMIT);
+    {
+        SQLRETURN ret;
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, SQL_COMMIT);
+        Py_END_ALLOW_THREADS
 
+        if (!SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle("SQLEndTran(SQL_COMMIT)", cnxn->hdbc, SQL_NULL_HANDLE);
+    }
+    
     Py_RETURN_NONE;
 }
 
@@ -915,6 +1006,7 @@ static struct PyMethodDef Connection_methods[] =
     { "getinfo",                 Connection_getinfo,         METH_VARARGS, getinfo_doc    },
     { "add_output_converter",    Connection_conv_add,        METH_VARARGS, conv_add_doc   },
     { "clear_output_converters", Connection_conv_clear,      METH_NOARGS,  conv_clear_doc },
+    { "set_attr",                Connection_set_attr,        METH_VARARGS, set_attr_doc   },
     { "__enter__",               Connection_enter,           METH_NOARGS,  enter_doc      },
     { "__exit__",                Connection_exit,            METH_VARARGS, exit_doc       },
     

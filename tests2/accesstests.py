@@ -131,7 +131,7 @@ class AccessTestCase(unittest.TestCase):
         value = self.cnxn.getinfo(pyodbc.SQL_CONCAT_NULL_BEHAVIOR)
         self.assert_(isinstance(value, int))
 
-    def _test_strtype(self, sqltype, value, colsize=None):
+    def _test_strtype(self, sqltype, value, resulttype=None, colsize=None):
         """
         The implementation for string, Unicode, and binary tests.
         """
@@ -142,36 +142,41 @@ class AccessTestCase(unittest.TestCase):
         else:
             sql = "create table t1(n1 int not null, s1 %s, s2 %s)" % (sqltype, sqltype)
 
+        if resulttype is None:
+            # Access only uses Unicode, but strings might have been passed in to see if they can be written.  When we
+            # read them back, they'll be unicode, so compare our results to a Unicode version of `value`.
+            if type(value) is str:
+                resulttype = unicode
+            else:
+                resulttype = type(value)
+
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(1, ?, ?)", (value, value))
-        row = self.cursor.execute("select s1, s2 from t1").fetchone()
+        v = self.cursor.execute("select s1, s2 from t1").fetchone()[0]
+        
+        if type(value) is not resulttype:
+            # To allow buffer --> db --> bytearray tests, always convert the input to the expected result type before
+            # comparing.
+            value = resulttype(value)
 
-        # Access only uses Unicode, but strings might have been passed in to see if they can be written.  When we read
-        # them back, they'll be unicode, so compare our results to a Unicode version of `value`.
-        if type(value) is str:
-            value = unicode(value)
+        self.assertEqual(type(v), resulttype)
 
-        for i in range(2):
-            v = row[i]
+        if value is not None:
+            self.assertEqual(len(v), len(value))
 
-            self.assertEqual(type(v), type(value))
-
-            if value is not None:
-                self.assertEqual(len(v), len(value))
-
-            self.assertEqual(v, value)
+        self.assertEqual(v, value)
 
     #
     # unicode
     #
 
     def test_unicode_null(self):
-        self._test_strtype('varchar', None, 255)
+        self._test_strtype('varchar', None, colsize=255)
 
     # Generate a test for each fencepost size: test_varchar_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('varchar', value, len(value))
+            self._test_strtype('varchar', value, colsize=len(value))
         t.__doc__ = 'unicode %s' % len(value)
         return t
     for value in UNICODE_FENCEPOSTS:
@@ -186,7 +191,7 @@ class AccessTestCase(unittest.TestCase):
     # Generate a test for each fencepost size: test_varchar_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('varchar', value, len(value))
+            self._test_strtype('varchar', value, colsize=len(value))
         t.__doc__ = 'ansi %s' % len(value)
         return t
     for value in ANSI_FENCEPOSTS:
@@ -199,7 +204,7 @@ class AccessTestCase(unittest.TestCase):
     # Generate a test for each fencepost size: test_varchar_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('varbinary', buffer(value), len(value))
+            self._test_strtype('varbinary', buffer(value), colsize=len(value), resulttype=pyodbc.BINARY)
         t.__doc__ = 'binary %s' % len(value)
         return t
     for value in ANSI_FENCEPOSTS:
@@ -216,7 +221,7 @@ class AccessTestCase(unittest.TestCase):
     # Generate a test for each fencepost size: test_varchar_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('image', buffer(value))
+            self._test_strtype('image', buffer(value), resulttype=pyodbc.BINARY)
         t.__doc__ = 'image %s' % len(value)
         return t
     for value in IMAGE_FENCEPOSTS:

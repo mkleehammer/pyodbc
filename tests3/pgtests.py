@@ -1,7 +1,8 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
-# Unit tests for PostgreSQL on Linux (Fedora)
-# This is a stripped down copy of the SQL Server tests.
+# Unit tests for PostgreSQL on OS X and Linux.
+
+from __future__ import print_function
 
 import sys, os, re
 import unittest
@@ -23,7 +24,7 @@ def _generate_test_string(length):
     if length <= len(_TESTSTR):
         return _TESTSTR[:length]
 
-    c = (length + len(_TESTSTR)-1) / len(_TESTSTR)
+    c = int((length + len(_TESTSTR)-1) / len(_TESTSTR))
     v = _TESTSTR * c
     return v[:length]
 
@@ -82,7 +83,7 @@ class PGTestCase(unittest.TestCase):
 
     def test_getinfo_int(self):
         value = self.cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
-        self.assert_(isinstance(value, (int, long)))
+        self.assert_(isinstance(value, int))
 
     def test_getinfo_smallint(self):
         value = self.cnxn.getinfo(pyodbc.SQL_CONCAT_NULL_BEHAVIOR)
@@ -350,6 +351,15 @@ class PGTestCase(unittest.TestCase):
         result = row[0:4]
         self.failUnless(result is row)
 
+    def test_cnxn_execute_error(self):
+        """
+        Make sure that Connection.execute (not Cursor) errors are not "eaten".
+
+        GitHub issue #74
+        """
+        self.cursor.execute("create table t1(a int primary key)")
+        self.cursor.execute("insert into t1 values (1)")
+        self.failUnlessRaises(pyodbc.Error, self.cnxn.execute, "insert into t1 values (1)")
 
     def test_row_repr(self):
         self.cursor.execute("create table t1(a int, b int, c int, d int)");
@@ -367,10 +377,33 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(result, "(1,)")
 
 
+    def test_autocommit(self):
+        self.assertEqual(self.cnxn.autocommit, False)
+        othercnxn = pyodbc.connect(self.connection_string, autocommit=True)
+        self.assertEqual(othercnxn.autocommit, True)
+        othercnxn.autocommit = False
+        self.assertEqual(othercnxn.autocommit, False)
+
+    def test_cnxn_set_attr_before(self):
+        # I don't have a getattr right now since I don't have a table telling me what kind of
+        # value to expect.  For now just make sure it doesn't crash.
+        # From the unixODBC sqlext.h header file.
+        SQL_ATTR_PACKET_SIZE = 112
+        othercnxn = pyodbc.connect(self.connection_string, attrs_before={ SQL_ATTR_PACKET_SIZE : 1024 * 32 })
+
+    def test_cnxn_set_attr(self):
+        # I don't have a getattr right now since I don't have a table telling me what kind of
+        # value to expect.  For now just make sure it doesn't crash.
+        # From the unixODBC sqlext.h header file.
+        SQL_ATTR_ACCESS_MODE = 101
+        SQL_MODE_READ_ONLY   = 1
+        self.cnxn.set_attr(SQL_ATTR_ACCESS_MODE, SQL_MODE_READ_ONLY)
+
+
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage="usage: %prog [options] connection_string")
-    parser.add_option("-v", "--verbose", action="count", help="Increment test verbosity (can be used multiple times)")
+    parser.add_option("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
     parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
     parser.add_option("-t", "--test", help="Run only the named test")
     parser.add_option('-a', '--ansi', help='ANSI only', default=False, action='store_true')
@@ -391,11 +424,12 @@ def main():
 
     if options.verbose:
         cnxn = pyodbc.connect(connection_string, ansi=options.ansi)
-        print 'library:', os.path.abspath(pyodbc.__file__)
-        print 'odbc:    %s' % cnxn.getinfo(pyodbc.SQL_ODBC_VER)
-        print 'driver:  %s %s' % (cnxn.getinfo(pyodbc.SQL_DRIVER_NAME), cnxn.getinfo(pyodbc.SQL_DRIVER_VER))
-        print 'driver supports ODBC version %s' % cnxn.getinfo(pyodbc.SQL_DRIVER_ODBC_VER)
-        print 'unicode:', pyodbc.UNICODE_SIZE, 'sqlwchar:', pyodbc.SQLWCHAR_SIZE
+        print_library_info(cnxn)
+        # print 'library:', os.path.abspath(pyodbc.__file__)
+        # print 'odbc:    %s' % cnxn.getinfo(pyodbc.SQL_ODBC_VER)
+        # print 'driver:  %s %s' % (cnxn.getinfo(pyodbc.SQL_DRIVER_NAME), cnxn.getinfo(pyodbc.SQL_DRIVER_VER))
+        # print 'driver supports ODBC version %s' % cnxn.getinfo(pyodbc.SQL_DRIVER_ODBC_VER)
+        # print 'unicode:', pyodbc.UNICODE_SIZE, 'sqlwchar:', pyodbc.SQLWCHAR_SIZE
         cnxn.close()
 
     if options.test:

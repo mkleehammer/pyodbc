@@ -12,6 +12,11 @@ except ImportError:
 from distutils.extension import Extension
 from distutils.errors import *
 
+if sys.hexversion >= 0x03000000:
+    from configparser import ConfigParser
+else:
+    from ConfigParser import ConfigParser
+
 OFFICIAL_BUILD = 9999
 
 def _print(s):
@@ -94,8 +99,7 @@ def main():
                        'Topic :: Database',
                        ],
 
-        'url': 'http://code.google.com/p/pyodbc',
-        'download_url': 'http://code.google.com/p/pyodbc/downloads/list',
+        'url': 'https://github.com/mkleehammer/pyodbc',
         'cmdclass': { 'version' : VersionCommand,
                      'tags'    : TagsCommand }
         }
@@ -110,8 +114,12 @@ def main():
 
 def get_compiler_settings(version_str):
 
-    settings = { 'libraries': [],
-                 'define_macros' : [ ('PYODBC_VERSION', version_str) ] }
+    settings = { 
+        'extra_compile_args' : [],
+        'libraries': [],
+        'include_dirs': [],
+        'define_macros' : [ ('PYODBC_VERSION', version_str) ] 
+    }
 
     # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
     # command.
@@ -122,15 +130,25 @@ def get_compiler_settings(version_str):
         except ValueError:
             pass
 
+    from array import array
+    UNICODE_WIDTH = array('u').itemsize
+    settings['define_macros'].append(('PYODBC_UNICODE_WIDTH', str(UNICODE_WIDTH)))
+
     if os.name == 'nt':
-        settings['extra_compile_args'] = ['/Wall',
-                                          '/wd4668',
-                                          '/wd4820',
-                                          '/wd4711', # function selected for automatic inline expansion
-                                          '/wd4100', # unreferenced formal parameter
-                                          '/wd4127', # "conditional expression is constant" testing compilation constants
-                                          '/wd4191', # casts to PYCFunction which doesn't have the keywords parameter
-                                          ]
+        settings['extra_compile_args'].extend([
+            '/Wall',
+            '/wd4668',
+            '/wd4820',
+            '/wd4711', # function selected for automatic inline expansion
+            '/wd4100', # unreferenced formal parameter
+            '/wd4127', # "conditional expression is constant" testing compilation constants
+            '/wd4191', # casts to PYCFunction which doesn't have the keywords parameter
+        ])
+
+        if '--debug' in sys.argv:
+            sys.argv.remove('--debug')
+            settings['extra_compile_args'].extend('/Od /Ge /GS /GZ /RTC1 /Wp64 /Yd'.split())
+
         settings['libraries'].append('odbc32')
         settings['libraries'].append('advapi32')
 
@@ -140,14 +158,30 @@ def get_compiler_settings(version_str):
         settings['libraries'].append('odbc32')
 
     elif sys.platform == 'darwin':
-        # OS/X now ships with iODBC.
-        settings['libraries'].append('iodbc')
+        # The latest versions of OS X no longer ship with iodbc.  Assume
+        # unixODBC for now.
+        settings['libraries'].append('odbc')
+
+        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
+        settings['extra_compile_args'].extend([
+            '-Wno-write-strings',
+            '-Wno-deprecated-declarations'
+        ])
+
+        # Apple has decided they won't maintain the iODBC system in OS/X and has added deprecation warnings in 10.8.
+        # For now target 10.7 to eliminate the warnings.
+        settings['define_macros'].append( ('MAC_OS_X_VERSION_10_7',) )
 
     else:
         # Other posix-like: Linux, Solaris, etc.
 
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
-        settings['extra_compile_args'] = ['-Wno-write-strings']
+        settings['extra_compile_args'].append('-Wno-write-strings')
+
+        if UNICODE_WIDTH == 4:
+            # This makes UnixODBC use UCS-4 instead of UCS-2, which works better with sizeof(wchar_t)==4.
+            # Thanks to Marc-Antoine Parent
+            settings['define_macros'].append(('SQL_WCHART_CONVERT', '1'))
 
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
         settings['libraries'].append('odbc')
@@ -227,7 +261,7 @@ def get_version():
 def _get_version_pkginfo():
     filename = join(dirname(abspath(__file__)), 'PKG-INFO')
     if exists(filename):
-        re_ver = re.compile(r'^Version: \s+ (\d+)\.(\d+)\.(\d+) (?: -beta(\d+))?', re.VERBOSE)
+        re_ver = re.compile(r'^Version: \s+ (\d+)\.(\d+)\.(\d+) (?: b(\d+))?', re.VERBOSE)
         for line in open(filename):
             match = re_ver.search(line)
             if match:
@@ -255,12 +289,17 @@ def _get_version_git():
     if numbers[-1] != OFFICIAL_BUILD:
         # This is a beta of the next micro release, so increment the micro number to reflect this.
         numbers[-2] += 1
-        name = '%s.%s.%s-beta%02d' % tuple(numbers)
+        name = '%s.%s.%sb%d' % tuple(numbers)
 
-    n, result = getoutput('git branch')
-    branch = re.search(r'\* (\w+)', result).group(1)
-    if branch != 'master' and not re.match('^v\d+$', branch):
-        name = branch + '-' + name
+    n, result = getoutput('git rev-parse --abbrev-ref HEAD')
+
+    if result == 'HEAD':
+        # We are not on a branch, so use the last revision instead
+        n, result = getoutput('git rev-parse --short HEAD')
+        name = name + '+commit' + result
+    else:
+        if result != 'master' and not re.match('^v\d+$', result):
+            name = name + '+' + result.replace('-', '')
 
     return name, numbers
 

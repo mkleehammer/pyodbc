@@ -44,7 +44,6 @@
   #define PyString_FromFormatV PyUnicode_FromFormatV   
   #define PyString_FromFormat PyUnicode_FromFormat
   #define Py_TPFLAGS_HAVE_ITER 0
-
   #define PyString_AsString PyUnicode_AsString
 
   #define TEXT_T Py_UNICODE
@@ -89,6 +88,19 @@ inline TEXT_T* Text_Buffer(PyObject* o)
 #endif
 }
 
+
+inline bool IntOrLong_Check(PyObject* o)
+{
+    // A compatability function to check for an int or long.  Python 3 doesn't differentate
+    // anymore.
+    // A compatibility function that determines if the object is a string, based on the version of Python.
+    // For Python 2, an ASCII or Unicode string is allowed.  For Python 3, it must be a Unicode object.
+#if PY_MAJOR_VERSION < 3
+    if (o && PyInt_Check(o))
+        return true;
+#endif
+    return o && PyLong_Check(o);
+}
 
 inline bool Text_Check(PyObject* o)
 {

@@ -1,4 +1,5 @@
 
+
 #include "pyodbc.h"
 #include "pyodbcmodule.h"
 #include "params.h"
@@ -325,7 +326,8 @@ static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
     else
     {
         // Too long to pass all at once, so we'll provide the data at execute.
-        if (!UpdateInfo(info, paramSetIndex, SQL_C_BINARY, columnSize, SQL_LONGVARBINARY, &param, sizeof(PyObject*), false, SQL_LEN_DATA_AT_EXEC((SQLLEN)len)))
+        if (!UpdateInfo(info, paramSetIndex, SQL_C_BINARY, columnSize, SQL_LONGVARBINARY, &param, sizeof(PyObject*), false,
+                        cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len) : SQL_DATA_AT_EXEC))
             return false;
     }
 #else
@@ -337,7 +339,8 @@ static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
     else
     {
         // Too long to pass all at once, so we'll provide the data at execute.
-        if (!UpdateInfo(info, paramSetIndex, SQL_C_CHAR, columnSize, SQL_LONGVARCHAR, &param, sizeof(PyObject*), sizeof(PyObject*), false, SQL_LEN_DATA_AT_EXEC((SQLLEN)len)))
+        if (!UpdateInfo(info, paramSetIndex, SQL_C_CHAR, columnSize, SQL_LONGVARCHAR, &param, sizeof(PyObject*), sizeof(PyObject*), false,
+                        cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len) : SQL_DATA_AT_EXEC))
             return false;
     }
 #endif
@@ -351,12 +354,13 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
 
     SQLUINTEGER columnSize = (SQLUINTEGER)max(len, 1);
 
+
     if (len <= cur->cnxn->wvarchar_maxlength)
     {
         Py_UNICODE* pch = PyUnicode_AsUnicode(param);
         SQLPOINTER buffer = pch;
         bool isBufferBorrowed = true;
-        if (len > 0 && SQLWCHAR_SIZE != Py_UNICODE_SIZE)
+        if (len > 0 && ODBCCHAR_SIZE != Py_UNICODE_SIZE)
         {
             buffer = SQLWCHAR_FromUnicode(pch, len);
             isBufferBorrowed = false;
@@ -371,7 +375,8 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     else
     {
         // Too long to pass all at once, so we'll provide the data at execute.
-        if (!UpdateInfo(info, paramSetIndex, SQL_C_WCHAR, columnSize, SQL_WLONGVARCHAR, &param, sizeof(PyObject*), sizeof(PyObject*), false, SQL_LEN_DATA_AT_EXEC((SQLLEN)(len * sizeof(SQLWCHAR)))))
+        if (!UpdateInfo(info, paramSetIndex, SQL_C_WCHAR, columnSize, SQL_WLONGVARCHAR, &param, sizeof(PyObject*), sizeof(PyObject*), false,
+                        cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len * ODBCCHAR_SIZE) : SQL_DATA_AT_EXEC))
             return false;
     }
 
@@ -454,11 +459,11 @@ static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
     long l = PyInt_AsLong(param);
 
 #if LONG_BIT == 64
-	if (!UpdateInfo(info, paramSetIndex, SQL_C_SBIGINT, sizeof(long), SQL_BIGINT, &l, sizeof(l), sizeof(l), false, 0))
-		return false;
+    if (!UpdateInfo(info, paramSetIndex, SQL_C_SBIGINT, sizeof(long), SQL_BIGINT, &l, sizeof(l), sizeof(l), false, 0))
+        return false;
 #elif LONG_BIT == 32
-	if (!UpdateInfo(info, paramSetIndex, SQL_C_LONG, sizeof(long), SQL_INTEGER, &l, sizeof(l), sizeof(l), false, 0))
-		return false;
+    if (!UpdateInfo(info, paramSetIndex, SQL_C_LONG, sizeof(long), SQL_INTEGER, &l, sizeof(l), sizeof(l), false, 0))
+        return false;
 #else
     #error Unexpected LONG_BIT value
 #endif
@@ -491,10 +496,12 @@ static bool GetFloatInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
 
 static char* CreateDecimalString(long sign, PyObject* digits, long exp)
 {
+    // Allocate an ASCII string containing the given decimal.
+
     long count = (long)PyTuple_GET_SIZE(digits);
 
     char* pch;
-    int len;
+    long len;
 
     if (exp >= 0)
     {
@@ -641,7 +648,8 @@ static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamI
         // the parameter value which will be pased back to us when the data is needed.  (If we release threads, we
         // need to up the refcount!)
 
-        if (!UpdateInfo(info, paramSetIndex, SQL_C_BINARY, (SQLUINTEGER)PyBuffer_Size(param), SQL_LONGVARBINARY, &param, sizeof(PyObject*), sizeof(PyObject*), false, SQL_LEN_DATA_AT_EXEC(PyBuffer_Size(param))))
+        if (!UpdateInfo(info, paramSetIndex, SQL_C_BINARY, (SQLUINTEGER)PyBuffer_Size(param), SQL_LONGVARBINARY, &param, sizeof(PyObject*), sizeof(PyObject*), false, 
+                        cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)PyBuffer_Size(param)) : SQL_DATA_AT_EXEC))
             return false;
     }
 
@@ -662,7 +670,8 @@ static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     }
     else
     {
-        if (!UpdateInfo(info, paramSetIndex, SQL_C_BINARY, (SQLUINTEGER)cb, SQL_LONGVARBINARY, &param, sizeof(PyObject*), sizeof(PyObject*), false, SQL_LEN_DATA_AT_EXEC(cb)))
+        if (!UpdateInfo(info, paramSetIndex, SQL_C_BINARY, (SQLUINTEGER)cb, SQL_LONGVARBINARY, &param, sizeof(PyObject*), sizeof(PyObject*), false,
+                        cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)cb) : SQL_DATA_AT_EXEC))
             return false;
     }
     return true;
@@ -813,7 +822,7 @@ static bool Prepare(Cursor* cur, PyObject* pSql, Py_ssize_t cParamSetSize)
         {
             SQLWChar sql(pSql);
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLPrepareW(cur->hstmt, sql, SQL_NTS);
+            ret = SQLPrepareW(cur->hstmt, sql.get(), SQL_NTS);
             if (SQL_SUCCEEDED(ret))
             {
                 szErrorFunc = "SQLNumParams";

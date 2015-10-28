@@ -4,7 +4,7 @@
 
 class Object
 {
-private:
+protected:
     PyObject* p;
 
     // GCC freaks out if these are private, but it doesn't use them (?)
@@ -31,10 +31,13 @@ public:
 
     bool IsValid() const { return p != 0; }
 
-    void Attach(PyObject* _p)
+    bool Attach(PyObject* _p)
     {
+        // Returns true if the new pointer is non-zero.
+
         Py_XDECREF(p);
         p = _p;
+        return (_p != 0);
     }
 
     PyObject* Detach()
@@ -53,6 +56,31 @@ public:
     {
         return p;
     }
+};
+
+
+class Tuple
+    : public Object
+{
+public:
+    
+    Tuple(PyObject* _p = 0)
+        : Object(_p)
+    {
+    }
+
+    operator PyTupleObject*()
+    {
+        return (PyTupleObject*)p;
+    }
+
+    PyObject*& operator[](int i) 
+    {
+        I(p != 0);
+        return PyTuple_GET_ITEM(p, i);
+    }
+
+    Py_ssize_t size() { return p ? PyTuple_GET_SIZE(p) : 0; }
 };
 
 

@@ -1,0 +1,53 @@
+
+Unicode
+-------
+
+http://support.microsoft.com/default.aspx?scid=kb;EN-US;q294169
+
+    """
+    For many of these Unicode functions, the ODBC Programmer's Reference provides incorrect or
+    ambiguous descriptions for some of the function arguments. Specifically, this problem
+    relates to arguments that are used to specify the length of character string input and
+    output values."
+
+    Regardless of what the documentation says for each ODBC function, the following paragraph
+    from the Unicode section of "Chapter 17: Programming Considerations" in the ODBC
+    Programmer's Reference is the ultimate rule to use for length arguments in Unicode
+    functions:
+
+        "Unicode functions that always return or take strings or length arguments are passed as
+        count-of-characters. For functions that return length information for server data, the
+        display size and precision are described in number of characters. When a length
+        (transfer size of the data) could refer to string or nonstring data, the length is
+        described in octet lengths. For example, SQLGetInfoW will still take the length as
+        count-of-bytes, but SQLExecDirectW will use count-of-characters."
+
+    This means that if the argument in question describes the length of another argument that
+    is always a string (typically represented as a SQLCHAR), then the length reflects the
+    number of characters in the string. If the length argument describes another argument that
+    could be a string or some other data type (typically represented as a SQLPOINTER), the
+    length is in bytes.
+    """
+
+
+Driver Support"
+
+  * PostgreSQL seems to correct use UCS-2.
+    http://archives.postgresql.org/pgsql-odbc/2006-02/msg00112.php
+
+  * MS SQL Server on Windows & Linux.  Obviously correctly uses UCS-2.  SQL
+    Server 2012 and higher now support UTF16.
+
+  * mysql: Seems to be broken.  To handle this, probably need to provide a 'charset' option
+    that causes us to convert to the given charset and use the ANSI/ASCII calls and data types.
+
+    http://mysqlworkbench.org/?p=1399
+
+  * FreeTDS
+
+    http://www.freetds.org/userguide/unicodefreetds.htm
+  
+    Definitely use 0.91 or later.
+
+    Have seen reference to a new --wide-unicode flag for 0.92+ (broken in 0.91) which causes
+    SQL_WCHAR to equal wchar_t instead of UTF16.
