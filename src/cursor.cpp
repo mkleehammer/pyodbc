@@ -1021,7 +1021,7 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
             {
                 PyObject* params = PySequence_GetItem(param_seq, i);
                 PyObject* result = execute(cursor, pSql, params, 0, false);
-                bool success = result != 0;
+                success = result != 0;
                 Py_XDECREF(result);
                 Py_DECREF(params);
                 if (!success)
@@ -1050,7 +1050,7 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
             while (params.Attach(PyIter_Next(iter)))
             {
                 PyObject* result = execute(cursor, pSql, params, 0, false);
-                bool success = result != 0;
+                success = result != 0;
                 Py_XDECREF(result);
 
                 if (!success)

@@ -422,7 +422,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     }
 
     return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, fUnicodeResults != 0, timeout,
-                                     fParameterArrayBinding != 0, fReadOnly != 0, attrs_before);
+                                     fReadOnly != 0, fParameterArrayBinding != 0, attrs_before);
 }
 
 static PyObject* mod_datasources(PyObject* self)
