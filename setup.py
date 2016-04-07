@@ -172,6 +172,10 @@ def get_compiler_settings(version_str):
         # For now target 10.7 to eliminate the warnings.
         settings['define_macros'].append( ('MAC_OS_X_VERSION_10_7',) )
 
+        # Add directories for MacPorts and Homebrew.
+        dirs = ['/usr/local/include', '/opt/local/include']
+        settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
+
     else:
         # Other posix-like: Linux, Solaris, etc.
 
