@@ -493,6 +493,28 @@ static PyObject* mod_timestampfromticks(PyObject* self, PyObject* args)
     return PyDateTime_FromTimestamp(args);
 }
 
+static PyObject* mod_setdecimalsep(PyObject* self, PyObject* args)
+{
+    UNUSED(self);
+    if (!PyString_Check(PyTuple_GET_ITEM(args, 0)) && !PyUnicode_Check(PyTuple_GET_ITEM(args, 0)))
+        return PyErr_Format(PyExc_TypeError, "argument 1 must be a string or unicode object");
+
+    PyObject* value = PyUnicode_FromObject(PyTuple_GetItem(args, 0));
+    if (value)
+    {
+        if (PyBytes_Check(value) && PyBytes_Size(value) == 1)
+            chDecimal = (Py_UNICODE)PyBytes_AS_STRING(value)[0];
+        if (PyUnicode_Check(value) && PyUnicode_GET_SIZE(value) == 1)
+            chDecimal = PyUnicode_AS_UNICODE(value)[0];
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject* mod_getdecimalsep(PyObject* self)
+{
+    UNUSED(self);
+    return PyUnicode_FromUnicode(&chDecimal, 1);
+}
 
 static char connect_doc[] =
     "connect(str, autocommit=False, ansi=False, timeout=0, **kwargs) --> Connection\n"
@@ -575,6 +597,16 @@ static char datasources_doc[] =
     "\n" \
     "Returns a dictionary mapping available DSNs to their descriptions.";
 
+static char setdecimalsep_doc[] =
+    "setDecimalSeparator(string) -> None\n" \
+    "\n" \
+    "Sets the decimal separator character used when parsing NUMERIC from the database.";
+
+static char getdecimalsep_doc[] =
+    "getDecimalSeparator() -> string\n" \
+    "\n" \
+    "Gets the decimal separator character used when parsing NUMERIC from the database.";
+
 
 #ifdef PYODBC_LEAK_CHECK
 static PyObject* mod_leakcheck(PyObject* self, PyObject* args)
@@ -628,6 +660,8 @@ static PyMethodDef pyodbc_methods[] =
     { "connect",            (PyCFunction)mod_connect,            METH_VARARGS|METH_KEYWORDS, connect_doc },
     { "TimeFromTicks",      (PyCFunction)mod_timefromticks,      METH_VARARGS,               timefromticks_doc },
     { "DateFromTicks",      (PyCFunction)mod_datefromticks,      METH_VARARGS,               datefromticks_doc },
+    { "setDecimalSeparator", (PyCFunction)mod_setdecimalsep,      METH_VARARGS,               setdecimalsep_doc },
+    { "getDecimalSeparator", (PyCFunction)mod_getdecimalsep,      METH_NOARGS,               getdecimalsep_doc },
     { "TimestampFromTicks", (PyCFunction)mod_timestampfromticks, METH_VARARGS,               timestampfromticks_doc },
     { "dataSources",        (PyCFunction)mod_datasources,        METH_NOARGS,                datasources_doc },
 
