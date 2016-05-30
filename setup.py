@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 import sys, os, re, platform
-from os.path import exists, abspath, dirname, join, isdir
+from os.path import exists, abspath, dirname, join, isdir, relpath
 
 try:
     # Allow use of setuptools so eggs can be built.
@@ -67,7 +67,7 @@ def main():
 
     settings = get_compiler_settings(version_str)
 
-    files = [ abspath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
+    files = [ relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
