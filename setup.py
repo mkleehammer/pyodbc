@@ -67,7 +67,7 @@ def main():
 
     settings = get_compiler_settings(version_str)
 
-    files = [ abspath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
+    files = [ join('src', f) for f in os.listdir('src') if f.endswith('.cpp') ]
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
