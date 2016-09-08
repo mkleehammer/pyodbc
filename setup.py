@@ -173,7 +173,7 @@ def get_compiler_settings(version_str):
         settings['define_macros'].append( ('MAC_OS_X_VERSION_10_7',) )
 
         # Add directories for MacPorts and Homebrew.
-        dirs = ['/usr/local/include', '/opt/local/include']
+        dirs = ['/usr/local/include', '/opt/local/include','~/homebrew/include']
         settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
 
     else:
