@@ -7,12 +7,13 @@ class Object
 protected:
     PyObject* p;
 
-    // GCC freaks out if these are private, but it doesn't use them (?)
-    // Object(const Object& illegal);
-    // void operator=(const Object& illegal);
+private:
+    Object(const Object& illegal);
+    void operator=(const Object& illegal);
 
 public:
-    Object(PyObject* _p = 0)
+    Object() : p(NULL) {};
+    Object(PyObject* _p)
     {
         p = _p;
     }

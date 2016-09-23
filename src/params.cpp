@@ -422,7 +422,8 @@ static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     // string.  Unfortunately, the Decimal class doesn't seem to have a way to force it to return a string without
     // exponents, so we'll have to build it ourselves.
 
-    Object t = PyObject_CallMethod(param, "as_tuple", 0);
+    Object t;
+    t = PyObject_CallMethod(param, "as_tuple", 0);
     if (!t)
         return false;
 

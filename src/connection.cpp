@@ -21,7 +21,7 @@
 static char connection_doc[] =
     "Connection objects manage connections to the database.\n"
     "\n"
-    "Each manages a single ODBC HDBC.";
+    "Each connection manages a single ODBC HDBC.";
 
 static Connection* Connection_Validate(PyObject* self)
 {

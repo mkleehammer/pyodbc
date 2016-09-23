@@ -137,14 +137,14 @@ Py_UNICODE chDecimal = '.';
 //
 static void init_locale_info()
 {
-    Object module = PyImport_ImportModule("locale");
+    Object module(PyImport_ImportModule("locale"));
     if (!module)
     {
         PyErr_Clear();
         return;
     }
 
-    Object ldict = PyObject_CallMethod(module, "localeconv", 0);
+    Object ldict(PyObject_CallMethod(module, "localeconv", 0));
     if (!ldict)
     {
         PyErr_Clear();
@@ -281,7 +281,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
 {
     UNUSED(self);
 
-    Object pConnectString = 0;
+    Object pConnectString;
     int fAutoCommit = 0;
     int fAnsi = 0;              // force ansi
     int fUnicodeResults = 0;
