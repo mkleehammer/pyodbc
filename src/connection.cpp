@@ -178,9 +178,9 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
             int ikey = 0, ivalue = 0;
 #if PY_MAJOR_VERSION < 3
             if (PyInt_Check(key))
-                ikey = PyInt_AsInt(key);
+                ikey = PyInt_AsLong(key);
             if (PyInt_Check(value))
-                ivalue = PyInt_AsInt(value);
+                ivalue = PyInt_AsLong(value);
 #endif
             if (PyLong_Check(key))
                 ikey = (int)PyLong_AsLong(key);
