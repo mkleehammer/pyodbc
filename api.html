@@ -119,11 +119,12 @@ driver:</p>
     <tr><th>keyword</th><th>notes</th><th>default</th></tr>
   </thead>
   <tbody>
-    <tr><td>autocommit</td><td>If False, Connection.commit must be called; otherwise each statement is automatically commited  False</td></tr>
     <tr><td>ansi</td><td>If True, the driver does not support Unicode and SQLDriverConnectA should be used   False</td></tr>
-    <tr><td>unicode_results</td><td>    If True, strings returned in result sets are always Unicode (2.1.5+)    False</td></tr>
-    <tr><td>readonly</td><td>If True, the connection is set to readonly  False</td></tr>
     <tr><td>attrs_before</td><td>A dictionary of connection attributes to set before connecting.</td></tr>
+    <tr><td>autocommit</td><td>If False, Connection.commit must be called; otherwise each statement is automatically commited  False</td></tr>
+    <tr><td>readonly</td><td>If True, the connection is set to readonly  False</td></tr>
+    <tr><td>timeout</td><td>A timeout for the connection, in seconds.  This causes the connection's SQL_ATTR_LOGIN_TIMEOUT to be set before the connection occurs.</td></tr>
+    <tr><td>unicode_results</td><td>    If True, strings returned in result sets are always Unicode (2.1.5+)    False</td></tr>
   </tbody>
 </table>
 
