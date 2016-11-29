@@ -302,15 +302,10 @@ static PyObject* GetDataString(Cursor* cur, Py_ssize_t iCol)
     case SQL_LONGVARCHAR:
     case SQL_GUID:
     case SQL_SS_XML:
-#if PY_MAJOR_VERSION < 3
         if (cur->cnxn->unicode_results)
             nTargetType  = SQL_C_WCHAR;
         else
             nTargetType  = SQL_C_CHAR;
-#else
-        nTargetType  = SQL_C_WCHAR;
-#endif
-
         break;
 
     case SQL_WCHAR:
