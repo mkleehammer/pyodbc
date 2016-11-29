@@ -316,7 +316,8 @@ static PyObject* GetDataString(Cursor* cur, Py_ssize_t iCol)
     case SQL_WCHAR:
     case SQL_WVARCHAR:
     case SQL_WLONGVARCHAR:
-        nTargetType  = SQL_C_WCHAR;
+        //nTargetType  = SQL_C_WCHAR;
+	nTargetType = SQL_C_CHAR;
         break;
 
     default:
