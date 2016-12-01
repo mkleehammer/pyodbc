@@ -30,17 +30,13 @@ def _generate_test_string(length):
 
 class PGTestCase(unittest.TestCase):
 
-    # These are from the C++ code.  Keep them up to date.
-
-    # If we are reading a binary, string, or unicode value and do not know how large it is, we'll try reading 2K into a
-    # buffer on the stack.  We then copy into a new Python object.
-    SMALL_READ  = 2048
-
-    # A read guaranteed not to fit in the MAX_STACK_STACK stack buffer, but small enough to be used for varchar (4K max).
+    SMALL_READ = 100
     LARGE_READ = 4000
 
     SMALL_STRING = _generate_test_string(SMALL_READ)
     LARGE_STRING = _generate_test_string(LARGE_READ)
+    SMALL_BYTES  = bytes(SMALL_STRING, 'utf-8')
+    LARGE_BYTES  = bytes(LARGE_STRING, 'utf-8')
 
     def __init__(self, connection_string, ansi, method_name):
         unittest.TestCase.__init__(self, method_name)
@@ -51,13 +47,21 @@ class PGTestCase(unittest.TestCase):
         self.cnxn   = pyodbc.connect(self.connection_string, ansi=self.ansi)
         self.cursor = self.cnxn.cursor()
 
+        # I've set my test database to use UTF-8 which seems most popular.
+        self.cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
+        self.cnxn.setencoding(encoding='utf-8')
+
+        # As of psql 9.5.04 SQLGetTypeInfo returns absurdly small sizes leading
+        # to slow writes.  Override them:
+        self.cnxn.maxwrite = 1024 * 1024 * 1024
+
         for i in range(3):
             try:
                 self.cursor.execute("drop table t%d" % i)
                 self.cnxn.commit()
             except:
                 pass
-        
+
         self.cnxn.rollback()
 
 
@@ -72,6 +76,14 @@ class PGTestCase(unittest.TestCase):
     def test_datasources(self):
         p = pyodbc.dataSources()
         self.assert_(isinstance(p, dict))
+
+    # def test_gettypeinfo(self):
+    #     self.cursor.getTypeInfo(pyodbc.SQL_VARCHAR)
+    #     cols = [t[0] for t in self.cursor.description]
+    #     print('cols:', cols)
+    #     for row in self.cursor:
+    #         for col,val in zip(cols, row):
+    #             print(' ', col, val)
 
     def test_getinfo_string(self):
         value = self.cnxn.getinfo(pyodbc.SQL_CATALOG_NAME_SEPARATOR)
@@ -98,7 +110,7 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(value, result)
 
 
-    def _test_strtype(self, sqltype, value, colsize=None):
+    def _test_strtype(self, sqltype, value, colsize=None, resulttype=None):
         """
         The implementation for string, Unicode, and binary tests.
         """
@@ -111,16 +123,24 @@ class PGTestCase(unittest.TestCase):
 
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(?)", value)
-        v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), type(value))
 
-        if value is not None:
-            self.assertEqual(len(v), len(value))
+        result = self.cursor.execute("select * from t1").fetchone()[0]
 
-        self.assertEqual(v, value)
+        if resulttype and type(value) is not resulttype:
+            value = resulttype(value)
+
+        self.assertEqual(result, value)
+
+    def test_maxwrite(self):
+        # If we write more than `maxwrite` bytes, pyodbc will switch from
+        # binding the data all at once to providing it at execute time with
+        # SQLPutData.  The default maxwrite is 1GB so this is rarely needed in
+        # PostgreSQL but I need to test the functionality somewhere.
+        self.cnxn.maxwrite = 300
+        self._test_strtype('varchar', _generate_test_string(400))
 
     #
-    # varchar
+    # VARCHAR
     #
 
     def test_empty_varchar(self):
@@ -153,6 +173,20 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(v2, row.c2)
         self.assertEqual(v3, row.c3)
 
+    #
+    # bytea
+    #
+
+    def test_null_bytea(self):
+        self._test_strtype('bytea', None)
+    def test_small_bytea(self):
+        self._test_strtype('bytea', self.SMALL_BYTES)
+    def test_large_bytea(self):
+        self._test_strtype('bytea', self.LARGE_BYTES)
+
+    # Now test with bytearray
+    def test_large_bytea_array(self):
+        self._test_strtype('bytea', bytearray(self.LARGE_BYTES), resulttype=bytes)
 
 
     def test_small_decimal(self):
@@ -188,7 +222,7 @@ class PGTestCase(unittest.TestCase):
 
     def _exec(self):
         self.cursor.execute(self.sql)
-        
+
     def test_close_cnxn(self):
         """Make sure using a Cursor after closing its connection doesn't crash."""
 
@@ -197,7 +231,7 @@ class PGTestCase(unittest.TestCase):
         self.cursor.execute("select * from t1")
 
         self.cnxn.close()
-        
+
         # Now that the connection is closed, we expect an exception.  (If the code attempts to use
         # the HSTMT, we'll get an access violation instead.)
         self.sql = "select * from t1"
@@ -259,13 +293,13 @@ class PGTestCase(unittest.TestCase):
     # PostgreSQL driver fails here?
     # def test_rowcount_reset(self):
     #     "Ensure rowcount is reset to -1"
-    # 
+    #
     #     self.cursor.execute("create table t1(i int)")
     #     count = 4
     #     for i in range(count):
     #         self.cursor.execute("insert into t1 values (?)", i)
     #     self.assertEquals(self.cursor.rowcount, 1)
-    # 
+    #
     #     self.cursor.execute("create table t2(i int)")
     #     self.assertEquals(self.cursor.rowcount, -1)
 
@@ -287,7 +321,7 @@ class PGTestCase(unittest.TestCase):
 
         # Put it back so other tests don't fail.
         pyodbc.lowercase = False
-        
+
     def test_row_description(self):
         """
         Ensure Cursor.description is accessible as Row.cursor_description.
@@ -299,7 +333,7 @@ class PGTestCase(unittest.TestCase):
 
         row = self.cursor.execute("select * from t1").fetchone()
         self.assertEquals(self.cursor.description, row.cursor_description)
-        
+
 
     def test_executemany(self):
         self.cursor.execute("create table t1(a int, b varchar(10))")
@@ -332,10 +366,10 @@ class PGTestCase(unittest.TestCase):
         params = [ (1, 'good'),
                    ('error', 'not an int'),
                    (3, 'good') ]
-        
+
         self.failUnlessRaises(pyodbc.Error, self.cursor.executemany, "insert into t1(a, b) value (?, ?)", params)
 
-        
+
     def test_row_slicing(self):
         self.cursor.execute("create table t1(a int, b int, c int, d int)");
         self.cursor.execute("insert into t1 values(1,2,3,4)")
@@ -425,11 +459,6 @@ def main():
     if options.verbose:
         cnxn = pyodbc.connect(connection_string, ansi=options.ansi)
         print_library_info(cnxn)
-        # print 'library:', os.path.abspath(pyodbc.__file__)
-        # print 'odbc:    %s' % cnxn.getinfo(pyodbc.SQL_ODBC_VER)
-        # print 'driver:  %s %s' % (cnxn.getinfo(pyodbc.SQL_DRIVER_NAME), cnxn.getinfo(pyodbc.SQL_DRIVER_VER))
-        # print 'driver supports ODBC version %s' % cnxn.getinfo(pyodbc.SQL_DRIVER_ODBC_VER)
-        # print 'unicode:', pyodbc.UNICODE_SIZE, 'sqlwchar:', pyodbc.SQLWCHAR_SIZE
         cnxn.close()
 
     if options.test:

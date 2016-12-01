@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>pyodbc</title>
+    <link href="styles.css" rel="stylesheet">
+  </head>
+  <body>
+
+    <div class="navbar">
+      <div><a href="index.html">Overview</a></div>
+      <div class="active"><a href="api.html">API</a></div>
+      <div><a href="releases.html">Releases</a></div>
+    </div>
+    <div class="subnav">
+      <div><a href="api-module.html">module</a></div>
+      <div><a href="api-connection.html">connection</a></div>
+      <div><a href="api-cursor.html">cursor</a></div>
+      <div class="active"><a href="api-row.html">row</a></div>
+      <div><a href="api-errors.html">errors</a></div>
+    </div>
+
+    <div class="container">
+
+      <p>Row objects are returned from Cursor fetch functions.  As specified in
+        the DB API, they are tuple-like.</p>
+
+<pre>
+row = cursor.fetchone()
+print(row[0])
+</pre>
+
+<p>However, there are some pyodbc additions that make them very convenient:</p>
+
+<ul>
+  <li>Values can be accessed by column name.</li>
+  <li>The Cursor.description values can be accessed from the row.</li>
+  <li>Values can be replaced</li>
+  <li>Rows from the same select share memory.</li>
+</ul>
+
+<p>Accessing rows by column name is very convenient, readable, and Pythonish:</p>
+
+<pre>
+cursor.execute("select album_id, photo_id from photos where user_id=1")
+row = cursor.fetchone()
+print(<b>row.album_id</b>, <b>row.photo_id</b>)
+print(row[0], row[1]) # same as above, but less readable
+</pre>
+
+<p>Having access to the cursor's description, even after the curosr is closed,
+makes Rows very convenient data structures -- you can pass them around and they
+are self describing:</p>
+
+<pre>
+def getuser(userid):
+    cnxn = pyodbc.connect(...)
+    cursor = cnxn.cursor()
+    return cursor.execute(
+        """
+        select album_id, photo_id
+          from photos
+         where user_id = ?
+        """, userid).fetchall()
+
+row = getuser(7)
+# At this point the cursor has been closed and deleted
+# But the columns and datatypes can still be accessed:
+print('columns:', ', '.join(t[0] for t in <b>row.cursor_description</b>))
+</pre>
+
+<p>Unlike normal tuples, values in Row objects can be replaced.  (This means you
+  shouldn't use rows as dictionary keys!)</p>
+
+<p>The intention is to make Rows convenient data structures to replace small or
+short-lived classes.  While SQL is powerful, there are sometimes slight changes
+that need to be made after reading values:</p>
+
+<pre>
+# Replace the 'start_date' datetime in each row with one that has a time zone.
+rows = cursor.fetchall()
+for row in rows:
+    <b>row.start_date =</b> row.start_date.astimezone(tz)
+</pre>
+
+<p>Note that slicing rows returns tuples, not Row objects!</p>
+
+<h3 id="variables">variables</h3>
+
+<dl>
+  <dt>cursor_description</dt>
+  <dd>A copy of the Cursor.description object from the Cursor that created this
+    row.  This contains the column names and data types of the columns.</dd>
+</dl>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+    <script src="pyodbc.js"></script>
+  </body>
+</html>

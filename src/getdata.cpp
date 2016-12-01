@@ -3,408 +3,363 @@
 // every data type.
 
 #include "pyodbc.h"
+#include "wrapper.h"
 #include "pyodbcmodule.h"
 #include "cursor.h"
 #include "connection.h"
 #include "errors.h"
 #include "dbspecific.h"
 #include "sqlwchar.h"
-#include "wrapper.h"
 #include <datetime.h>
+
+// NULL terminator notes:
+//
+//  * pinfo->column_size, from SQLDescribeCol, does not include a NULL terminator.  For example, column_size for a
+//    char(10) column would be 10.  (Also, when dealing with SQLWCHAR, it is the number of *characters*, not bytes.)
+//
+//  * When passing a length to PyString_FromStringAndSize and similar Unicode functions, do not add the NULL
+//    terminator -- it will be added automatically.  See objects/stringobject.c
+//
+//  * SQLGetData does not return the NULL terminator in the length indicator.  (Therefore, you can pass this value
+//    directly to the Python string functions.)
+//
+//  * SQLGetData will write a NULL terminator in the output buffer, so you must leave room for it.  You must also
+//    include the NULL terminator in the buffer length passed to SQLGetData.
+//
+// ODBC generalization:
+//  1) Include NULL terminators in input buffer lengths.
+//  2) NULL terminators are not used in data lengths.
 
 void GetData_init()
 {
     PyDateTime_IMPORT;
 }
 
-class DataBuffer
+static byte* ReallocOrFreeBuffer(byte* pb, Py_ssize_t cbNeed);
+
+inline bool IsBinaryType(SQLSMALLINT sqltype)
 {
-    // Manages memory that GetDataString uses to read data in chunks.  We use the same function (GetDataString) to read
-    // variable length data for 3 different types of data: binary, ANSI, and Unicode.  This class abstracts out the
-    // memory management details to keep the function simple.
-    //
-    // There are 3 potential data buffer types we deal with in GetDataString:
-    //
-    //   1) Binary, which is a simple array of 8-bit bytes.
-    //   2) ANSI text, which is an array of chars with a NULL terminator.
-    //   3) Unicode text, which is an array of ODBCCHARs with a NULL terminator.
-    //
-    // When dealing with Unicode, there are two widths we have to be aware of: (1) ODBCCHAR and (2) Py_UNICODE.  If
-    // these are the same we can use a PyUnicode object so we don't have to allocate our own buffer and then the
-    // Unicode object.  If they are not the same (e.g. OS/X where wchar_t-->4 Py_UNICODE-->2) then we need to maintain
-    // our own buffer and pass it to the PyUnicode object later.  Many Linux distros are now using UCS4, so Py_UNICODE
-    // will be larger than ODBCCHAR.
-    //
-    // To reduce heap fragmentation, we perform the initial read into an array on the stack since we don't know the
-    // length of the data.  If the data doesn't fit, this class then allocates new memory.  If the first read gives us
-    // the length, then we create a Python object of the right size and read into its memory.
-
-private:
-    SQLSMALLINT dataType;
-
-    char* buffer;
-    Py_ssize_t bufferSize;      // How big is the buffer.
-    int bytesUsed;              // How many elements have been read into the buffer?
-
-    PyObject* bufferOwner;      // If possible, we bind into a PyString, PyUnicode, or PyByteArray object.
-    int element_size;           // How wide is each character: ASCII/ANSI -> 1, Unicode -> 2 or 4, binary -> 1
-
-    bool usingStack;            // Is buffer pointing to the initial stack buffer?
-
-public:
-    int null_size;              // How much room, in bytes, to add for null terminator: binary -> 0, other -> same as a element_size
-
-    DataBuffer(SQLSMALLINT dataType, char* stackBuffer, SQLLEN stackBufferSize)
+    // Is this SQL type (e.g. SQL_VARBINARY) a binary type or not?
+    switch (sqltype)
     {
-        // dataType
-        //   The type of data we will be reading: SQL_C_CHAR, SQL_C_WCHAR, or SQL_C_BINARY.
-
-        this->dataType = dataType;
-
-        element_size = (int)((dataType == SQL_C_WCHAR)  ? ODBCCHAR_SIZE : sizeof(char));
-        null_size    = (dataType == SQL_C_BINARY) ? 0 : element_size;
-
-        buffer        = stackBuffer;
-        bufferSize    = stackBufferSize;
-        usingStack    = true;
-        bufferOwner   = 0;
-        bytesUsed     = 0;
-    }
-
-    ~DataBuffer()
-    {
-        if (!usingStack)
-        {
-            if (bufferOwner)
-            {
-                Py_DECREF(bufferOwner);
-            }
-            else
-            {
-                pyodbc_free(buffer);
-            }
-        }
-    }
-
-    char* GetBuffer()
-    {
-        if (!buffer)
-            return 0;
-
-        return buffer + bytesUsed;
-    }
-
-    SQLLEN GetRemaining()
-    {
-        // Returns the amount of data remaining in the buffer, ready to be passed to SQLGetData.
-        return bufferSize - bytesUsed;
-    }
-
-    void AddUsed(SQLLEN cbRead)
-    {
-        I(cbRead <= GetRemaining());
-        bytesUsed += (int)cbRead;
-    }
-
-    bool AllocateMore(SQLLEN cbAdd)
-    {
-        // cbAdd
-        //   The number of bytes (cb --> count of bytes) to add.
-
-        if (cbAdd == 0)
-            return true;
-
-        SQLLEN newSize = bufferSize + cbAdd;
-
-        if (usingStack)
-        {
-            // This is the first call and `buffer` points to stack memory.  Allocate a new object and copy the stack
-            // data into it.
-
-            char* stackBuffer = buffer;
-
-            if (dataType == SQL_C_CHAR)
-            {
-                bufferOwner = PyBytes_FromStringAndSize(0, newSize);
-                buffer      = bufferOwner ? PyBytes_AS_STRING(bufferOwner) : 0;
-            }
-            else if (dataType == SQL_C_BINARY)
-            {
-#if PY_VERSION_HEX >= 0x02060000
-                bufferOwner = PyByteArray_FromStringAndSize(0, newSize);
-                buffer      = bufferOwner ? PyByteArray_AS_STRING(bufferOwner) : 0;
-#else
-                bufferOwner = PyBytes_FromStringAndSize(0, newSize);
-                buffer      = bufferOwner ? PyBytes_AS_STRING(bufferOwner) : 0;
-#endif
-            }
-            else if (ODBCCHAR_SIZE == Py_UNICODE_SIZE)
-            {
-                // Allocate directly into a Unicode object.
-                bufferOwner = PyUnicode_FromUnicode(0, newSize / element_size);
-                buffer      = bufferOwner ? (char*)PyUnicode_AsUnicode(bufferOwner) : 0;
-            }
-            else
-            {
-                // We're Unicode, but ODBCCHAR and Py_UNICODE don't match, so maintain our own ODBCCHAR buffer.
-                bufferOwner = 0;
-                buffer      = (char*)pyodbc_malloc((size_t)newSize);
-            }
-
-            if (buffer == 0)
-                return false;
-
-            usingStack = false;
-
-            memcpy(buffer, stackBuffer, (size_t)bufferSize);
-            bufferSize = newSize;
-            return true;
-        }
-
-        if (bufferOwner && PyUnicode_CheckExact(bufferOwner))
-        {
-            if (PyUnicode_Resize(&bufferOwner, newSize / element_size) == -1)
-                return false;
-            buffer = (char*)PyUnicode_AsUnicode(bufferOwner);
-        }
-#if PY_VERSION_HEX >= 0x02060000
-        else if (bufferOwner && PyByteArray_CheckExact(bufferOwner))
-        {
-            if (PyByteArray_Resize(bufferOwner, newSize) == -1)
-                return false;
-            buffer = PyByteArray_AS_STRING(bufferOwner);
-        }
-#endif
-        else if (bufferOwner && PyBytes_CheckExact(bufferOwner))
-        {
-            if (_PyBytes_Resize(&bufferOwner, newSize) == -1)
-                return false;
-            buffer = PyBytes_AS_STRING(bufferOwner);
-        }
-        else
-        {
-            char* tmp = (char*)realloc(buffer, (size_t)newSize);
-            if (tmp == 0)
-                return false;
-            buffer = tmp;
-        }
-
-        bufferSize = newSize;
-
+    case SQL_BINARY:
+    case SQL_VARBINARY:
+    case SQL_LONGVARBINARY:
         return true;
     }
+    return false;
+}
 
-    PyObject* DetachValue()
-    {
-        // At this point, Trim should have been called by PostRead.
-
-        if (bytesUsed == SQL_NULL_DATA || buffer == 0)
-            Py_RETURN_NONE;
-
-        if (usingStack)
-        {
-            if (dataType == SQL_C_CHAR)
-                return PyBytes_FromStringAndSize(buffer, bytesUsed);
-
-            if (dataType == SQL_C_BINARY)
-            {
-#if PY_VERSION_HEX >= 0x02060000
-                return PyByteArray_FromStringAndSize(buffer, bytesUsed);
-#else
-                return PyBytes_FromStringAndSize(buffer, bytesUsed);
-#endif
-            }
-
-            return PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, bytesUsed / element_size);
-        }
-
-        if (bufferOwner && PyUnicode_CheckExact(bufferOwner))
-        {
-            if (PyUnicode_Resize(&bufferOwner, bytesUsed / element_size) == -1)
-                return 0;
-            PyObject* tmp = bufferOwner;
-            bufferOwner = 0;
-            buffer      = 0;
-            return tmp;
-        }
-
-        if (bufferOwner && PyBytes_CheckExact(bufferOwner))
-        {
-            if (_PyBytes_Resize(&bufferOwner, bytesUsed) == -1)
-                return 0;
-            PyObject* tmp = bufferOwner;
-            bufferOwner = 0;
-            buffer      = 0;
-            return tmp;
-        }
-
-#if PY_VERSION_HEX >= 0x02060000
-        if (bufferOwner && PyByteArray_CheckExact(bufferOwner))
-        {
-            if (PyByteArray_Resize(bufferOwner, bytesUsed) == -1)
-                return 0;
-            PyObject* tmp = bufferOwner;
-            bufferOwner = 0;
-            buffer      = 0;
-            return tmp;
-        }
-#endif
-
-        // We have allocated our own SQLWCHAR buffer and must now copy it to a Unicode object.
-        I(bufferOwner == 0);
-        PyObject* result = PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, bytesUsed / element_size);
-        if (result == 0)
-            return 0;
-        pyodbc_free(buffer);
-        buffer = 0;
-        return result;
-    }
-};
-
-
-static PyObject* GetDataString(Cursor* cur, Py_ssize_t iCol)
+inline bool IsWideType(SQLSMALLINT sqltype)
 {
-    // Returns a string, unicode, or bytearray object for character and binary data.
-    //
-    // In Python 2.6+, binary data is returned as a byte array.  Earlier versions will return an ASCII str object here
-    // which will be wrapped in a buffer object by the caller.
-    //
-    // NULL terminator notes:
-    //
-    //  * pinfo->column_size, from SQLDescribeCol, does not include a NULL terminator.  For example, column_size for a
-    //    char(10) column would be 10.  (Also, when dealing with SQLWCHAR, it is the number of *characters*, not bytes.)
-    //
-    //  * When passing a length to PyString_FromStringAndSize and similar Unicode functions, do not add the NULL
-    //    terminator -- it will be added automatically.  See objects/stringobject.c
-    //
-    //  * SQLGetData does not return the NULL terminator in the length indicator.  (Therefore, you can pass this value
-    //    directly to the Python string functions.)
-    //
-    //  * SQLGetData will write a NULL terminator in the output buffer, so you must leave room for it.  You must also
-    //    include the NULL terminator in the buffer length passed to SQLGetData.
-    //
-    // ODBC generalization:
-    //  1) Include NULL terminators in input buffer lengths.
-    //  2) NULL terminators are not used in data lengths.
-
-    ColumnInfo* pinfo = &cur->colinfos[iCol];
-
-    // Some Unix ODBC drivers do not return the correct length.
-    if (pinfo->sql_type == SQL_GUID)
-        pinfo->column_size = 36;
-
-    SQLSMALLINT nTargetType;
-
-    switch (pinfo->sql_type)
+    switch (sqltype)
     {
-    case SQL_CHAR:
-    case SQL_VARCHAR:
-    case SQL_LONGVARCHAR:
-    case SQL_GUID:
-    case SQL_SS_XML:
-#if PY_MAJOR_VERSION < 3
-        if (cur->cnxn->unicode_results)
-            nTargetType  = SQL_C_WCHAR;
-        else
-            nTargetType  = SQL_C_CHAR;
-#else
-        nTargetType  = SQL_C_WCHAR;
-#endif
-
-        break;
-
     case SQL_WCHAR:
     case SQL_WVARCHAR:
     case SQL_WLONGVARCHAR:
-        nTargetType  = SQL_C_WCHAR;
-        break;
+        return true;
+    }
+    return false;
+}
 
-    default:
-        nTargetType  = SQL_C_BINARY;
-        break;
+// TODO: Wont pyodbc_free crash if we didn't use pyodbc_realloc.
+
+static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool& isNull, byte*& pbResult, Py_ssize_t& cbResult)
+{
+    // Called to read a variable-length column and return its data in a newly-allocated heap
+    // buffer.
+    //
+    // Returns true if the read was successful and false if the read failed.  If the read
+    // failed a Python exception will have been set.
+    //
+    // If a non-null and non-empty value was read, pbResult will be set to a buffer containing
+    // the data and cbResult will be set to the byte length.  This length does *not* include a
+    // null terminator.  In this case the data *must* be freed using pyodbc_free.
+    //
+    // If a null value was read, isNull is set to true and pbResult and cbResult will be set to
+    // 0.
+    //
+    // If a zero-length value was read, isNull is set to false and pbResult and cbResult will
+    // be set to 0.
+
+    isNull   = false;
+    pbResult = 0;
+    cbResult = 0;
+
+    const Py_ssize_t cbElement = (Py_ssize_t)(IsWideType(ctype) ? sizeof(ODBCCHAR) : 1);
+    const Py_ssize_t cbNullTerminator = IsBinaryType(ctype) ? 0 : cbElement;
+
+    // TODO: Make the initial allocation size configurable?
+    Py_ssize_t cbAllocated = 256;
+    Py_ssize_t cbUsed = 0;
+    byte* pb = (byte*)malloc((size_t)cbAllocated);
+    if (!pb)
+    {
+        PyErr_NoMemory();
+        return false;
     }
 
-    char tempBuffer[1026]; // Pad with 2 bytes for driver bugs
-    DataBuffer buffer(nTargetType, tempBuffer, sizeof(tempBuffer)-2);
+    SQLRETURN ret = SQL_SUCCESS_WITH_INFO;
 
-    for(;;)
+    do
     {
-        SQLRETURN ret;
-        SQLLEN cbData = 0;
+        // Call SQLGetData in a loop as long as it keeps returning partial data (ret ==
+        // SQL_SUCCESS_WITH_INFO).  Each time through, update the buffer pb, cbAllocated, and
+        // cbUsed.
+
+        Py_ssize_t cbAvailable = cbAllocated - cbUsed;
+        SQLLEN cbData;
 
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), nTargetType, buffer.GetBuffer(), buffer.GetRemaining(), &cbData);
+        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), ctype, &pb[cbUsed], (SQLLEN)cbAvailable, &cbData);
         Py_END_ALLOW_THREADS;
 
-        if (cbData == SQL_NULL_DATA || (ret == SQL_SUCCESS && cbData < 0))
-        {
-            // HACK: FreeTDS 0.91 on OS/X returns -4 for NULL data instead of SQL_NULL_DATA (-1).  I've traced into the
-            // code and it appears to be the result of assigning -1 to a SQLLEN:
-            //
-            //   if (colinfo->column_cur_size < 0) {
-            //       /* TODO check what should happen if pcbValue was NULL */
-            //       *pcbValue = SQL_NULL_DATA;
-            //
-            // I believe it will be fine to treat all negative values as NULL for now.
-
-            Py_RETURN_NONE;
-        }
+        TRACE("ReadVarColumn: SQLGetData avail=%d --> ret=%d cbData=%d\n", (int)cbAvailable, (int)ret, (int)cbData);
 
         if (!SQL_SUCCEEDED(ret) && ret != SQL_NO_DATA)
-            return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+        {
+            RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+            return false;
+        }
 
-        // The SQLGetData behavior is incredibly quirky.  It doesn't tell us the total, the total we've read, or even
-        // the amount just read.  It returns the amount just read, plus any remaining.  Unfortunately, the only way to
-        // pick them apart is to subtract out the amount of buffer we supplied.
+        if (ret == SQL_SUCCESS && cbData < 0)
+        {
+            // HACK: FreeTDS 0.91 on OS/X returns -4 for NULL data instead of SQL_NULL_DATA
+            // (-1).  I've traced into the code and it appears to be the result of assigning -1
+            // to a SQLLEN.  We are going to treat all negative values as NULL.
+            ret = SQL_NULL_DATA;
+            cbData = 0;
+        }
 
-        SQLLEN cbBuffer = buffer.GetRemaining(); // how much we gave SQLGetData
+        // SQLGetData behavior is incredibly quirky: It doesn't tell us the total, the total
+        // we've read, or even the amount just read.  It returns the amount just read, plus any
+        // remaining.  Unfortunately, the only way to pick them apart is to subtract out the
+        // amount of buffer we supplied.
 
         if (ret == SQL_SUCCESS_WITH_INFO)
         {
-            // There is more data than fits in the buffer.  The amount of data equals the amount of data in the buffer
-            // minus a NULL terminator.
+            // This means we read some data, but there is more.  SQLGetData is very weird - it
+            // sets cbRead to the number of bytes we read *plus* the amount remaining.
 
-            SQLLEN cbRead;
-            SQLLEN cbMore;
+            Py_ssize_t cbRemaining = 0; // How many more bytes do we need to allocate, not including null?
+            Py_ssize_t cbRead = 0; // How much did we just read, not including null?
 
             if (cbData == SQL_NO_TOTAL)
             {
-                // We don't know how much more, so just guess.
-                cbRead = cbBuffer - buffer.null_size;
-                cbMore = 2048;
-            }
-            else if (cbData >= cbBuffer)
-            {
-                // There is more data.  We supplied cbBuffer, but there was cbData (more).  We received cbBuffer, so we
-                // need to subtract that, allocate enough to read the rest (cbData-cbBuffer).
+                // This special value indicates there is more data but the driver can't tell us
+                // how much more, so we'll just add whatever we want and try again.  It also
+                // tells us, however, that the buffer is full, so the amount we read equals the
+                // amount we offered.  Remember that if the type requires a null terminator, it
+                // will be added *every* time, not just at the end, so we need to subtract it.
 
-                cbRead = cbBuffer - buffer.null_size;
-                cbMore = cbData - cbRead;
+                cbRead = (cbAvailable - cbNullTerminator);
+                cbRemaining = 2048;
+            }
+            else if ((Py_ssize_t)cbData >= cbAvailable)
+            {
+                // We offered cbAvailable space, but there was cbData data.  The driver filled
+                // the buffer with what it could.  Remember that if the type requires a null
+                // terminator, the driver is going to append one on *every* read, so we need to
+                // subtract them out.  At least we know the exact data amount now and we can
+                // allocate a precise amount.
+
+                cbRead = (cbAvailable - cbNullTerminator);
+                cbRemaining = cbData - cbRead;
             }
             else
             {
-                // I'm not really sure why I would be here ... I would have expected SQL_SUCCESS
-                cbRead = cbData - buffer.null_size;
-                cbMore = 0;
+                // I would not expect to get here - we apparently read all of the data but the
+                // driver did not return SQL_SUCCESS?
+                cbRead = (cbData - cbNullTerminator);
+                cbRemaining = 0;
             }
 
-            buffer.AddUsed(cbRead);
-            if (!buffer.AllocateMore(cbMore))
-                return PyErr_NoMemory();
+            cbUsed += cbRead;
+
+            if (cbRemaining > 0)
+            {
+                // This is a tiny bit complicated by the fact that the data is null terminated,
+                // meaning we haven't actually used up the entire buffer (cbAllocated), only
+                // cbUsed (which should be cbAllocated - cbNullTerminator).
+                Py_ssize_t cbNeed = cbUsed + cbRemaining + cbNullTerminator;
+                pb = ReallocOrFreeBuffer(pb, cbNeed);
+                if (!pb)
+                    return false;
+                cbAllocated = cbNeed;
+            }
         }
         else if (ret == SQL_SUCCESS)
         {
-            // For some reason, the NULL terminator is used in intermediate buffers but not in this final one.
-            buffer.AddUsed(cbData);
-            return buffer.DetachValue();
-        }
-        else if (ret == SQL_NO_DATA) {
-            return buffer.DetachValue();
-        }
-        else {
-            return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+            // We read some data and this is the last batch (so we'll drop out of the
+            // loop).
+            //
+            // If I'm reading the documentation correctly, SQLGetData is not going to
+            // include the null terminator in cbRead.
+
+            cbUsed += cbData;
         }
     }
+    while (ret == SQL_SUCCESS_WITH_INFO);
+
+    isNull = (ret == SQL_NULL_DATA);
+
+    if (!isNull && cbUsed > 0)
+    {
+        pbResult = pb;
+        cbResult = cbUsed;
+    }
+    else
+    {
+        pyodbc_free(pb);
+    }
+    return true;
+}
+
+static byte* ReallocOrFreeBuffer(byte* pb, Py_ssize_t cbNeed)
+{
+    // Attempts to reallocate `pb` to size `cbNeed`.  If the realloc fails, the original memory
+    // is freed, a memory exception is set, and 0 is returned.  Otherwise the new pointer is
+    // returned.
+
+    byte* pbNew = (byte*)realloc(pb, (size_t)cbNeed);
+    if (pbNew == 0)
+    {
+        pyodbc_free(pb);
+        PyErr_NoMemory();
+        return 0;
+    }
+    return pbNew;
+}
+
+
+static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
+{
+    // We are reading one of the SQL_WCHAR, SQL_WVARCHAR, etc., and will return
+    // a string.
+    //
+    // If there is no configuration we would expect this to be UTF-16 encoded data.  (If no
+    // byte-order-mark, we would expect it to be big-endian.)
+    //
+    // Now, just because the driver is telling us it is wide data doesn't mean it is true.
+    // psqlodbc with UTF-8 will tell us it is wide data but you must ask for single-byte.
+    // (Otherwise it is just UTF-8 with each character stored as 2 bytes.)  That's why we allow
+    // the user to configure.
+
+    ColumnInfo* pinfo = &cur->colinfos[iCol];
+    const TextEnc& enc = IsWideType(pinfo->sql_type) ? cur->cnxn->sqlwchar_enc : cur->cnxn->sqlchar_enc;
+
+    bool isNull = false;
+    byte* pbData = 0;
+    Py_ssize_t cbData = 0;
+    if (!ReadVarColumn(cur, iCol, enc.ctype, isNull, pbData, cbData))
+        return 0;
+
+    if (isNull)
+    {
+        I(pbData == 0 && cbData == 0);
+        Py_RETURN_NONE;
+    }
+
+    //
+    // Decode the bytes to a Unicode string.
+    //
+
+    PyObject* str;
+
+#if PY_MAJOR_VERSION < 3
+    // The Unicode paths use the same code.
+    if (enc.to == TO_UNICODE)
+    {
+#endif
+
+        int byteorder = 0;
+        switch (enc.optenc)
+        {
+        case OPTENC_UTF8:
+            str = PyUnicode_DecodeUTF8((char*)pbData, cbData, "strict");
+            break;
+        case OPTENC_UTF16:
+            byteorder = BYTEORDER_NATIVE;
+            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
+            break;
+        case OPTENC_UTF16LE:
+            byteorder = BYTEORDER_LE;
+            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
+            break;
+        case OPTENC_UTF16BE:
+            byteorder = BYTEORDER_BE;
+            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
+            break;
+        case OPTENC_LATIN1:
+            str = PyUnicode_DecodeLatin1((char*)pbData, cbData, "strict");
+            break;
+        default:
+            // The user set an encoding by name.
+            str = PyUnicode_Decode((char*)pbData, cbData, enc.name, "strict");
+            break;
+        }
+
+#if PY_MAJOR_VERSION < 3
+    }
+    else
+    {
+        // The user has requested a string object.  Unfortunately we don't have
+        // str versions of all of the optimized functions.
+        const char* encoding;
+        switch (enc.optenc)
+        {
+        case OPTENC_UTF8:
+            encoding = "utf-8";
+            break;
+        case OPTENC_UTF16:
+            encoding = "utf-16";
+            break;
+        case OPTENC_UTF16LE:
+            encoding = "utf-16-le";
+            break;
+        case OPTENC_UTF16BE:
+            encoding = "utf-16-be";
+            break;
+        case OPTENC_LATIN1:
+            encoding = "latin-1";
+            break;
+        default:
+            encoding = enc.name;
+        }
+
+        str = PyString_Decode((char*)pbData, cbData, encoding, "string");
+    }
+#endif
+
+    pyodbc_free(pbData);
+
+    return str;
+}
+
+static PyObject* GetBinary(Cursor* cur, Py_ssize_t iCol)
+{
+    // Reads SQL_BINARY.
+
+    bool isNull = false;
+    byte* pbData = 0;
+    Py_ssize_t cbData = 0;
+    if (!ReadVarColumn(cur, iCol, SQL_C_BINARY, isNull, pbData, cbData))
+        return 0;
+
+    if (isNull)
+    {
+        I(pbData == 0 && cbData == 0);
+        Py_RETURN_NONE;
+    }
+
+    PyObject* obj;
+#if PY_MAJOR_VERSION >= 3
+    obj = PyBytes_FromStringAndSize((char*)pbData, cbData);
+#else
+    obj = PyByteArray_FromStringAndSize((char*)pbData, cbData);
+#endif
+    pyodbc_free(pbData);
+    return obj;
 }
 
 
@@ -413,12 +368,28 @@ static PyObject* GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
     // conv
     //   The index into the connection's user-defined conversions `conv_types`.
 
-    PyObject* value = GetDataString(cur, iCol);
-    if (value == 0)
+    bool isNull = false;
+    byte* pbData = 0;
+    Py_ssize_t cbData = 0;
+    if (!ReadVarColumn(cur, iCol, SQL_C_BINARY, isNull, pbData, cbData))
+        return 0;
+
+    if (isNull)
+    {
+        I(pbData == 0 && cbData == 0);
+        Py_RETURN_NONE;
+    }
+
+    PyObject* value = PyBytes_FromStringAndSize((char*)pbData, cbData);
+    pyodbc_free(pbData);
+    if (!value)
         return 0;
 
     PyObject* result = PyObject_CallFunction(cur->cnxn->conv_funcs[conv], "(O)", value);
     Py_DECREF(value);
+    if (!result)
+        return 0;
+
     return result;
 }
 
@@ -714,24 +685,19 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_WCHAR:
     case SQL_WVARCHAR:
     case SQL_WLONGVARCHAR:
+        return GetText(cur, iCol);
+
     case SQL_CHAR:
     case SQL_VARCHAR:
     case SQL_LONGVARCHAR:
     case SQL_GUID:
     case SQL_SS_XML:
-#if PY_VERSION_HEX >= 0x02060000
-    case SQL_BINARY:
-    case SQL_VARBINARY:
-    case SQL_LONGVARBINARY:
-#endif
-        return GetDataString(cur, iCol);
+        return GetText(cur, iCol);
 
-#if PY_VERSION_HEX < 0x02060000
     case SQL_BINARY:
     case SQL_VARBINARY:
     case SQL_LONGVARBINARY:
-        return GetDataBuffer(cur, iCol);
-#endif
+        return GetBinary(cur, iCol);
 
     case SQL_DECIMAL:
     case SQL_NUMERIC:

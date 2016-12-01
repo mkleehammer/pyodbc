@@ -24,6 +24,7 @@ typedef unsigned int UINT;
 typedef long long INT64;
 typedef unsigned long long UINT64;
 #define _strcmpi strcasecmp
+#define _strdup strdup
 #ifdef __MINGW32__
   #include <windef.h>
   #include <malloc.h>
@@ -105,7 +106,7 @@ inline void _strlwr(char* name)
   #include <crtdbg.h>
   inline void FailAssert(const char* szFile, size_t line, const char* szExpr)
   {
-      printf("assertion failed: %s(%d)\n%s\n", szFile, line, szExpr);
+      printf("assertion failed: %s(%d)\n%s\n", szFile, (int)line, szExpr);
       __debugbreak(); // _CrtDbgBreak();
   }
   #define I(expr) if (!(expr)) FailAssert(__FILE__, __LINE__, #expr);
@@ -122,15 +123,15 @@ inline void DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
 #endif
 #define TRACE DebugTrace
 
-#ifdef PYODBC_LEAK_CHECK
-#define pyodbc_malloc(len) _pyodbc_malloc(__FILE__, __LINE__, len)
-void* _pyodbc_malloc(const char* filename, int lineno, size_t len);
-void pyodbc_free(void* p);
-void pyodbc_leak_check();
-#else
+// #ifdef PYODBC_LEAK_CHECK
+// #define pyodbc_malloc(len) _pyodbc_malloc(__FILE__, __LINE__, len)
+// void* _pyodbc_malloc(const char* filename, int lineno, size_t len);
+// void pyodbc_free(void* p);
+// void pyodbc_leak_check();
+// #else
 #define pyodbc_malloc malloc
 #define pyodbc_free free
-#endif
+// #endif
 
 void PrintBytes(void* p, size_t len);
 

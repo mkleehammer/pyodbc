@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # -*- coding: latin-1 -*-
 
+from __future__ import print_function
+
 usage = """\
 usage: %prog [options] connection_string
 
@@ -81,6 +83,8 @@ class SqlServerTestCase(unittest.TestCase):
     def setUp(self):
         self.cnxn   = pyodbc.connect(self.connection_string)
         self.cursor = self.cnxn.cursor()
+
+        self.cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='latin1')
 
         for i in range(3):
             try:
@@ -164,7 +168,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(g1 uniqueidentifier)")
         self.cursor.execute("insert into t1 values (newid())")
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), str)
+        self.assertEqual(type(v), unicode)
         self.assertEqual(len(v), 36)
 
     def test_nextset(self):
@@ -216,10 +220,6 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(?)", value)
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), resulttype)
-
-        if value is not None:
-            self.assertEqual(len(v), len(value))
 
         # To allow buffer --> db --> bytearray tests, always convert the input to the expected result type before
         # comparing.
@@ -248,18 +248,15 @@ class SqlServerTestCase(unittest.TestCase):
 
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(?)", value)
-        v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), resulttype)
-
-        if value is not None:
-            self.assertEqual(len(v), len(value))
+        result = self.cursor.execute("select * from t1").fetchone()[0]
+        self.assertEqual(type(result), resulttype)
 
         # To allow buffer --> db --> bytearray tests, always convert the input to the expected result type before
         # comparing.
         if type(value) is not resulttype:
             value = resulttype(value)
 
-        self.assertEqual(v, value)
+        self.assertEqual(result, value)
 
 
     #
@@ -274,7 +271,7 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strtype('varchar', value, colsize=len(value))
         return t
-    for value in ANSI_SMALL_FENCEPOSTS:
+    for value in UNICODE_SMALL_FENCEPOSTS:
         locals()['test_varchar_%s' % len(value)] = _maketest(value)
 
     # Also test varchar(max)
@@ -282,7 +279,7 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strtype('varchar', value, colsize='max')
         return t
-    for value in ANSI_MAX_FENCEPOSTS:
+    for value in UNICODE_MAX_FENCEPOSTS:
         locals()['test_varcharmax_%s' % len(value)] = _maketest(value)
 
     def test_varchar_many(self):
@@ -300,13 +297,15 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(v3, row.c3)
 
     def test_varchar_upperlatin(self):
-        self._test_strtype('varchar', 'á')
+        # c2 is an A with a hat (circumflex) ; CA is E hat
+        # self._test_strtype('varchar', u'<\x00c2 - \x00ca>', colsize=100)
+        self._test_strtype('varchar', u'xÂz', colsize=100)
 
     #
-    # unicode
+    # nvarchar
     #
 
-    def test_unicode_null(self):
+    def test_nvarchar_null(self):
         self._test_strtype('nvarchar', None, colsize=100)
 
     # Generate a test for each fencepost size: test_unicode_0, etc.
@@ -315,7 +314,7 @@ class SqlServerTestCase(unittest.TestCase):
             self._test_strtype('nvarchar', value, colsize=len(value))
         return t
     for value in UNICODE_SMALL_FENCEPOSTS:
-        locals()['test_unicode_%s' % len(value)] = _maketest(value)
+        locals()['test_nvarchar_%s' % len(value)] = _maketest(value)
 
     # Also test nvarchar(max)
     def _maketest(value):
@@ -432,11 +431,11 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strliketype('text', value)
         return t
-    for value in ANSI_SMALL_FENCEPOSTS:
+    for value in UNICODE_SMALL_FENCEPOSTS:
         locals()['test_text_buffer_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strliketype('text', 'á')
+        self._test_strliketype('text', u'á')
 
     #
     # xml
@@ -453,11 +452,11 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strliketype('xml', value)
         return t
-    for value in ANSI_SMALL_FENCEPOSTS:
+    for value in UNICODE_SMALL_FENCEPOSTS:
         locals()['test_xml_buffer_%s' % len(value)] = _maketest(value)
 
     def test_xml_upperlatin(self):
-        self._test_strliketype('xml', 'á')
+        self._test_strliketype('xml', u'á')
 
     #
     # bit
@@ -557,13 +556,11 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s varchar(20))")
         self.cursor.execute("insert into t1 values(?)", "")
 
-    def test_fixed_str(self):
+    def test_fixed_char(self):
         value = "testing"
         self.cursor.execute("create table t1(s char(7))")
         self.cursor.execute("insert into t1 values(?)", "testing")
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), str)
-        self.assertEqual(len(v), len(value)) # If we alloc'd wrong, the test below might work because of an embedded NULL
         self.assertEqual(v, value)
 
     def test_empty_unicode(self):
@@ -958,12 +955,12 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s char(7))")
         self.cursor.execute("insert into t1 values(?)", "testing")
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), str)
+        self.assertEqual(type(v), unicode)
         self.assertEqual(v, "testing")
 
         self.cursor.execute("select s into t2 from t1")
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), str)
+        self.assertEqual(type(v), unicode)
         self.assertEqual(v, "testing")
 
 

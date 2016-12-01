@@ -1,4 +1,3 @@
-
 #ifndef PYODBCCOMPAT_H
 #define PYODBCCOMPAT_H
 
@@ -22,7 +21,7 @@
 #else
     #define PyBytes_AS_STRING PyString_AS_STRING
     #define PyBytes_Check PyString_Check
-    #define PyBytes_CheckExact PyString_CheckExact 
+    #define PyBytes_CheckExact PyString_CheckExact
     #define PyBytes_FromStringAndSize PyString_FromStringAndSize
     #define PyBytes_GET_SIZE PyString_GET_SIZE
     #define PyBytes_Size PyString_Size
@@ -41,7 +40,7 @@
   #define PyInt_AsLong PyLong_AsLong
   #define PyInt_AS_LONG PyLong_AS_LONG
   #define PyInt_Type PyLong_Type
-  #define PyString_FromFormatV PyUnicode_FromFormatV   
+  #define PyString_FromFormatV PyUnicode_FromFormatV
   #define PyString_FromFormat PyUnicode_FromFormat
   #define Py_TPFLAGS_HAVE_ITER 0
   #define PyString_AsString PyUnicode_AsString
@@ -143,13 +142,17 @@ inline Py_ssize_t TextCopyToUnicode(Py_UNICODE* buffer, PyObject* o)
     }
     else
     {
-#endif    
+#endif
         Py_ssize_t cch = PyUnicode_GET_SIZE(o);
         memcpy(buffer, PyUnicode_AS_UNICODE(o), cch * sizeof(Py_UNICODE));
         return cch;
 #if PY_MAJOR_VERSION < 3
     }
-#endif    
+#endif
 }
+
+#if PY_MAJOR_VERSION < 3
+int PyCodec_KnownEncoding(const char *encoding);
+#endif
 
 #endif // PYODBCCOMPAT_H

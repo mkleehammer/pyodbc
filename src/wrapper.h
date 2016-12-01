@@ -52,6 +52,10 @@ public:
         return p;
     }
 
+    operator PyVarObject*() { return (PyVarObject*)p; }
+
+    operator const bool() { return p != 0; }
+
     PyObject* Get()
     {
         return p;

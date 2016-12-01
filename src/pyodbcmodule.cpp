@@ -10,11 +10,11 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "pyodbc.h"
+#include "wrapper.h"
 #include "pyodbcmodule.h"
 #include "connection.h"
 #include "cursor.h"
 #include "row.h"
-#include "wrapper.h"
 #include "errors.h"
 #include "getdata.h"
 #include "cnxninfo.h"
@@ -284,9 +284,9 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     Object pConnectString = 0;
     int fAutoCommit = 0;
     int fAnsi = 0;              // force ansi
-    int fUnicodeResults = 0;
     int fReadOnly = 0;
     long timeout = 0;
+    Object encoding;
 
     Object attrs_before; // Optional connect attrs set before connecting
 
@@ -341,13 +341,6 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                 fAnsi = PyObject_IsTrue(value);
                 continue;
             }
-#if PY_MAJOR_VERSION < 3
-            if (Text_EqualsI(key, "unicode_results"))
-            {
-                fUnicodeResults = PyObject_IsTrue(value);
-                continue;
-            }
-#endif
             if (Text_EqualsI(key, "timeout"))
             {
                 timeout = PyInt_AsLong(value);
@@ -365,6 +358,18 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                 attrs_before = _CheckAttrsDict(value);
                 if (PyErr_Occurred())
                     return 0;
+                continue;
+            }
+            if (Text_EqualsI(key, "encoding"))
+            {
+#if PY_MAJOR_VERSION < 3
+                if (!PyString_Check(value) || !PyUnicode_Check(value))
+                    return PyErr_Format(PyExc_TypeError, "encoding must be a string or unicode object");
+#else
+                if (!PyUnicode_Check(value))
+                    return PyErr_Format(PyExc_TypeError, "encoding must be a string");
+#endif
+                encoding = value;
                 continue;
             }
 
@@ -412,8 +417,8 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
             return 0;
     }
 
-    return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, fUnicodeResults != 0, timeout,
-                                     fReadOnly != 0, attrs_before);
+    return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, timeout,
+                                     fReadOnly != 0, attrs_before, encoding);
 }
 
 static PyObject* mod_datasources(PyObject* self)

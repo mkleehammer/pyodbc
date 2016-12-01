@@ -14,63 +14,57 @@ enum {
 
 class SQLWChar
 {
-    // An object designed to convert strings and Unicode objects to SQLWCHAR,
-    // hold the temporary buffer, and delete it in the destructor.
-
 private:
-    ODBCCHAR* pch;
-    Py_ssize_t len;
-    bool owns_memory;
+    Object tmp;
+    // If the passed in string/unicode object needed to be encoded, this holds
+    // the bytes object it was encoded into.  If set, sz points into this
+    // object.
+
+    const char* sz;
+    // The value of the string.  If this is zero a Python error occurred in the
+    // constructor and nothing further should be one with this.
+
+    Py_ssize_t cch;
+
+    void init(PyObject* value, PyObject* encoding, const char* szDefaultEncoding)
+    {
+        sz = 0;
+        cch = 0;
+        const char* szEncoding = szDefaultEncoding;
+
+        Object tmpEncoding;
+        if (encoding)
+        {
+            tmpEncoding = PyCodec_Encode(encoding, "utf-8", "strict");
+            if (tmpEncoding)
+                szEncoding = PyBytes_AsString(tmpEncoding);
+        }
+
+        if (szEncoding)
+        {
+            tmp = PyCodec_Encode(value, szEncoding, "strict");
+            if (tmp)
+            {
+                sz = PyBytes_AsString(tmp);
+                cch = PyBytes_Size(tmp);
+            }
+        }
+    }
 
 public:
-    SQLWChar()
+    SQLWChar(PyObject* value, const char* szEncoding)
     {
-        pch = 0;
-        len = 0;
-        owns_memory = false;
+        init(value, 0, szEncoding);
+    }
+    SQLWChar(PyObject* value, PyObject* encoding, const char* szDefaultEncoding)
+    {
+        init(value, encoding, szDefaultEncoding);
     }
 
-    SQLWChar(PyObject* o);
+    operator bool() const { return sz != 0; }
 
-    bool Convert(PyObject* o);
-
-    void Free();
-
-    ~SQLWChar()
-    {
-        Free();
-    }
-
-    void dump();
-
-    // operator SQLWCHAR*() { return (SQLWCHAR*)pch; }
-    // operator const SQLWCHAR*() const { return (const SQLWCHAR*)pch; }
-
-    SQLWCHAR* get() { return (SQLWCHAR*)pch; }
-    // The ODBC headers are not const clean.  Don't use this to modify data
-    // since we are not actually pointing to a buffer of SQLWCHARs.
-
-    const SQLWCHAR* get() const { return (const SQLWCHAR*)pch; }
-
-    operator bool() const { return pch != 0; }
-    Py_ssize_t size() const { return len; }
-
-    ODBCCHAR* operator[] (Py_ssize_t i)
-    {
-        I(i <= len); // we'll allow access to the NULL?
-        return &pch[i];
-    }
-        
-    const ODBCCHAR* operator[] (Py_ssize_t i) const
-    {
-        I(i <= len); // we'll allow access to the NULL?
-        return &pch[i];
-    }
+    const char* value() const { return sz; }
+    Py_ssize_t len() const { return cch; }
 };
-
-// Allocate a new Unicode object, initialized from the given SQLWCHAR string.
-PyObject* PyUnicode_FromSQLWCHAR(const SQLWCHAR* sz, Py_ssize_t cch);
-
-SQLWCHAR* SQLWCHAR_FromUnicode(const Py_UNICODE* pch, Py_ssize_t len);
 
 #endif // _PYODBCSQLWCHAR_H

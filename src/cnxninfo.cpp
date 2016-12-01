@@ -1,4 +1,3 @@
-
 // There is a bunch of information we want from connections which requires calls to SQLGetInfo when we first connect.
 // However, this isn't something we really want to do for every connection, so we cache it by the hash of the
 // connection string.  When we create a new connection, we copy the values into the connection structure.
@@ -6,9 +5,9 @@
 // We hash the connection string since it may contain sensitive information we wouldn't want exposed in a core dump.
 
 #include "pyodbc.h"
+#include "wrapper.h"
 #include "cnxninfo.h"
 #include "connection.h"
-#include "wrapper.h"
 
 // Maps from a Python string of the SHA1 hash to a CnxnInfo object.
 //
@@ -81,15 +80,20 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
     Object info((PyObject*)p);
 
     // set defaults
-    p->odbc_major             = 3;
-    p->odbc_minor             = 50;
+    p->odbc_major             = 0;
+    p->odbc_minor             = 0;
     p->supports_describeparam = false;
     p->datetime_precision     = 19; // default: "yyyy-mm-dd hh:mm:ss"
     p->need_long_data_len     = false;
 
-    // WARNING: The GIL lock is released for the *entire* function here.  Do not touch any objects, call Python APIs,
-    // etc.  We are simply making ODBC calls and setting atomic values (ints & chars).  Also, make sure the lock gets
-    // released -- do not add an early exit.
+    p->varchar_maxlength  = 1 * 1024 * 1024 * 1024;
+    p->wvarchar_maxlength = 1 * 1024 * 1024 * 1024;
+    p->binary_maxlength   = 1 * 1024 * 1024 * 1024;
+
+    // WARNING: The GIL lock is released for the *entire* function here.  Do not
+    // touch any objects, call Python APIs, etc.  We are simply making ODBC
+    // calls and setting atomic values (ints & chars).  Also, make sure the lock
+    // gets released -- do not add an early exit.
 
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
@@ -115,32 +119,38 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
     if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_NEED_LONG_DATA_LEN, szYN, _countof(szYN), &cch)))
         p->need_long_data_len = (szYN[0] == 'Y');
 
-    // These defaults are tiny, but are necessary for Access.
-    p->varchar_maxlength = 255;
-    p->wvarchar_maxlength = 255;
-    p->binary_maxlength  = 510;
-
     HSTMT hstmt = 0;
     if (SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, cnxn->hdbc, &hstmt)))
     {
         SQLINTEGER columnsize;
-        if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_TYPE_TIMESTAMP)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
-            if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
-                p->datetime_precision = (int)columnsize;
 
         if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_VARCHAR)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
+        {
             if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
                 p->varchar_maxlength = (int)columnsize;
+            SQLFreeStmt(hstmt, SQL_CLOSE);
+        }
 
         if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_WVARCHAR)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
+        {
             if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
                 p->wvarchar_maxlength = (int)columnsize;
+            SQLFreeStmt(hstmt, SQL_CLOSE);
+        }
 
         if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_BINARY)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
+        {
             if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
                 p->binary_maxlength = (int)columnsize;
+            SQLFreeStmt(hstmt, SQL_CLOSE);
+        }
 
-        SQLFreeStmt(hstmt, SQL_CLOSE);
+        if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_TYPE_TIMESTAMP)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
+        {
+            if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
+                p->datetime_precision = (int)columnsize;
+            SQLFreeStmt(hstmt, SQL_CLOSE);
+        }
     }
 
     Py_END_ALLOW_THREADS

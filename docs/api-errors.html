@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>pyodbc</title>
+    <link href="styles.css" rel="stylesheet">
+  </head>
+  <body>
+    <div class="navbar">
+      <div><a href="index.html">Overview</a></div>
+      <div class="active"><a href="api.html">API</a></div>
+      <div><a href="releases.html">Releases</a></div>
+    </div>
+    <div class="subnav">
+      <div><a href="api-module.html">module</a></div>
+      <div><a href="api-connection.html">connection</a></div>
+      <div><a href="api-cursor.html">cursor</a></div>
+      <div><a href="api-row.html">row</a></div>
+      <div class="active"><a href="api-errors.html">errors</a></div>
+    </div>
+
+    <div class="container">
+
+      <p>Exceptions are raised when ODBC errors are detected. The exception classes
+        specified in the <a href="https://www.python.org/dev/peps/pep-0249/">DB API specification</a>
+        are used.</p>
+
+      <ul>
+        <li>DatabaseError</li>
+        <ul>
+          <li>DataError</li>
+          <li>OperationalError</li>
+          <li>IntegrityError</li>
+          <li>InternalError</li>
+          <li>ProgrammingError</li>
+        </ul>
+      </ul>
+
+      <p>When an error occurs, the type of exception raised is based on the
+        SQLSTATE:</p>
+
+      <table>
+        <thead>
+          <tr><th>SQLSTATE</th><th>Class</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>0A000</td><td>NotSupportedError</td></tr>
+          <tr><td>22xxx</td><td>DataError</td></tr>
+          <tr><td>23xxx 40002</td><td>IntegrityError</td></tr>
+          <tr><td>24xxx 25xxx 42xxx</td><td>ProgrammingError</td></tr>
+          <tr><td>All Others</td><td>DatabaseError</td></tr>
+        </tbody>
+      </table>
+
+      <p>A primary key error (attempting to insert a value when the key already
+        exists) will raise an IntegrityError.</p>
+
+    </div>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+    <script src="pyodbc.js"></script>
+  </body>
+</html>

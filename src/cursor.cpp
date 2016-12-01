@@ -14,6 +14,7 @@
 // actually used.
 
 #include "pyodbc.h"
+#include "wrapper.h"
 #include "cursor.h"
 #include "pyodbcmodule.h"
 #include "connection.h"
@@ -25,7 +26,6 @@
 #include "dbspecific.h"
 #include "sqlwchar.h"
 #include <datetime.h>
-#include "wrapper.h"
 
 enum
 {
@@ -153,12 +153,9 @@ static PyObject* PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMAL
     case SQL_GUID:
     case SQL_SS_XML:
 #if PY_MAJOR_VERSION < 3
-        if (cur->cnxn->unicode_results)
-            pytype = (PyObject*)&PyUnicode_Type;
-        else
-            pytype = (PyObject*)&PyString_Type;
-#else
         pytype = (PyObject*)&PyString_Type;
+#else
+        pytype = (PyObject*)&PyUnicode_Type;
 #endif
         break;
 
@@ -687,18 +684,26 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
 #if PY_MAJOR_VERSION < 3
         if (PyString_Check(pSql))
         {
+            const TextEnc& enc = cur->cnxn->str_enc;
+            SQLWChar query(pSql, enc.name);
+            if (!query)
+                return 0;
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)PyString_AS_STRING(pSql), SQL_NTS);
+            ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.len());
             Py_END_ALLOW_THREADS
         }
         else
 #endif
         {
-            SQLWChar query(pSql);
+            const TextEnc& enc = cur->cnxn->unicode_enc;
+            SQLWChar query(pSql, enc.name);
             if (!query)
                 return 0;
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLExecDirectW(cur->hstmt, query.get(), SQL_NTS);
+            if (enc.ctype == SQL_C_CHAR)
+                ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.len());
+            else
+                ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)query.value(), (SQLINTEGER)query.len());
             Py_END_ALLOW_THREADS
         }
     }
@@ -723,16 +728,18 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
 
     while (ret == SQL_NEED_DATA)
     {
-        // We have bound a PyObject* using SQL_LEN_DATA_AT_EXEC, so ODBC is asking us for the data now.  We gave the
-        // PyObject pointer to ODBC in SQLBindParameter -- SQLParamData below gives the pointer back to us.
+        // One or more parameters were too long to bind normally so we set the
+        // length to SQL_LEN_DATA_AT_EXEC.  ODBC will return SQL_NEED_DATA for
+        // each of the parameters we did this for.
         //
-        // Note that we did not increment the pointer reference for this since we are still in the same C function call
-        // that performed the bind.
+        // For each one we set a pointer to the ParamInfo as the "parameter
+        // data" we can access with SQLParamData.  We've stashed everything we
+        // need in there.
 
         szLastFunction = "SQLParamData";
-        PyObject* pParam;
+        ParamInfo* pInfo;
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLParamData(cur->hstmt, (SQLPOINTER*)&pParam);
+        ret = SQLParamData(cur->hstmt, (SQLPOINTER*)&pInfo);
         Py_END_ALLOW_THREADS
 
         if (ret != SQL_NEED_DATA && ret != SQL_NO_DATA && !SQL_SUCCEEDED(ret))
@@ -743,33 +750,15 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         if (ret == SQL_NEED_DATA)
         {
             szLastFunction = "SQLPutData";
-            if (PyUnicode_Check(pParam))
+            if (PyBytes_Check(pInfo->pObject))
             {
-                SQLWChar wchar(pParam); // Will convert to SQLWCHAR if necessary.
-
-                Py_ssize_t offset = 0;            // in characters
-                Py_ssize_t length = wchar.size(); // in characters
-
-                while (offset < length)
-                {
-                    SQLLEN remaining = min(cur->cnxn->varchar_maxlength, length - offset);
-                    Py_BEGIN_ALLOW_THREADS
-                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)wchar[offset], (SQLLEN)(remaining * sizeof(ODBCCHAR)));
-                    Py_END_ALLOW_THREADS
-                    if (!SQL_SUCCEEDED(ret))
-                        return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
-                    offset += remaining;
-                }
-            }
-            else if (PyBytes_Check(pParam))
-            {
-                const char* p = PyBytes_AS_STRING(pParam);
+                const char* p = PyBytes_AS_STRING(pInfo->pObject);
                 SQLLEN offset = 0;
-                SQLLEN cb = (SQLLEN)PyBytes_GET_SIZE(pParam);
+                SQLLEN cb = (SQLLEN)PyBytes_GET_SIZE(pInfo->pObject);
                 while (offset < cb)
                 {
-                    SQLLEN remaining = min(cur->cnxn->varchar_maxlength, cb - offset);
-                    TRACE("SQLPutData [%d] (%d) %s\n", offset, remaining, &p[offset]);
+                    SQLLEN remaining = min(pInfo->maxlength, cb - offset);
+                    TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
                     Py_BEGIN_ALLOW_THREADS
                     ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
                     Py_END_ALLOW_THREADS
@@ -779,15 +768,15 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                 }
             }
 #if PY_VERSION_HEX >= 0x02060000
-            else if (PyByteArray_Check(pParam))
+            else if (PyByteArray_Check(pInfo->pObject))
             {
-                const char* p = PyByteArray_AS_STRING(pParam);
+                const char* p = PyByteArray_AS_STRING(pInfo->pObject);
                 SQLLEN offset = 0;
-                SQLLEN cb     = (SQLLEN)PyByteArray_GET_SIZE(pParam);
+                SQLLEN cb     = (SQLLEN)PyByteArray_GET_SIZE(pInfo->pObject);
                 while (offset < cb)
                 {
-                    SQLLEN remaining = min(cur->cnxn->varchar_maxlength, cb - offset);
-                    TRACE("SQLPutData [%d] (%d) %s\n", offset, remaining, &p[offset]);
+                    SQLLEN remaining = min(pInfo->maxlength, cb - offset);
+                    TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
                     Py_BEGIN_ALLOW_THREADS
                     ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
                     Py_END_ALLOW_THREADS
@@ -798,12 +787,12 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
             }
 #endif
 #if PY_MAJOR_VERSION < 3
-            else if (PyBuffer_Check(pParam))
+            else if (PyBuffer_Check(pInfo->pObject))
             {
                 // Buffers can have multiple segments, so we might need multiple writes.  Looping through buffers isn't
                 // difficult, but we've wrapped it up in an iterator object to keep this loop simple.
 
-                BufferSegmentIterator it(pParam);
+                BufferSegmentIterator it(pInfo->pObject);
                 byte* pb;
                 SQLLEN cb;
                 while (it.Next(pb, cb))
@@ -2306,7 +2295,7 @@ Cursor_New(Connection* cnxn)
         if (cnxn->timeout)
         {
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_QUERY_TIMEOUT, (SQLPOINTER)cnxn->timeout, 0);
+            ret = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_QUERY_TIMEOUT, (SQLPOINTER)(uintptr_t)cnxn->timeout, 0);
             Py_END_ALLOW_THREADS
 
             if (!SQL_SUCCEEDED(ret))

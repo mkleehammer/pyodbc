@@ -1,12 +1,10 @@
-
-
 #include "pyodbc.h"
+#include "wrapper.h"
 #include "pyodbcmodule.h"
 #include "params.h"
 #include "cursor.h"
 #include "connection.h"
 #include "buffer.h"
-#include "wrapper.h"
 #include "errors.h"
 #include "dbspecific.h"
 #include "sqlwchar.h"
@@ -26,7 +24,7 @@ static void FreeInfos(ParamInfo* a, Py_ssize_t count)
     {
         if (a[i].allocated)
             pyodbc_free(a[i].ParameterValuePtr);
-        Py_XDECREF(a[i].pParam);
+        Py_XDECREF(a[i].pObject);
     }
     pyodbc_free(a);
 }
@@ -132,92 +130,131 @@ static bool GetNullBinaryInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 }
 
 
+#if PY_MAJOR_VERSION >= 3
 static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
 {
-    // In Python 2, a bytes object (ANSI string) is passed as varchar.  In Python 3, it is passed as binary.
+    // The Python 3 version that writes bytes as binary data.
+    Py_ssize_t cb = PyBytes_GET_SIZE(param);
 
-    Py_ssize_t len = PyBytes_GET_SIZE(param);
+    info.ValueType  = SQL_C_BINARY;
+    info.ColumnSize = (SQLUINTEGER)max(cb, 1);
 
-#if PY_MAJOR_VERSION >= 3
-    info.ValueType = SQL_C_BINARY;
-    info.ColumnSize = (SQLUINTEGER)max(len, 1);
-
-    if (len <= cur->cnxn->binary_maxlength)
+    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
+    if (maxlength == 0 || cb <= maxlength)
     {
         info.ParameterType     = SQL_VARBINARY;
-        info.StrLen_or_Ind     = len;
+        info.StrLen_or_Ind     = cb;
         info.ParameterValuePtr = PyBytes_AS_STRING(param);
     }
     else
     {
         // Too long to pass all at once, so we'll provide the data at execute.
         info.ParameterType     = SQL_LONGVARBINARY;
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len) : SQL_DATA_AT_EXEC;
-        info.ParameterValuePtr = param;
+        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)cb) : SQL_DATA_AT_EXEC;
+        info.ParameterValuePtr = &info;
+        info.BufferLength      = sizeof(ParamInfo*);
+        info.pObject           = param;
+        Py_INCREF(info.pObject);
+        info.maxlength = maxlength;
     }
-
-#else
-    info.ValueType = SQL_C_CHAR;
-    info.ColumnSize = (SQLUINTEGER)max(len, 1);
-
-    if (len <= cur->cnxn->varchar_maxlength)
-    {
-        info.ParameterType     = SQL_VARCHAR;
-        info.StrLen_or_Ind     = len;
-        info.ParameterValuePtr = PyBytes_AS_STRING(param);
-    }
-    else
-    {
-        // Too long to pass all at once, so we'll provide the data at execute.
-        info.ParameterType     = SQL_LONGVARCHAR;
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len) : SQL_DATA_AT_EXEC;
-        info.ParameterValuePtr = param;
-    }
-#endif
 
     return true;
 }
+#endif
 
-static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+#if PY_MAJOR_VERSION < 3
+static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
 {
-    Py_UNICODE* pch = PyUnicode_AsUnicode(param);
-    Py_ssize_t  len = PyUnicode_GET_SIZE(param);
+    const TextEnc& enc = cur->cnxn->str_enc;
 
-    info.ValueType  = SQL_C_WCHAR;
-    info.ColumnSize = (SQLUINTEGER)max(len, 1);
+    info.ValueType = enc.ctype;
 
-    if (len <= cur->cnxn->wvarchar_maxlength)
+    Py_ssize_t cch = PyString_GET_SIZE(param);
+
+    info.ColumnSize = (SQLUINTEGER)max(cch, 1);
+
+    Object encoded(PyCodec_Encode(param, enc.name, "errors"));
+    if (!encoded)
+        return false;
+
+    if (!PyBytes_CheckExact(encoded))
     {
-        if (ODBCCHAR_SIZE == Py_UNICODE_SIZE)
-        {
-            info.ParameterValuePtr = pch;
-        }
-        else
-        {
-            // SQLWCHAR and Py_UNICODE are not the same size, so we need to allocate and copy a buffer.
-            if (len > 0)
-            {
-                info.ParameterValuePtr = SQLWCHAR_FromUnicode(pch, len);
-                if (info.ParameterValuePtr == 0)
-                    return false;
-                info.allocated = true;
-            }
-            else
-            {
-                info.ParameterValuePtr = pch;
-            }
-        }
+        PyErr_Format(PyExc_TypeError, "Unicode write encoding '%s' returned unexpected data type: %s",
+                     enc.name, encoded.Get()->ob_type->tp_name);
+        return false;
+    }
 
-        info.ParameterType = SQL_WVARCHAR;
-        info.StrLen_or_Ind = (SQLINTEGER)(len * ODBCCHAR_SIZE);
+    Py_ssize_t cb = PyBytes_GET_SIZE(encoded);
+    info.pObject = encoded.Detach();
+
+    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
+    if (maxlength == 0 || cb <= maxlength)
+    {
+        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
+        info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
+        info.StrLen_or_Ind     = (SQLINTEGER)cb;
     }
     else
     {
         // Too long to pass all at once, so we'll provide the data at execute.
+        // TODO: This is not correct - until we encode we don't know the proper
+        // length!
 
-        info.ParameterType     = SQL_WLONGVARCHAR;
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len * ODBCCHAR_SIZE) : SQL_DATA_AT_EXEC;
-        info.ParameterValuePtr = param;
+        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_LONGVARCHAR : SQL_WLONGVARCHAR;
+        info.ParameterValuePtr = &info;
+        info.BufferLength      = sizeof(ParamInfo*);
+        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLINTEGER)cb) : SQL_DATA_AT_EXEC;
+        info.maxlength = maxlength;
+    }
+
+    return true;
+}
+#endif
+
+
+static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+{
+    const TextEnc& enc = cur->cnxn->unicode_enc;
+
+    info.ValueType = enc.ctype;
+
+    Py_ssize_t cch = PyUnicode_GET_SIZE(param);
+
+    info.ColumnSize = (SQLUINTEGER)max(cch, 1);
+
+    Object encoded(PyCodec_Encode(param, enc.name, "errors"));
+    if (!encoded)
+        return false;
+
+    if (!PyBytes_CheckExact(encoded))
+    {
+        PyErr_Format(PyExc_TypeError, "Unicode write encoding '%s' returned unexpected data type: %s",
+                     enc.name, encoded.Get()->ob_type->tp_name);
+        return false;
+    }
+
+    Py_ssize_t cb = PyBytes_GET_SIZE(encoded);
+    info.pObject = encoded.Detach();
+
+    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
+
+    if (maxlength == 0 || cb <= maxlength)
+    {
+        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
+        info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
+        info.StrLen_or_Ind     = (SQLINTEGER)cb;
+    }
+    else
+    {
+        // Too long to pass all at once, so we'll provide the data at execute.
+        // TODO: This is not correct - until we encode we don't know the proper
+        // length!
+
+        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_LONGVARCHAR : SQL_WLONGVARCHAR;
+        info.ParameterValuePtr = &info;
+        info.BufferLength      = sizeof(ParamInfo*);
+        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLINTEGER)cb) : SQL_DATA_AT_EXEC;
+        info.maxlength = maxlength;
     }
 
     return true;
@@ -479,7 +516,8 @@ static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamI
     const char* pb;
     Py_ssize_t  cb = PyBuffer_GetMemory(param, &pb);
 
-    if (cb != -1 && cb <= cur->cnxn->binary_maxlength)
+    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
+    if (maxlength == 0 || cb <= maxlength)
     {
         // There is one segment, so we can bind directly into the buffer object.
 
@@ -496,10 +534,13 @@ static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamI
         // need to up the refcount!)
 
         info.ParameterType     = SQL_LONGVARBINARY;
-        info.ParameterValuePtr = param;
+        info.ParameterValuePtr = &info;
+        info.BufferLength      = sizeof(ParamInfo*);
         info.ColumnSize        = (SQLUINTEGER)PyBuffer_Size(param);
-        info.BufferLength      = sizeof(PyObject*); // How big is ParameterValuePtr; ODBC copies it and gives it back in SQLParamData
         info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)PyBuffer_Size(param)) : SQL_DATA_AT_EXEC;
+        info.pObject = param;
+        Py_INCREF(info.pObject);
+        info.maxlength = maxlength;
     }
 
     return true;
@@ -512,7 +553,9 @@ static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     info.ValueType = SQL_C_BINARY;
 
     Py_ssize_t cb = PyByteArray_Size(param);
-    if (cb <= cur->cnxn->binary_maxlength)
+
+    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
+    if (maxlength == 0 || cb <= maxlength)
     {
         info.ParameterType     = SQL_VARBINARY;
         info.ParameterValuePtr = (SQLPOINTER)PyByteArray_AsString(param);
@@ -523,10 +566,13 @@ static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     else
     {
         info.ParameterType     = SQL_LONGVARBINARY;
-        info.ParameterValuePtr = param;
+        info.ParameterValuePtr = &info;
+        info.BufferLength      = sizeof(ParamInfo*);
         info.ColumnSize        = (SQLUINTEGER)cb;
-        info.BufferLength      = sizeof(PyObject*); // How big is ParameterValuePtr; ODBC copies it and gives it back in SQLParamData
         info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)cb) : SQL_DATA_AT_EXEC;
+        info.pObject = param;
+        Py_INCREF(info.pObject);
+        info.maxlength = maxlength;
     }
     return true;
 }
@@ -538,17 +584,19 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     //
     // Populates `info`.
 
-    // Hold a reference to param until info is freed, because info will often be holding data borrowed from param.
-    info.pParam = param;
-
     if (param == Py_None)
         return GetNullInfo(cur, index, info);
 
     if (param == null_binary)
         return GetNullBinaryInfo(cur, index, info);
 
+#if PY_MAJOR_VERSION >= 3
     if (PyBytes_Check(param))
         return GetBytesInfo(cur, index, param, info);
+#else
+    if (PyBytes_Check(param))
+        return GetStrInfo(cur, index, param, info);
+#endif
 
     if (PyUnicode_Check(param))
         return GetUnicodeInfo(cur, index, param, info);
@@ -684,9 +732,10 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 
         if (PyUnicode_Check(pSql))
         {
-            SQLWChar sql(pSql);
+            const TextEnc& enc = cur->cnxn->unicode_enc;
+            SQLWChar sql(pSql, 0, enc.name);
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLPrepareW(cur->hstmt, sql.get(), SQL_NTS);
+            ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)sql.value(), (SQLINTEGER)sql.len());
             if (SQL_SUCCEEDED(ret))
             {
                 szErrorFunc = "SQLNumParams";
@@ -697,6 +746,8 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 #if PY_MAJOR_VERSION < 3
         else
         {
+            const TextEnc& enc = cur->cnxn->str_enc;
+            SQLWChar sql(pSql, 0, enc.name);
             TRACE("SQLPrepare(%s)\n", PyString_AS_STRING(pSql));
             Py_BEGIN_ALLOW_THREADS
             ret = SQLPrepare(cur->hstmt, (SQLCHAR*)PyString_AS_STRING(pSql), SQL_NTS);
@@ -870,4 +921,3 @@ bool Params_init()
 
     return true;
 }
-

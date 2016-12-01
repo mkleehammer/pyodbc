@@ -52,9 +52,18 @@ struct ParamInfo
     // If true, the memory in ParameterValuePtr was allocated via malloc and must be freed.
     bool allocated;
 
-    // The python object containing the parameter value.  A reference to this object should be held until we have
-    // finished using memory owned by it.
-    PyObject* pParam;
+    PyObject* pObject;
+    // An optional object that will be decremented at the end of the execute.
+    // This is useful when the ParameterValuePtr data is in a Python object -
+    // the object can be put here (and INCREFed if necessary!) instead of
+    // copying the data out.
+    //
+    // If SQLPutData is used, this must be set to a bytes or bytearray object!
+
+    SQLLEN maxlength;
+    // If SQLPutData is being used, this must be set to the amount that can be
+    // written to each SQLPutData call.  (It is not clear if they are limited
+    // like SQLBindParameter or not.)
 
     // Optional data.  If used, ParameterValuePtr will point into this.
     union

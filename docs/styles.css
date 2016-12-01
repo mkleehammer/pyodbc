@@ -1,0 +1,129 @@
+
+html,body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    color: #333;
+    font-size: 16pt;
+}
+
+h1 {
+    color: #325d72;
+    border-bottom: 1px solid #325d72;
+}
+
+h2 {
+    color: #325d72;
+}
+
+pre {
+    font-size: 16pt;
+    background-color: #fafafa;
+    padding: 0.25em 0.25em;
+    border-radius: 4px;
+    border-style: solid;
+    border-width: 0 1px 1px 0;
+    border-color: #f0f0f0;
+}
+
+tt {
+    font-size: 16pt;
+}
+
+.hide {
+    display: none;
+}
+
+.container {
+    padding: 0.25em 1.5em;
+}
+
+/* ---- navbar ---- */
+
+.navbar {
+    display: flex;
+    width: 100%;
+    padding: 0.5em 0.5em 0 0.5em;
+    background-color: #fafafa;
+    /* border-bottom: 3px solid #fafafa; */
+}
+
+.navbar > * {
+}
+
+.navbar a {
+    display: block;
+    color: #666;
+    text-decoration: none;
+    padding: 4px 1em 8px 1em;
+    margin-bottom: 0;
+}
+
+.navbar .active {
+    border-top: 3px solid red;
+    /* background-color: #FAFAFA; */
+    background-color: white;
+}
+
+.navbar .active a {
+    color: red;
+}
+
+/* ---- subnav ---- */
+
+.subnav {
+    display: flex;
+    padding: 0 0.5em 0 1em;
+    /* background-color: #FAFAFA; */
+    /* border-bottom: 1px solid #ddd; */
+}
+
+.subnav a {
+    display: block;
+    padding: 12px 0.5em;
+    text-decoration: none;
+    color: #666;
+}
+
+.subnav .active a {
+    color: red;
+}
+
+table {
+    border: 1px solid #f0f0f0;
+    padding: 0;
+}
+
+tr {
+    border-width: 0;
+}
+
+thead th {
+    text-align: left;
+    padding: 0.25em 0.5em;
+    background-color: #fdfdfd;
+}
+
+td {
+    padding: 0.25em 0.5em;
+    vertical-align: top;
+}
+
+tbody tr:nth-child(even) {
+    background-color: #fdfdfd;
+}
+
+
+.text-nowrap {
+    white-space: nowrap;
+}
+
+dl {
+    margin: 0 1em;
+    /* padding-left: 0.5em; */
+    /* border-left: 2px solid #fdfdfd; */
+}
+
+dt {
+    text-decoration: underline;
+}

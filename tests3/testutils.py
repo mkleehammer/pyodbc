@@ -1,4 +1,3 @@
-
 import os, sys, platform
 from os.path import join, dirname, abspath, basename
 import unittest
@@ -17,7 +16,7 @@ def add_to_path():
     library_exts  = [ t[0] for t in imp.get_suffixes() if t[-1] == imp.C_EXTENSION ]
     library_names = [ 'pyodbc%s' % ext for ext in library_exts ]
 
-    # Only go into directories that match our version number. 
+    # Only go into directories that match our version number.
 
     dir_suffix = '-%s.%s' % (sys.version_info[0], sys.version_info[1])
 
@@ -32,7 +31,7 @@ def add_to_path():
             if name in files:
                 sys.path.insert(0, root)
                 return
-                
+
     print('Did not find the pyodbc library in the build directory.  Will use an installed version.')
 
 
@@ -45,6 +44,13 @@ def print_library_info(cnxn):
     print('         supports ODBC version %s' % cnxn.getinfo(pyodbc.SQL_DRIVER_ODBC_VER))
     print('os:      %s' % platform.system())
     print('unicode: Py_Unicode=%s SQLWCHAR=%s' % (pyodbc.UNICODE_SIZE, pyodbc.SQLWCHAR_SIZE))
+
+    cursor = cnxn.cursor()
+    for typename in ['VARCHAR', 'WVARCHAR', 'BINARY']:
+        t = getattr(pyodbc, 'SQL_' + typename)
+        cursor.getTypeInfo(t)
+        row = cursor.fetchone()
+        print('Max %s = %s' % (typename, row and row[2] or '(not supported)'))
 
     if platform.system() == 'Windows':
         print('         %s' % ' '.join([s for s in platform.win32_ver() if s]))
@@ -81,7 +87,7 @@ def load_setup_connection_string(section):
     """
     from os.path import exists, join, dirname, splitext, basename
     from configparser import SafeConfigParser
-    
+
     FILENAME = 'setup.cfg'
     KEY      = 'connection-string'
 

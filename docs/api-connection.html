@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>pyodbc</title>
+    <link href="styles.css" rel="stylesheet">
+  </head>
+  <body>
+
+    <div class="navbar">
+      <div><a href="index.html">Overview</a></div>
+      <div class="active"><a href="api.html">API</a></div>
+      <div><a href="releases.html">Releases</a></div>
+    </div>
+    <div class="subnav">
+      <div><a href="api-module.html">module</a></div>
+      <div class="active"><a href="api-connection.html">connection</a></div>
+      <div><a href="api-cursor.html">cursor</a></div>
+      <div><a href="api-row.html">row</a></div>
+      <div><a href="api-errors.html">errors</a></div>
+    </div>
+
+    <div class="container">
+
+      <p>Connection objects manage connections to the database.</p>
+
+      <p>Each manages a single ODBC HDBC.</p>
+
+      <p>There is no constructor; Connections can only be created by the
+        <a href="#connect">pyodbc.connect</a> function.</p>
+
+      <h1>variables</h1>
+
+      <dl>
+
+        <dt>autocommit</dt>
+        <dd>True if the connection is in autocommit mode; False otherwise.
+          Changing this value updates the ODBC autocommit setting.  The default
+          is False.</dd>
+
+        <dt>searchescape</dt>
+
+        <dd>The ODBC search pattern escape character, as returned by
+          SQLGetInfo(SQL_SEARCH_PATTERN_ESCAPE), used to escape special characters such as
+          '%' and '_'.  These are driver specific.</dd>
+
+        <dt>timeout</dt>
+        <dd><p>An optional integer query timeout, in seconds.  Use zero, the
+          default, to disable.</p>
+
+          <p>The timeout is applied to all cursors created by the connection, so
+            it cannot be changed for a given connection.</p>
+
+          <p>If a query timeout occurs, the database should raise an <a
+                                                                         href="api.html#operationalerror">OperationalError</a> with SQLSTATE
+            HYT00 or HYT01.</p>
+
+          <p>Note: This attribute only affects queries.  To set the timeout for
+            the actual connection process, use the <tt>timeout</tt> keyword of the
+            <a href="#connect">connect</a> function.</p>
+        </dd>
+
+      </dl>
+
+      <h1 id="connection_cursor">cursor</h1>
+
+      <pre>cnxn.cursor() --> Cursor</pre>
+
+      <p>Returns a new Cursor Object using the connection.</p>
+
+      <p>pyodbc supports multiple cursors per connection but your database or
+        driver may not.  Check your documentation.</p>
+
+      <h1 id="connection_commit">commit</h1>
+
+      <pre>cnxn.commit()</pre>
+
+      <p>Commits any pending transaction to the database.</p>
+
+      <p>Pending transactions are automatically rolled back when a connection is closed,
+        so be sure to call this.</p>
+
+      <h1 id="connection_rollback">rollback</h1>
+
+      <pre>cnxn.rollback()</pre>
+
+      <p>Causes the the database to roll back to the start of any pending transaction.</p>
+
+      <p>You can call this even if no work has been performed on the cursor, allowing it
+        to be used in finally statements, etc.</p>
+
+      <h1 id="connection_close">close</h1>
+
+      <pre>cnxn.close()</pre>
+
+      <p>Closes the connection.  Connections are automatically closed when they
+        are deleted, but you should call this if the connection is referenced in
+        more than one place.</p>
+
+      <p>The connection will be unusable from this point forward and a ProgrammingError
+        will be raised if any operation is attempted with the connection.  The same
+        applies to all cursor objects trying to use the connection.</p>
+
+      <p>Note that closing a connection without committing the changes first will cause
+        an implicit rollback to be performed.</p>
+
+      <h1 id="connection_getinfo">getinfo</h1>
+
+      <pre>getinfo(type) --> str | int | bool
+
+cnxn.getinfo(pyodbc.SQL_ACCESSIBLE_PROCEDURES)</pre>
+
+      <p>Returns general information about the driver and data source associated with a
+        connection by calling
+        <a href="http://msdn.microsoft.com/en-us/library/ms711681%28VS.85%29.aspx">SQLGetInfo</a>
+        and returning its results.  See Microsoft's SQLGetInfo documentation for the
+        types of information available.</p>
+
+      <p>pyodbc provides constants for the supported types.</p>
+
+      <div class="toggle-top">
+        <p><a href="#toggle-show">Click here to toggle the table of supported types.</a></p>
+
+        <table class="hide">
+          <thead>
+            <tr><th>type</th><th>result type</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>SQL_ACCESSIBLE_PROCEDURES</td><td>bool</td></tr>
+            <tr><td>SQL_ACCESSIBLE_TABLES</td><td>bool</td></tr>
+            <tr><td>SQL_ACTIVE_ENVIRONMENTS</td><td>int</td></tr>
+            <tr><td>SQL_AGGREGATE_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_ALTER_DOMAIN</td><td>int</td></tr>
+            <tr><td>SQL_ALTER_TABLE</td><td>int</td></tr>
+            <tr><td>SQL_ASYNC_MODE</td><td>int</td></tr>
+            <tr><td>SQL_BATCH_ROW_COUNT</td><td>int</td></tr>
+            <tr><td>SQL_BATCH_SUPPORT</td><td>int</td></tr>
+            <tr><td>SQL_BOOKMARK_PERSISTENCE</td><td>int</td></tr>
+            <tr><td>SQL_CATALOG_LOCATION</td><td>int</td></tr>
+            <tr><td>SQL_CATALOG_NAME</td><td>bool</td></tr>
+            <tr><td>SQL_CATALOG_NAME_SEPARATOR</td><td>str</td></tr>
+            <tr><td>SQL_CATALOG_TERM</td><td>str</td></tr>
+            <tr><td>SQL_CATALOG_USAGE</td><td>int</td></tr>
+            <tr><td>SQL_COLLATION_SEQ</td><td>str</td></tr>
+            <tr><td>SQL_COLUMN_ALIAS</td><td>bool</td></tr>
+            <tr><td>SQL_CONCAT_NULL_BEHAVIOR</td><td>int</td></tr>
+            <tr><td>SQL_CONVERT_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_CONVERT_VARCHAR</td><td>int</td></tr>
+            <tr><td>SQL_CORRELATION_NAME</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_ASSERTION</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_CHARACTER_SET</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_COLLATION</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_DOMAIN</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_SCHEMA</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_TABLE</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_TRANSLATION</td><td>int</td></tr>
+            <tr><td>SQL_CREATE_VIEW</td><td>int</td></tr>
+            <tr><td>SQL_CURSOR_COMMIT_BEHAVIOR</td><td>int</td></tr>
+            <tr><td>SQL_CURSOR_ROLLBACK_BEHAVIOR</td><td>int</td></tr>
+            <tr><td>SQL_DATABASE_NAME</td><td>str</td></tr>
+            <tr><td>SQL_DATA_SOURCE_NAME</td><td>str</td></tr>
+            <tr><td>SQL_DATA_SOURCE_READ_ONLY</td><td>bool</td></tr>
+            <tr><td>SQL_DATETIME_LITERALS</td><td>int</td></tr>
+            <tr><td>SQL_DBMS_NAME</td><td>str</td></tr>
+            <tr><td>SQL_DBMS_VER</td><td>str</td></tr>
+            <tr><td>SQL_DDL_INDEX</td><td>int</td></tr>
+            <tr><td>SQL_DEFAULT_TXN_ISOLATION</td><td>int</td></tr>
+            <tr><td>SQL_DESCRIBE_PARAMETER</td><td>bool</td></tr>
+            <tr><td>SQL_DM_VER</td><td>str</td></tr>
+            <tr><td>SQL_DRIVER_NAME</td><td>str</td></tr>
+            <tr><td>SQL_DRIVER_ODBC_VER</td><td>str</td></tr>
+            <tr><td>SQL_DRIVER_VER</td><td>str</td></tr>
+            <tr><td>SQL_DROP_ASSERTION</td><td>int</td></tr>
+            <tr><td>SQL_DROP_CHARACTER_SET</td><td>int</td></tr>
+            <tr><td>SQL_DROP_COLLATION</td><td>int</td></tr>
+            <tr><td>SQL_DROP_DOMAIN</td><td>int</td></tr>
+            <tr><td>SQL_DROP_SCHEMA</td><td>int</td></tr>
+            <tr><td>SQL_DROP_TABLE</td><td>int</td></tr>
+            <tr><td>SQL_DROP_TRANSLATION</td><td>int</td></tr>
+            <tr><td>SQL_DROP_VIEW</td><td>int</td></tr>
+            <tr><td>SQL_DYNAMIC_CURSOR_ATTRIBUTES1</td><td>int</td></tr>
+            <tr><td>SQL_DYNAMIC_CURSOR_ATTRIBUTES2</td><td>int</td></tr>
+            <tr><td>SQL_EXPRESSIONS_IN_ORDERBY</td><td>bool</td></tr>
+            <tr><td>SQL_FILE_USAGE</td><td>int</td></tr>
+            <tr><td>SQL_FORWARD_ONLY_CURSOR_ATTRIBUTES1</td><td>int</td></tr>
+            <tr><td>SQL_FORWARD_ONLY_CURSOR_ATTRIBUTES2</td><td>int</td></tr>
+            <tr><td>SQL_GETDATA_EXTENSIONS</td><td>int</td></tr>
+            <tr><td>SQL_GROUP_BY</td><td>int</td></tr>
+            <tr><td>SQL_IDENTIFIER_CASE</td><td>int</td></tr>
+            <tr><td>SQL_IDENTIFIER_QUOTE_CHAR</td><td>str</td></tr>
+            <tr><td>SQL_INDEX_KEYWORDS</td><td>int</td></tr>
+            <tr><td>SQL_INFO_SCHEMA_VIEWS</td><td>int</td></tr>
+            <tr><td>SQL_INSERT_STATEMENT</td><td>int</td></tr>
+            <tr><td>SQL_INTEGRITY</td><td>bool</td></tr>
+            <tr><td>SQL_KEYSET_CURSOR_ATTRIBUTES1</td><td>int</td></tr>
+            <tr><td>SQL_KEYSET_CURSOR_ATTRIBUTES2</td><td>int</td></tr>
+            <tr><td>SQL_KEYWORDS</td><td>str</td></tr>
+            <tr><td>SQL_LIKE_ESCAPE_CLAUSE</td><td>bool</td></tr>
+            <tr><td>SQL_MAX_ASYNC_CONCURRENT_STATEMENTS</td><td>int</td></tr>
+            <tr><td>SQL_MAX_BINARY_LITERAL_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_CATALOG_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_CHAR_LITERAL_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMNS_IN_GROUP_BY</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMNS_IN_INDEX</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMNS_IN_ORDER_BY</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMNS_IN_SELECT</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMNS_IN_TABLE</td><td>int</td></tr>
+            <tr><td>SQL_MAX_COLUMN_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_CONCURRENT_ACTIVITIES</td><td>int</td></tr>
+            <tr><td>SQL_MAX_CURSOR_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_DRIVER_CONNECTIONS</td><td>int</td></tr>
+            <tr><td>SQL_MAX_IDENTIFIER_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_INDEX_SIZE</td><td>int</td></tr>
+            <tr><td>SQL_MAX_PROCEDURE_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_ROW_SIZE</td><td>int</td></tr>
+            <tr><td>SQL_MAX_ROW_SIZE_INCLUDES_LONG</td><td>bool</td></tr>
+            <tr><td>SQL_MAX_SCHEMA_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_STATEMENT_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_TABLES_IN_SELECT</td><td>int</td></tr>
+            <tr><td>SQL_MAX_TABLE_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MAX_USER_NAME_LEN</td><td>int</td></tr>
+            <tr><td>SQL_MULTIPLE_ACTIVE_TXN</td><td>bool</td></tr>
+            <tr><td>SQL_MULT_RESULT_SETS</td><td>bool</td></tr>
+            <tr><td>SQL_NEED_LONG_DATA_LEN</td><td>bool</td></tr>
+            <tr><td>SQL_NON_NULLABLE_COLUMNS</td><td>int</td></tr>
+            <tr><td>SQL_NULL_COLLATION</td><td>int</td></tr>
+            <tr><td>SQL_NUMERIC_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_ODBC_INTERFACE_CONFORMANCE</td><td>int</td></tr>
+            <tr><td>SQL_ODBC_VER</td><td>str</td></tr>
+            <tr><td>SQL_OJ_CAPABILITIES</td><td>int</td></tr>
+            <tr><td>SQL_ORDER_BY_COLUMNS_IN_SELECT</td><td>bool</td></tr>
+            <tr><td>SQL_PARAM_ARRAY_ROW_COUNTS</td><td>int</td></tr>
+            <tr><td>SQL_PARAM_ARRAY_SELECTS</td><td>int</td></tr>
+            <tr><td>SQL_PROCEDURES</td><td>bool</td></tr>
+            <tr><td>SQL_PROCEDURE_TERM</td><td>str</td></tr>
+            <tr><td>SQL_QUOTED_IDENTIFIER_CASE</td><td>int</td></tr>
+            <tr><td>SQL_ROW_UPDATES</td><td>bool</td></tr>
+            <tr><td>SQL_SCHEMA_TERM</td><td>str</td></tr>
+            <tr><td>SQL_SCHEMA_USAGE</td><td>int</td></tr>
+            <tr><td>SQL_SCROLL_OPTIONS</td><td>int</td></tr>
+            <tr><td>SQL_SEARCH_PATTERN_ESCAPE</td><td>str</td></tr>
+            <tr><td>SQL_SERVER_NAME</td><td>str</td></tr>
+            <tr><td>SQL_SPECIAL_CHARACTERS</td><td>str</td></tr>
+            <tr><td>SQL_SQL92_DATETIME_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_FOREIGN_KEY_DELETE_RULE</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_FOREIGN_KEY_UPDATE_RULE</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_GRANT</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_NUMERIC_VALUE_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_PREDICATES</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_RELATIONAL_JOIN_OPERATORS</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_REVOKE</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_ROW_VALUE_CONSTRUCTOR</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_STR_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_SQL92_VALUE_EXPRESSIONS</td><td>int</td></tr>
+            <tr><td>SQL_SQL_CONFORMANCE</td><td>int</td></tr>
+            <tr><td>SQL_STANDARD_CLI_CONFORMANCE</td><td>int</td></tr>
+            <tr><td>SQL_STATIC_CURSOR_ATTRIBUTES1</td><td>int</td></tr>
+            <tr><td>SQL_STATIC_CURSOR_ATTRIBUTES2</td><td>int</td></tr>
+            <tr><td>SQL_STR_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_SUBQUERIES</td><td>int</td></tr>
+            <tr><td>SQL_SYSTEM_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_TABLE_TERM</td><td>str</td></tr>
+            <tr><td>SQL_TIMEDATE_ADD_INTERVALS</td><td>int</td></tr>
+            <tr><td>SQL_TIMEDATE_DIFF_INTERVALS</td><td>int</td></tr>
+            <tr><td>SQL_TIMEDATE_FUNCTIONS</td><td>int</td></tr>
+            <tr><td>SQL_TXN_CAPABLE</td><td>int</td></tr>
+            <tr><td>SQL_TXN_ISOLATION_OPTION</td><td>int</td></tr>
+            <tr><td>SQL_UNION</td><td>int</td></tr>
+            <tr><td>SQL_USER_NAME</td><td>str</td></tr>
+            <tr><td>SQL_XOPEN_CLI_YEAR</td><td>str</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h1 id="connection_execute">execute</h1>
+
+      <pre>execute(sql, *params) --> Cursor</pre>
+
+      <p>This is just a convenience function for creating a new Cursor, executing the
+        SQL using the cursor, then discarding the cursor.  Since a new Cursor
+        is allocated by each call, this should not be used if more than one SQL
+        statement needs to be executed.</p>
+
+      <h1 id="setencoding">setencoding</h1>
+
+      <pre>
+# Python 2
+cnxn.setencoding(type, encoding=None, ctype=None)
+
+# Python 3
+cnxn.setencoding(encoding=None, ctype=None)
+      </pre>
+
+      <p>Sets the text encoding for SQL statements and text parameters.</p>
+
+      <dl>
+        <dt>type</dt>
+        <dd>
+          <p>The text type to configure.  In Python 2 there are two text types:
+            <tt>str</tt> and <tt>unicode</tt> which can be configured indivually.
+            Python 3 only has <tt>str</tt> (which is Unicode), so the parameter
+            is not needed.</p>
+        </dd>
+
+        <dt>encoding</dt>
+        <dd>
+          <p>The encoding to use.  This must be a valid Python encoding that converts
+            text to <tt>bytes</tt> (Python 3) or <tt>str</tt> (Python 2).</p>
+        </dd>
+
+        <dt>ctype</dt>
+        <dd>
+          <p>The C data type to use when passing data: <tt>pyodbc.SQL_CHAR</tt>
+            or <tt>pyodbc.SQL_WCHAR</tt>.</p>
+
+          <p>If not provided, <tt>SQL_WCHAR</tt> is used for "utf-16", "utf-16le", and
+            "utf-16be".  <tt>SQL_CHAR</tt> is used for all other encodings.</p>
+        </dd>
+      </dl>
+
+      <p>The defaults are:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Python version</th>
+            <th>type</th>
+            <th>encoding</th>
+            <th>ctype</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Python 2</td>
+            <td>str</td>
+            <td>utf-8</td>
+            <td>SQL_CHAR</td>
+          </tr>
+          <tr>
+            <td>Python 2</td>
+            <td>unicode</td>
+            <td>utf-16le</td>
+            <td>SQL_WCHAR</td>
+          </tr>
+          <tr>
+            <td>Python 3</td>
+            <td>unicode</td>
+            <td>utf-16le</td>
+            <td>SQL_WCHAR</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>If your database driver communicates with only UTF-8 (often MySQL and
+        PostgreSQL), try the following:</p>
+
+      <pre>
+# Python 2
+cnxn.setencoding(str, encoding='utf-8')
+cnxn.setencoding(unicode, encoding='utf-8')
+
+# Python 3
+cnxn.setencoding(encoding='utf-8')
+      </pre>
+
+      <h1 id="setdecoding">setdecoding</h1>
+
+      <pre>
+# Python 2
+cnxn.setdecoding(sqltype, encoding=None, ctype=None, to=None)
+
+# Python 3
+cnxn.setdecoding(sqltype, encoding=None, ctype=None)
+      </pre>
+
+      <p>Sets the text decoding used when reading <tt>SQL_CHAR</tt> and <tt>SQL_WCHAR</tt>
+        from the database.</p>
+
+      <dl>
+        <dt>sqltype</dt>
+        <dd><p>The SQL type being configured: <tt>pyodbc.SQL_CHAR</tt> or
+          <tt>pyodbc.SQL_WCHAR</tt>.</p></dd>
+
+        <dt>encoding</dt>
+        <dd><p>The Python encoding to use when decoding the data.</p></dd>
+
+        <dt>ctype</dt>
+        <dd><p>The C data type to request from SQLGetData: <tt>pyodbc.SQL_CHAR</tt>
+          or <tt>pyodbc.SQL_WCHAR</tt>.</p></dd>
+
+        <dt>to</dt>
+        <dd>
+          <p>The Python 2 text data type to be returned: <tt>str</tt> or <tt>unicode</tt>.
+            If not provided (recommended), whatever type the codec returns is
+            returned.  (This parameter is not needed in Python 3 because the only text
+            data type is <tt>str</tt>.)</p>
+        </dd>
+      </dl>
+
+      <p>The defaults are:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Python version</th>
+            <th>type</th>
+            <th>encoding</th>
+            <th>ctype</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Python 2</td>
+            <td>str</td>
+            <td>utf-8</td>
+            <td>SQL_CHAR</td>
+          </tr>
+          <tr>
+            <td>Python 2</td>
+            <td>unicode</td>
+            <td>utf-16le</td>
+            <td>SQL_WCHAR</td>
+          </tr>
+          <tr>
+            <td>Python 3</td>
+            <td>unicode</td>
+            <td>utf-16le</td>
+            <td>SQL_WCHAR</td>
+          </tr>
+        </tbody>
+      </table>
+
+
+      <h1 id="connection_add_output_converter">add_output_converter</h1>
+
+      <pre>add_output_converter(sqltype, func)</pre>
+
+      <p>Register an output converter function that will be called whenever a value with
+        the given SQL type is read from the database.</p>
+
+      <dl>
+        <dt>sqltype</dt>
+        <dd>The integer SQL type value to convert, which can be one of the defined
+          standard constants (e.g. pyodbc.SQL_VARCHAR) or a database-specific value
+          (e.g. -151 for the SQL Server 2008 geometry data type).</dd>
+
+        <dt>func</dt>
+        <dd>The converter function which will be called with a single parameter, the
+          value, and should return the converted value.  If the value is NULL, the
+          parameter will be None.  Otherwise it will be a Python string.</dd>
+      </dl>
+
+      <h1 id="connection_clear_output_converters">clear_output_converters</h1>
+
+      <pre>clear_output_converters()</pre>
+
+      <p>Remove all output converter functions added by <a
+                                                            href="connection_add_output_converter">add_output_converter</a>.</p>
+
+      <h1>set_attr</h1>
+
+      <pre>set_attr(attr_id, value)</pre>
+
+      <p>Calls SQLSetConnectAttr with the given values.</p>
+
+      <dl>
+        <dt>attr_id</dt>
+        <dd>The attribute ID (integer) to set.  These are ODBC or driver constants.  The ODBC
+          constants can usually be found in the sql.h or sqlext.h file.</dd>
+
+        <dt>value</dt>
+        <dd>The connection attribute value to set.  At this time only integer values are supported.</dd>
+      </dl>
+    </div>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+    <script src="pyodbc.js"></script>
+  </body>
+</html>
