@@ -154,6 +154,31 @@ class MySqlTestCase(unittest.TestCase):
 
         self.assertEqual(v, value)
 
+    def test_raw_encoding(self):
+        # Read something that is valid ANSI and make sure it comes through.
+        # The database is actually going to send us UTF-8 so don't use extended
+        # characters.
+        #
+        # REVIEW: Is there a good way to write UTF-8 into the database and read
+        # it out?
+        self.cnxn.setencoding(str, encoding='raw')
+
+        expected = "testing"
+        self.cursor.execute("create table t1(s varchar(20))")
+        self.cursor.execute("insert into t1 values (?)", expected)
+        result = self.cursor.execute("select * from t1").fetchone()[0]
+        self.assertEqual(result, expected)
+
+    def test_raw_decoding(self):
+        # Read something that is valid ANSI and make sure it comes through.
+        # The database is actually going to send us UTF-8 so don't use extended
+        # characters.
+        #
+        # REVIEW: Is there a good way to write UTF-8 into the database and read
+        # it out?
+        self.cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='raw')
+        self._test_strtype('varchar', _TESTSTR, 100)
+
     #
     # varchar
     #

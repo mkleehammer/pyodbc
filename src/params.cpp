@@ -173,15 +173,29 @@ static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
 
     info.ColumnSize = (SQLUINTEGER)max(cch, 1);
 
-    Object encoded(PyCodec_Encode(param, enc.name, "errors"));
-    if (!encoded)
-        return false;
+    Object encoded;
 
-    if (!PyBytes_CheckExact(encoded))
+    if (enc.optenc == OPTENC_RAW)
     {
-        PyErr_Format(PyExc_TypeError, "Unicode write encoding '%s' returned unexpected data type: %s",
-                     enc.name, encoded.Get()->ob_type->tp_name);
-        return false;
+        // Take the text as-is.  This is not really a good idea since users will need to make
+        // sure the encoding over the wire matches their system encoding, but it will be wanted
+        // and it is fast when you get it to work.
+        encoded = param;
+    }
+    else
+    {
+        // Encode the text with the user's encoding.
+        encoded = PyCodec_Encode(param, enc.name, "errors");
+        if (!encoded)
+            return false;
+
+        if (!PyBytes_CheckExact(encoded))
+        {
+            // Not all encodings return bytes.
+            PyErr_Format(PyExc_TypeError, "Unicode read encoding '%s' returned unexpected data type: %s",
+                         enc.name, encoded.Get()->ob_type->tp_name);
+            return false;
+        }
     }
 
     Py_ssize_t cb = PyBytes_GET_SIZE(encoded);
@@ -197,9 +211,6 @@ static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
     else
     {
         // Too long to pass all at once, so we'll provide the data at execute.
-        // TODO: This is not correct - until we encode we don't know the proper
-        // length!
-
         info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_LONGVARCHAR : SQL_WLONGVARCHAR;
         info.ParameterValuePtr = &info;
         info.BufferLength      = sizeof(ParamInfo*);

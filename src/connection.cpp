@@ -17,6 +17,9 @@
 #include "cnxninfo.h"
 #include "sqlwchar.h"
 
+static bool IsStringType(PyObject* t) { return (void*)t == (void*)&PyString_Type; }
+static bool IsUnicodeType(PyObject* t) { return (void*)t == (void*)&PyUnicode_Type; }
+
 
 static char connection_doc[] =
     "Connection objects manage connections to the database.\n"
@@ -1049,7 +1052,7 @@ static void NormalizeCodecName(const char* src, char* dest, size_t cbDest)
     *pch = '\0';
 }
 
-static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype)
+static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype, bool allow_raw)
 {
     // Code common to setencoding and setdecoding.
 
@@ -1059,9 +1062,25 @@ static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype)
         return false;
     }
 
-    if (!PyCodec_KnownEncoding(encoding))
+    // Normalize the names so we don't have to worry about case or dashes vs underscores.
+    // We'll lowercase everything and convert underscores to dashes.  The results are then
+    // surrounded with pipes so we can search strings.  (See the `strstr` calls below.)
+    char lower[30];
+    NormalizeCodecName(encoding, lower, sizeof(lower));
+
+#if PY_MAJOR_VERSION < 3
+    // Give a better error message for 'raw' than "not a registered codec".  It is never
+    // registered.
+    if (strcmp(lower, "|raw|") == 0 && !allow_raw)
     {
-        PyErr_Format(PyExc_ValueError, "not a registered coded: '%s'", encoding);
+        PyErr_Format(PyExc_ValueError, "Raw codec is only allowed for str / SQL_CHAR");
+        return false;
+    }
+#endif
+
+    if (!PyCodec_KnownEncoding(encoding) && (!allow_raw || strcmp(lower, "|raw|") != 0))
+    {
+        PyErr_Format(PyExc_ValueError, "not a registered codec: '%s'", encoding);
         return false;
     }
 
@@ -1071,8 +1090,6 @@ static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype)
         return false;
     }
 
-    char lower[30];
-    NormalizeCodecName(encoding, lower, sizeof(lower));
     char* cpy = _strdup(encoding);
     if (!cpy)
     {
@@ -1108,6 +1125,13 @@ static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype)
         enc.optenc = OPTENC_LATIN1;
         enc.ctype  = (SQLSMALLINT)(ctype ? ctype : SQL_C_CHAR);
     }
+#if PY_MAJOR_VERSION < 3
+    else if (strstr("|raw|", lower))
+    {
+        enc.optenc = OPTENC_RAW;
+        enc.ctype  = SQL_C_CHAR;
+    }
+#endif
     else
     {
         enc.optenc = OPTENC_NONE;
@@ -1129,6 +1153,7 @@ static PyObject* Connection_setencoding(PyObject* self, PyObject* args, PyObject
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|si", kwlist, &encoding, &ctype))
         return 0;
     TextEnc& enc = cnxn->unicode_enc;
+    bool allow_raw = false;
 #else
     // In Python 2, we support encodings for Unicode and strings.
     PyObject* from_type;
@@ -1138,13 +1163,14 @@ static PyObject* Connection_setencoding(PyObject* self, PyObject* args, PyObject
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|si", kwlist, &from_type, &encoding, &ctype))
         return 0;
 
-    if ((void*)from_type != (void*)&PyUnicode_Type && (void*)from_type != (void*)&PyString_Type)
+    if (!IsUnicodeType(from_type) && ! IsStringType(from_type))
         return PyErr_Format(PyExc_TypeError, "fromtype must be str or unicode");
 
-    TextEnc& enc = ((void*)from_type == (void*)&PyString_Type) ? cnxn->str_enc : cnxn->unicode_enc;
+    TextEnc& enc = IsStringType(from_type) ? cnxn->str_enc : cnxn->unicode_enc;
+    bool allow_raw = IsStringType(from_type);
 #endif
 
-    if (!SetTextEncCommon(enc, encoding, ctype))
+    if (!SetTextEncCommon(enc, encoding, ctype, allow_raw))
         return 0;
 
     Py_RETURN_NONE;
@@ -1179,6 +1205,8 @@ static PyObject* Connection_setdecoding(PyObject* self, PyObject* args, PyObject
     int sqltype;
     char* encoding = 0;
     int ctype = 0;
+    bool allow_raw = false;
+
 #if PY_MAJOR_VERSION >= 3
     static char *kwlist[] = {"sqltype", "encoding", "ctype", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i|si", kwlist, &sqltype, &encoding, &ctype))
@@ -1194,14 +1222,15 @@ static PyObject* Connection_setdecoding(PyObject* self, PyObject* args, PyObject
     {
         // Type objects are classes so they should be the same object.  (I'm not
         // sure if there is a proper way to do this in Python.)
-        if ((void*)toObj == (void*)&PyUnicode_Type)
+        if (IsUnicodeType(toObj))
             to = TO_UNICODE;
-        else if ((void*)toObj == (void*)&PyString_Type)
+        else if (IsStringType(toObj))
             to = TO_STR;
         else
             return PyErr_Format(PyExc_ValueError, "`to` can only be unicode or str");
     }
 
+    allow_raw = (sqltype == SQL_CHAR && to != TO_UNICODE);
 #endif
 
     if (sqltype != SQL_WCHAR && sqltype != SQL_CHAR)
@@ -1209,11 +1238,14 @@ static PyObject* Connection_setdecoding(PyObject* self, PyObject* args, PyObject
 
     TextEnc& enc = (sqltype == SQL_CHAR) ? cnxn->sqlchar_enc : cnxn->sqlwchar_enc;
 
-    if (!SetTextEncCommon(enc, encoding, ctype))
+    if (!SetTextEncCommon(enc, encoding, ctype, allow_raw))
         return 0;
 
 #if PY_MAJOR_VERSION < 3
-    enc.to = to ? to : TO_UNICODE;
+    if (!to && enc.optenc == OPTENC_RAW)
+        enc.to = TO_STR;
+    else
+        enc.to = to ? to : TO_UNICODE;
 #endif
 
     Py_RETURN_NONE;

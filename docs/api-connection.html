@@ -365,6 +365,11 @@ cnxn.setencoding(unicode, encoding='utf-8')
 cnxn.setencoding(encoding='utf-8')
       </pre>
 
+
+      <p>In Python 2.7, the value "raw" can be used as special encoding for <code>str</code> objects.
+      This will pass the string object's bytes as-is to the database.  This is not recommended
+        as you need to make sure that the internal format matches what the database expects.</p>
+
       <h1 id="setdecoding">setdecoding</h1>
 
       <pre>
@@ -432,6 +437,10 @@ cnxn.setdecoding(sqltype, encoding=None, ctype=None)
         </tbody>
       </table>
 
+      <p>In Python 2.7, the value "raw" can be used as special encoding for <code>SQL_CHAR</code> values.
+        This will create a <code>str</code> object directly from the bytes from the database
+        with no conversion.string object's bytes as-is to the database.  This is not recommended
+        as you need to make sure that the internal format matches what the database sends.</p>
 
       <h1 id="connection_add_output_converter">add_output_converter</h1>
 

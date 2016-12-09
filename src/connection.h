@@ -21,12 +21,13 @@ enum {
     BYTEORDER_NATIVE = 0,
     BYTEORDER_BE = 1,
 
-    OPTENC_NONE    = 0,
-    OPTENC_UTF8    = 1,
-    OPTENC_UTF16   = 2,         // "Native", so check for BOM and default to BE
-    OPTENC_UTF16BE = 3,
-    OPTENC_UTF16LE = 4,
-    OPTENC_LATIN1  = 5,
+    OPTENC_NONE    = 0,         // No optimized encoding - use the named encoding
+    OPTENC_RAW     = 1,         // In Python 2, pass bytes directly to string - no decoder
+    OPTENC_UTF8    = 2,
+    OPTENC_UTF16   = 3,         // "Native", so check for BOM and default to BE
+    OPTENC_UTF16BE = 4,
+    OPTENC_UTF16LE = 5,
+    OPTENC_LATIN1  = 6,
 
 #if PY_MAJOR_VERSION < 3
     TO_UNICODE = 1,

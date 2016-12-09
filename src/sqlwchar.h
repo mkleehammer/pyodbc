@@ -32,21 +32,30 @@ private:
         cch = 0;
         const char* szEncoding = szDefaultEncoding;
 
-        Object tmpEncoding;
-        if (encoding)
+        if (strcmp(szEncoding, "raw") == 0)
         {
-            tmpEncoding = PyCodec_Encode(encoding, "utf-8", "strict");
-            if (tmpEncoding)
-                szEncoding = PyBytes_AsString(tmpEncoding);
+            tmp = value;
+            sz  = PyBytes_AsString(tmp);
+            cch = PyBytes_Size(tmp);
         }
-
-        if (szEncoding)
+        else
         {
-            tmp = PyCodec_Encode(value, szEncoding, "strict");
-            if (tmp)
+            Object tmpEncoding;
+            if (encoding)
             {
-                sz = PyBytes_AsString(tmp);
-                cch = PyBytes_Size(tmp);
+                tmpEncoding = PyCodec_Encode(encoding, "utf-8", "strict");
+                if (tmpEncoding)
+                    szEncoding = PyBytes_AsString(tmpEncoding);
+            }
+
+            if (szEncoding)
+            {
+                tmp = PyCodec_Encode(value, szEncoding, "strict");
+                if (tmp)
+                {
+                    sz  = PyBytes_AsString(tmp);
+                    cch = PyBytes_Size(tmp);
+                }
             }
         }
     }

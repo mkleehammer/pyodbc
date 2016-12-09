@@ -301,6 +301,11 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
 
 #if PY_MAJOR_VERSION < 3
     }
+    else if (enc.optenc == OPTENC_RAW)
+    {
+        // No conversion.
+        str = PyString_FromStringAndSize((char*)pbData, cbData);
+    }
     else
     {
         // The user has requested a string object.  Unfortunately we don't have

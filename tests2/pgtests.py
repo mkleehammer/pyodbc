@@ -122,7 +122,9 @@ class PGTestCase(unittest.TestCase):
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(?)", value)
 
-        result = self.cursor.execute("select * from t1").fetchone()[0]
+        self.cursor.execute("select * from t1")
+        row = self.cursor.fetchone()
+        result = row[0]
 
         if resulttype and type(value) is not resulttype:
             value = resulttype(value)
@@ -236,6 +238,31 @@ class PGTestCase(unittest.TestCase):
         v = self.cursor.execute("select * from t1").fetchone()[0]
         self.assertEqual(v, value)
 
+    def test_raw_encoding(self):
+        # Read something that is valid ANSI and make sure it comes through.
+        # The database is actually going to send us UTF-8 so don't use extended
+        # characters.
+        #
+        # REVIEW: Is there a good way to write UTF-8 into the database and read
+        # it out?
+        self.cnxn.setencoding(str, encoding='raw')
+
+        expected = "testing"
+        self.cursor.execute("create table t1(s varchar(20))")
+        self.cursor.execute("insert into t1 values (?)", expected)
+        result = self.cursor.execute("select * from t1").fetchone()[0]
+        self.assertEqual(result, expected)
+
+    def test_raw_decoding(self):
+        # Read something that is valid ANSI and make sure it comes through.
+        # The database is actually going to send us UTF-8 so don't use extended
+        # characters.
+        #
+        # REVIEW: Is there a good way to write UTF-8 into the database and read
+        # it out?
+        self.cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='raw')
+        self._test_strtype('varchar', self.SMALL_STRING)
+
     def test_setdecoding(self):
         # Force the result to be a string instead of unicode object.  I'm not
         # sure how to change the encoding for a single column.  (Though I'm
@@ -243,7 +270,7 @@ class PGTestCase(unittest.TestCase):
         # per-column encoding like MySQL uses.)
         self.cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='utf8', to=str)
         self.cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf8', to=str)
-        self._test_strtype('varchar', '', self.SMALL_READ)
+        self._test_strtype('varchar', 'test', self.SMALL_READ)
 
     def test_unicode_latin(self):
         value = u"x-\u00C2-y" # A hat : Â
