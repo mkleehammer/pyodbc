@@ -128,6 +128,17 @@ executemany("insert into t(name, id) values (?, ?)", params)
 <p>This will execute the SQL statement twice, once with <code>('A', 1)</code>
   and once with <code>('B', 2)</code>.</p>
 
+<h1 id="cursor_fetchval">fetchval</h1>
+
+<pre>cursor.fetchval() --> value or None</pre>
+
+<p>Returns the first column value from the next row or None if no more rows are available:</p>
+
+<pre>
+    cursor.execute("select count(*) from users")
+    c = cursor.fetchval()
+</pre>
+
 <h1 id="cursor_fetchone">fetchone</h1>
 
 <pre>cursor.fetchone() --> Row or None</pre>

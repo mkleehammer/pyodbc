@@ -250,6 +250,13 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(len(v), len(value)) # If we alloc'd wrong, the test below might work because of an embedded NULL
         self.assertEqual(v, value)
 
+    def test_fetchval(self):
+        expected = "test"
+        self.cursor.execute("create table t1(s varchar(20))")
+        self.cursor.execute("insert into t1 values(?)", expected)
+        result = self.cursor.execute("select * from t1").fetchval()
+        self.assertEqual(result, expected)
+
     def test_negative_row_index(self):
         self.cursor.execute("create table t1(s varchar(20))")
         self.cursor.execute("insert into t1 values(?)", "1")

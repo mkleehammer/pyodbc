@@ -60,6 +60,12 @@ class MySqlTestCase(unittest.TestCase):
         # leading to slow writes.  Override them:
         self.cnxn.maxwrite = 1024 * 1024 * 1024
 
+        # My MySQL configuration (and I think the default) sends *everything*
+        # in UTF-8.  The pyodbc default is to send Unicode as UTF-16 and to
+        # decode WCHAR via UTF-16.  Change them both to UTF-8.
+        self.cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
+        self.cnxn.setencoding(encoding='utf-8')
+
         for i in range(3):
             try:
                 self.cursor.execute("drop table t%d" % i)

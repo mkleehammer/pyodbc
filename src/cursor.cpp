@@ -689,7 +689,10 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
             if (!query)
                 return 0;
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.len());
+            if (enc.ctype == SQL_C_WCHAR)
+                ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)query.value(), (SQLINTEGER)query.len());
+            else
+                ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.len());
             Py_END_ALLOW_THREADS
         }
         else
@@ -700,10 +703,10 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
             if (!query)
                 return 0;
             Py_BEGIN_ALLOW_THREADS
-            if (enc.ctype == SQL_C_CHAR)
-                ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.len());
-            else
+            if (enc.ctype == SQL_C_WCHAR)
                 ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)query.value(), (SQLINTEGER)query.len());
+            else
+                ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.len());
             Py_END_ALLOW_THREADS
         }
     }
@@ -1142,6 +1145,25 @@ static PyObject* Cursor_iternext(PyObject* self)
     return result;
 }
 
+static PyObject* Cursor_fetchval(PyObject* self, PyObject* args)
+{
+    UNUSED(args);
+
+    Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
+    if (!cursor)
+        return 0;
+
+    Object row(Cursor_fetch(cursor));
+
+    if (!row)
+    {
+        if (PyErr_Occurred())
+            return 0;
+        Py_RETURN_NONE;
+    }
+
+    return Row_item(row, 0);
+}
 
 static PyObject* Cursor_fetchone(PyObject* self, PyObject* args)
 {
@@ -2088,6 +2110,12 @@ static char nextset_doc[] = "nextset() --> True | None\n" \
 
 static char ignored_doc[] = "Ignored.";
 
+static char fetchval_doc[] =
+    "fetchval() --> value | None\n" \
+    "\n"
+    "Returns the first column of the next row in the result set or None\n" \
+    "if there are no more rows.";
+
 static char fetchone_doc[] =
     "fetchone() --> Row | None\n" \
     "\n" \
@@ -2162,6 +2190,7 @@ static PyMethodDef Cursor_methods[] =
     { "executemany",      (PyCFunction)Cursor_executemany,      METH_VARARGS,               executemany_doc      },
     { "setinputsizes",    (PyCFunction)Cursor_ignored,          METH_VARARGS,               ignored_doc          },
     { "setoutputsize",    (PyCFunction)Cursor_ignored,          METH_VARARGS,               ignored_doc          },
+    { "fetchval",         (PyCFunction)Cursor_fetchval,         METH_NOARGS,                fetchval_doc         },
     { "fetchone",         (PyCFunction)Cursor_fetchone,         METH_NOARGS,                fetchone_doc         },
     { "fetchall",         (PyCFunction)Cursor_fetchall,         METH_NOARGS,                fetchall_doc         },
     { "fetchmany",        (PyCFunction)Cursor_fetchmany,        METH_VARARGS,               fetchmany_doc        },

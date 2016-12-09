@@ -746,7 +746,10 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
             const TextEnc& enc = cur->cnxn->unicode_enc;
             SQLWChar sql(pSql, 0, enc.name);
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)sql.value(), (SQLINTEGER)sql.len());
+            if (enc.ctype == SQL_C_WCHAR)
+                ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)sql.value(), (SQLINTEGER)sql.len());
+            else
+                ret = SQLPrepare(cur->hstmt, (SQLCHAR*)sql.value(), (SQLINTEGER)sql.len());
             if (SQL_SUCCEEDED(ret))
             {
                 szErrorFunc = "SQLNumParams";
@@ -761,7 +764,10 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
             SQLWChar sql(pSql, 0, enc.name);
             TRACE("SQLPrepare(%s)\n", PyString_AS_STRING(pSql));
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLPrepare(cur->hstmt, (SQLCHAR*)PyString_AS_STRING(pSql), SQL_NTS);
+            if (enc.ctype == SQL_C_WCHAR)
+                ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)sql.value(), (SQLINTEGER)sql.len());
+            else
+                ret = SQLPrepare(cur->hstmt, (SQLCHAR*)sql.value(), (SQLINTEGER)sql.len());
             if (SQL_SUCCEEDED(ret))
             {
                 szErrorFunc = "SQLNumParams";

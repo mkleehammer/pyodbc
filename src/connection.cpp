@@ -17,9 +17,10 @@
 #include "cnxninfo.h"
 #include "sqlwchar.h"
 
+#if PY_MAJOR_VERSION < 3
 static bool IsStringType(PyObject* t) { return (void*)t == (void*)&PyString_Type; }
 static bool IsUnicodeType(PyObject* t) { return (void*)t == (void*)&PyUnicode_Type; }
-
+#endif
 
 static char connection_doc[] =
     "Connection objects manage connections to the database.\n"

@@ -208,8 +208,7 @@ static int Row_contains(PyObject* o, PyObject* el)
     return cmp;
 }
 
-
-static PyObject* Row_item(PyObject* o, Py_ssize_t i)
+PyObject* Row_item(PyObject* o, Py_ssize_t i)
 {
     // Apparently, negative indexes are handled by magic ;) -- they never make it here.
 

@@ -30,6 +30,8 @@ Row* Row_InternalNew(PyObject* description, PyObject* map_name_to_index, Py_ssiz
  */
 void FreeRowValues(Py_ssize_t cValues, PyObject** apValues);
 
+PyObject* Row_item(PyObject* o, Py_ssize_t i);
+
 extern PyTypeObject RowType;
 #define Row_Check(op) PyObject_TypeCheck(op, &RowType)
 #define Row_CheckExact(op) (Py_TYPE(op) == &RowType)

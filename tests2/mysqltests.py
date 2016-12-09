@@ -59,7 +59,7 @@ class MySqlTestCase(unittest.TestCase):
 
         self.cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
         self.cnxn.setencoding(str, encoding='utf-8')
-        self.cnxn.setencoding(unicode, encoding='utf-8')
+        self.cnxn.setencoding(unicode, encoding='utf-8', ctype=pyodbc.SQL_CHAR)
 
         # As of libmyodbc5w 5.3 SQLGetTypeInfo returns absurdly small sizes
         # leading to slow writes.  Override them:
