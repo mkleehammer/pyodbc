@@ -430,6 +430,12 @@ static bool free_results(Cursor* self, int flags)
         self->description = Py_None;
         Py_INCREF(Py_None);
     }
+    if(self->coldescription != Py_None)
+    {
+        Py_DECREF(self->coldescription);
+        self->coldescription = Py_None;
+        Py_INCREF(Py_None);
+    }
 
     if (self->map_name_to_index)
     {
@@ -471,11 +477,13 @@ static void closeimpl(Cursor* cur)
 
     Py_XDECREF(cur->pPreparedSQL);
     Py_XDECREF(cur->description);
+    Py_XDECREF(cur->coldescription);
     Py_XDECREF(cur->map_name_to_index);
     Py_XDECREF(cur->cnxn);
 
     cur->pPreparedSQL = 0;
     cur->description = 0;
+    cur->coldescription = 0;
     cur->map_name_to_index = 0;
     cur->cnxn = 0;
 }
@@ -622,6 +630,48 @@ static bool PrepareResults(Cursor* cur, int cCols)
             return false;
         }
     }
+
+    return true;
+}
+
+static bool expose_column_sql_types(Cursor* cur, int cCols)
+{
+    // Called after a SELECT has been executed to perform pre-fetch work.
+    //
+    // Goes through the earlier allocated ColumnInfo structures describing the returned data.
+
+    I(cur->coldescription == Py_None);
+
+    PyObject *colinfo=0, *coldesc=0, *isunsigned=0;
+    coldesc = PyTuple_New((Py_ssize_t)cCols);
+    int i;
+    for (i = 0; i < cCols; i++)
+    {
+        ColumnInfo *ci = &cur->colinfos[i];
+        switch (ci->is_unsigned)
+        {
+        case SQL_TRUE:
+            isunsigned = Py_True;
+            break;
+        case SQL_FALSE:
+            isunsigned = Py_False;
+            break;
+        default:
+            isunsigned = Py_None;
+            break;
+        }
+        colinfo = Py_BuildValue("(iiO)",
+          (int)ci->sql_type,
+          (int)ci->column_size,
+          isunsigned
+          );
+        PyTuple_SET_ITEM(coldesc, i, colinfo);
+        colinfo=0;
+    }
+
+    Py_XDECREF(cur->coldescription);
+    cur->coldescription = coldesc;
+    coldesc = 0;
 
     return true;
 }
@@ -875,6 +925,9 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
             return 0;
 
         if (!create_name_map(cur, cCols, lowercase()))
+            return 0;
+
+        if (!expose_column_sql_types(cur, cCols))
             return 0;
     }
 
@@ -2003,6 +2056,13 @@ static char description_doc[] =
     "the DB API and defined the pyodbc module: Date, Time, Timestamp, Binary,\n" \
     "STRING, BINARY, NUMBER, and DATETIME.";
 
+static char coldescription_doc[] =
+    "This read-only attribute decsribe columns returned by SQLDescribeCol.\n"
+    "Returns a tuple:\n"
+    "0 - sql_type\n"
+    "1 - column_width\n"
+    "2 - is_unsigned";
+
 static char arraysize_doc[] =
     "This read/write attribute specifies the number of rows to fetch at a time with\n" \
     "fetchmany(). It defaults to 1 meaning to fetch a single row at a time.";
@@ -2018,6 +2078,7 @@ static PyMemberDef Cursor_members[] =
 {
     {"rowcount",    T_INT,       offsetof(Cursor, rowcount),        READONLY, rowcount_doc },
     {"description", T_OBJECT_EX, offsetof(Cursor, description),     READONLY, description_doc },
+    {"coldescription", T_OBJECT_EX, offsetof(Cursor, coldescription),READONLY, coldescription_doc },
     {"arraysize",   T_INT,       offsetof(Cursor, arraysize),       0,        arraysize_doc },
     {"connection",  T_OBJECT_EX, offsetof(Cursor, cnxn),            READONLY, connection_doc },
     { 0 }
@@ -2279,6 +2340,7 @@ Cursor_New(Connection* cnxn)
         cur->cnxn              = cnxn;
         cur->hstmt             = SQL_NULL_HANDLE;
         cur->description       = Py_None;
+        cur->coldescription    = Py_None;
         cur->pPreparedSQL      = 0;
         cur->paramcount        = 0;
         cur->paramtypes        = 0;
@@ -2290,6 +2352,7 @@ Cursor_New(Connection* cnxn)
 
         Py_INCREF(cnxn);
         Py_INCREF(cur->description);
+        Py_INCREF(cur->coldescription);
 
         SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS

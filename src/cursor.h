@@ -114,6 +114,8 @@ struct Cursor
     // The description tuple described in the DB API 2.0 specification.  Set to None when there are no results.
     PyObject* description;
 
+    PyObject* coldescription;
+
     int arraysize;
 
     // The Cursor.rowcount attribute from the DB API specification.
