@@ -151,6 +151,8 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
                 p->datetime_precision = (int)columnsize;
             SQLFreeStmt(hstmt, SQL_CLOSE);
         }
+
+        SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
     }
 
     Py_END_ALLOW_THREADS
