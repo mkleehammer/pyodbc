@@ -1,4 +1,3 @@
-
 # pyodbc
 
 pyodbc is an open source Python module that makes accessing ODBC databases simple.  It
@@ -7,8 +6,8 @@ packed with even more Pythonic convenience.
 
 ## Installing
 
-The easiest way to install is using pip.  Windows binaries will be downloaded but other
-operating systems will need to compile from source.
+The easiest way to install is using pip.  Windows and macOS binaries can often be downloaded by
+pip but other operating systems will need to compile from source.
 
     pip install pyodbc
 
@@ -19,7 +18,7 @@ this
 wiki page for help.
 
 Development is on [GitHub](https://github.com/mkleehammer/pyodbc).
-      
+
 ## Getting Started
 
 ### Connect to A Database
@@ -42,6 +41,21 @@ examples are provided below.
     cursor = cnxn.cursor()
 
 There is no standard so the keywords depend on the driver you are using.
+
+### Configure character set encodings
+
+The default Unicode encoding is UTF-16LE.  See the [Unicode section](unicode) for tips on
+configuring MySQL and PostgreSQL. 
+
+    # Python 2.7
+    cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
+    cnxn.setencoding(str, encoding='utf-8')
+    cnxn.setencoding(unicode, encoding='utf-8', ctype=pyodbc.SQL_CHAR)
+
+    # Python 3.x
+    cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
+    cnxn.setencoding(encoding='utf-8')
+
 
 ### Select Some Data
 
@@ -118,7 +132,7 @@ the values for the question marks by passing them after the SQL:
         """, '2001-01-01', 1)
 
 This is safer than putting the values into the string because the parameters are passed to the
-database separately, protecting against 
+database separately, protecting against
 [SQL injection attacks](http://en.wikipedia.org/wiki/SQL_injection).  It is also more efficient
 if you execute the same SQL repeatedly with different parameters.  The SQL will
 be [prepared](http://en.wikipedia.org/wiki/Prepared_statements#Parameterized_statements) only

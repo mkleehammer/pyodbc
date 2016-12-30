@@ -19,6 +19,7 @@ def main():
     if not args:
         connection_string = load_setup_connection_string('test')
         if not connection_string:
+            print('no connection string')
             parser.print_help()
             raise SystemExit()
     else:
@@ -29,6 +30,10 @@ def main():
     if options.verbose:
         print_library_info(cnxn)
 
+    cursor = cnxn.cursor()
+    cursor.execute("select 'å' as uk, 'b' as jp")
+    row = cursor.fetchone()
+    print(row)
 
 if __name__ == '__main__':
     main()

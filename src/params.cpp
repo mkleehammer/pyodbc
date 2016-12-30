@@ -1,3 +1,13 @@
+
+// https://msdn.microsoft.com/en-us/library/ms711014(v=vs.85).aspx
+//
+// "The length of both the data buffer and the data it contains is measured in bytes, as
+// opposed to characters."
+//
+// https://msdn.microsoft.com/en-us/library/ms711786(v=vs.85).aspx
+//
+// Column Size: "For character types, this is the length in characters of the data"
+
 #include "pyodbc.h"
 #include "wrapper.h"
 #include "pyodbcmodule.h"
