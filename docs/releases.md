@@ -1,10 +1,10 @@
 
 # Releases
 
-# 4.0.0 / unreleased
+# 4.0.0 / 2016-12-30
 
-Unicode handling rewritten.  Encodings can be customized via `Connection.setencoding` and
-`Connection.setdecoding`.
+Unicode handling rewritten for correctness.  See the [Handling Unicode](unicode.md)
+documentation for details.
 
 # 3.0.10 / 2015-04-29
 

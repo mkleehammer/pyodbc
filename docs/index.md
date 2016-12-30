@@ -4,6 +4,16 @@ pyodbc is an open source Python module that makes accessing ODBC databases simpl
 implements the [DB API 2.0](https://www.python.org/dev/peps/pep-0249) specification but is
 packed with even more Pythonic convenience.
 
+* Getting Started
+* API
+  * [pyodbc](api-module.md)
+  * [Connection](api-connection.md)
+  * [Cursor](api-cursor.md)
+  * [Row](api-row.md)
+  * [Errors](api-errors.md)
+* [Handling Unicode](unicode.md)
+* [Releases](releases.md)
+
 ## Installing
 
 The easiest way to install is using pip.  Windows and macOS binaries can often be downloaded by
