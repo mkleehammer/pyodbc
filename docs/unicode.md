@@ -16,19 +16,44 @@ you can consolidate your connection string and configuration:
 
 #### Microsoft SQL Server
 
-SQL Server's recent drivers match the specification, so no configuration is necessary.
+SQL Server's recent drivers match the specification, so no configuration is necessary.  Using
+the pyodbc defaults is recommended.
+
+However, if you want Python 2.7 `str` results instead of unicode results you may be able to
+improve performance by setting the encoding to match the database's collation.  In particular,
+it is common to use a latin1 character set and Python has a built-in latin1 codec.
+
+Check your SQL Server collation using:
+
+    select serverproperty('collation')
+
+If it is something like "SQL_Latin1_General_CP1_CI_AS" and you want `str` results, you *may*
+try:
+
+    cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='latin1', to=str)
+    cnxn.setencoding(str, encoding='latin1')
+
+It is not recommended, but you can also set the encoding to "raw" which will pass bytes
+directly between Python `str` objects and database SQL_C_CHAR buffers.  This should only be
+used if you are certain you know what you are doing as it may not be clear when it doesn't
+work.  It will only work if the database bytes are in the same format is Python's internal
+format.  This is compatible with pyodbc 3.x.
+
+    cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='raw')
+    cnxn.setencoding(str, encoding='raw')
+
 
 #### MySQL, PostgreSQL, and Teradata
 
-Unfortunately all of these databases tend to use a single encoding and do not differentiate
-between "SQL_CHAR" and "SQL_WCHAR".  Therefore you must configure them to encode Unicode data
-as UTF-8 and to decode 2-byte SQL_WCHAR data using UTF-8.
+These databases tend to use a single encoding and do not differentiate between "SQL_CHAR" and
+"SQL_WCHAR".  Therefore you must configure them to encode Unicode data as UTF-8 and to decode
+both C buffer types using UTF-8.
 
     # Python 2.7
     cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='utf-8')
     cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
     cnxn.setencoding(str, encoding='utf-8')
-    cnxn.setencoding(unicode, encoding='utf-8', ctype=pyodbc.SQL_CHAR)
+    cnxn.setencoding(unicode, encoding='utf-8')
 
     # Python 3.x
     cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='utf-8')
