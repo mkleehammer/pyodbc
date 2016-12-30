@@ -38,7 +38,7 @@ class VersionCommand(Command):
     def run(self):
         version_str, version = get_version()
         sys.stdout.write(version_str + '\n')
-    
+
 
 class TagsCommand(Command):
 
@@ -58,7 +58,7 @@ class TagsCommand(Command):
         files = [ join('src', f) for f in os.listdir('src') if f.endswith(('.h', '.cpp')) ]
         cmd = 'etags %s' % ' '.join(files)
         return os.system(cmd)
-    
+
 
 
 def main():
@@ -79,10 +79,10 @@ def main():
 
         'long_description': ('A Python DB API 2 module for ODBC. This project provides an up-to-date, '
                             'convenient interface to ODBC using native data types like datetime and decimal.'),
-        
+
         'maintainer':       "Michael Kleehammer",
         'maintainer_email': "michael@kleehammer.com",
-        
+
         'ext_modules': [Extension('pyodbc', files, **settings)],
 
         'license': 'MIT',
@@ -103,7 +103,7 @@ def main():
         'cmdclass': { 'version' : VersionCommand,
                      'tags'    : TagsCommand }
         }
-    
+
     if sys.hexversion >= 0x02060000:
         kwargs['options'] = {
             'bdist_wininst': {'user_access_control' : 'auto'}
@@ -114,11 +114,11 @@ def main():
 
 def get_compiler_settings(version_str):
 
-    settings = { 
+    settings = {
         'extra_compile_args' : [],
         'libraries': [],
         'include_dirs': [],
-        'define_macros' : [ ('PYODBC_VERSION', version_str) ] 
+        'define_macros' : [ ('PYODBC_VERSION', version_str) ]
     }
 
     # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
@@ -198,15 +198,15 @@ def add_to_path():
     Prepends the build directory to the path so pyodbcconf can be imported without installing it.
     """
     # Now run the utility
-  
+
     import imp
     library_exts  = [ t[0] for t in imp.get_suffixes() if t[-1] == imp.C_EXTENSION ]
     library_names = [ 'pyodbcconf%s' % ext for ext in library_exts ]
-     
-    # Only go into directories that match our version number. 
-     
+
+    # Only go into directories that match our version number.
+
     dir_suffix = '-%s.%s' % (sys.version_info[0], sys.version_info[1])
-     
+
     build = join(dirname(abspath(__file__)), 'build')
 
     for top, dirs, files in os.walk(build):
@@ -215,7 +215,7 @@ def add_to_path():
             if name in files:
                 sys.path.insert(0, top)
                 return
-  
+
     raise SystemExit('Did not find pyodbcconf')
 
 
@@ -260,7 +260,7 @@ def get_version():
         name, numbers = '3.0.0-unsupported', [3,0,0,0]
 
     return name, numbers
-            
+
 
 def _get_version_pkginfo():
     filename = join(dirname(abspath(__file__)), 'PKG-INFO')
@@ -278,7 +278,7 @@ def _get_version_pkginfo():
 
 
 def _get_version_git():
-    n, result = getoutput('git describe --tags --match 3.*')
+    n, result = getoutput('git describe --tags --match [0-9].[0-9].[0-9]')
     if n:
         _print('WARNING: git describe failed with: %s %s' % (n, result))
         return None, None
