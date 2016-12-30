@@ -2,10 +2,10 @@
 
 ## TL;DR
 
-By default, pyodbc uses UTF-8 and UTF-16LE encodings as specified by the ODBC specification.
-Many drivers behave different than the specification so you may need to configure your
-connection.  I recommend creating a global connection factory where you can consolidate your
-connection string and configuration:
+By default, pyodbc uses UTF-16LE and SQL_C_WCHAR for reading and writing all Unicode as
+recommended in the ODBC specification.  Unfortunately many drivers behave differently so
+connections may need to be configured.  I recommend creating a global connection factory where
+you can consolidate your connection string and configuration:
 
     def connect():
         cnxn = pyodbc.connect(_connection_string)
@@ -16,23 +16,22 @@ connection string and configuration:
 
 #### Microsoft SQL Server
 
-The pyodbc default configuration is to use UTF-8 for single byte reads and writes and UTF-16LE
-for Unicode.  If you are usinga recent driver (native client 11+, I believe) the defaults are
-fine.  Very old versions may use UCS-2 which will still probably work as-is for most Unicode
-characters.
+SQL Server's recent drivers match the specification, so no configuration is necessary.
 
 #### MySQL, PostgreSQL, and Teradata
 
 Unfortunately all of these databases tend to use a single encoding and do not differentiate
-between "SQL_WCHAR" and "SQL_WCHAR".  Therefore you must configure them to encode Unicode data
+between "SQL_CHAR" and "SQL_WCHAR".  Therefore you must configure them to encode Unicode data
 as UTF-8 and to decode 2-byte SQL_WCHAR data using UTF-8.
 
     # Python 2.7
+    cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='utf-8')
     cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
     cnxn.setencoding(str, encoding='utf-8')
     cnxn.setencoding(unicode, encoding='utf-8', ctype=pyodbc.SQL_CHAR)
 
     # Python 3.x
+    cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='utf-8')
     cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
     cnxn.setencoding(encoding='utf-8')
 
@@ -85,25 +84,8 @@ Originally ODBC specified Unicode data to be encoded using UCS-2 and transferred
 buffers.  Later this was changed to allow UTF-8 in SQL_CHAR buffers and UTF-16LE in SQL_WCHAR
 buffers.
 
-Because of this, pyodbc defaults to the following.
-
-Writing Python objects to the database:
-
-| Version    | Object  | encoding    | C type     |
-| -------    | ------  | --------    | ------     |
-| Python 2.7 | str     | UTF-8       | SQL_CHAR   |
-| Python 2.7 | unicode | UTF-16LE    | SQL_WCHAR  |
-| Python 3   | str     | UTF-16LE    | SQL_WCHAR  |
-
-Reading buffers from the database into Python objects:
-
-| Version    | Buffer Type | Encoding | Object  |
-| -------    | ----------- | -------- | ------  |
-| Python 2.7 | SQL_CHAR    | UTF-8    | unicode |
-| Python 2.7 | SQL_WCHAR   | UTF-16LE | unicode |
-| Python 3   | SQL_CHAR    | UTF-8    | str     |
-| Python 3   | SQL_WCHAR   | UTF-16LE | str     |
-
+By default pyodbc reads all text columns as SQL_C_WCHAR buffers and decodes them using UTF-16LE.
+When writing, it always encodes using UTF-16LE into SQL_C_WCHAR buffers.
 
 ### Configuring
 
@@ -113,7 +95,7 @@ If the defaults above do not match your database driver, you can use the
 #### Python 3
 
     cnxn.setencoding(encoding=None, ctype=None)
-    
+
 This sets the encoding used when writing an `str` object to the database and the C data type.
 (The data is always written to an array of bytes, but we must tell the database if it should
 treat the buffer as an array of SQL_CHARs or SQL_WCHARs.)

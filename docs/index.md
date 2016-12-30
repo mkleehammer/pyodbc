@@ -44,8 +44,8 @@ There is no standard so the keywords depend on the driver you are using.
 
 ### Configure character set encodings
 
-The default Unicode encoding is UTF-16LE.  See the [Unicode section](unicode) for tips on
-configuring MySQL and PostgreSQL. 
+The default Unicode encoding is UTF-16LE.  See the [Unicode section](unicode.md) for tips on
+configuring MySQL and PostgreSQL.
 
     # Python 2.7
     cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
