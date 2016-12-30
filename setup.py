@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 import sys, os, re, platform
 from os.path import exists, abspath, dirname, join, isdir, relpath

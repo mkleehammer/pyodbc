@@ -685,28 +685,28 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         if (PyString_Check(pSql))
         {
             const TextEnc& enc = cur->cnxn->str_enc;
-            SQLWChar query(pSql, enc.name);
+            SQLWChar query(pSql, enc.ctype, enc.name);
             if (!query)
                 return 0;
             Py_BEGIN_ALLOW_THREADS
             if (enc.ctype == SQL_C_WCHAR)
-                ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)query.value(), (SQLINTEGER)query.len());
+                ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)query.value(), (SQLINTEGER)query.charlen());
             else
-                ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.len());
+                ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.charlen());
             Py_END_ALLOW_THREADS
         }
         else
 #endif
         {
             const TextEnc& enc = cur->cnxn->unicode_enc;
-            SQLWChar query(pSql, enc.name);
+            SQLWChar query(pSql, enc.ctype, enc.name);
             if (!query)
                 return 0;
             Py_BEGIN_ALLOW_THREADS
             if (enc.ctype == SQL_C_WCHAR)
-                ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)query.value(), (SQLINTEGER)query.len());
+                ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)query.value(), (SQLINTEGER)query.charlen());
             else
-                ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.len());
+                ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.charlen());
             Py_END_ALLOW_THREADS
         }
     }

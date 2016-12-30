@@ -134,6 +134,8 @@ inline void DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
 // #endif
 
 void PrintBytes(void* p, size_t len);
+const char* CTypeName(SQLSMALLINT n);
+const char* SqlTypeName(SQLSMALLINT n);
 
 #include "pyodbccompat.h"
 

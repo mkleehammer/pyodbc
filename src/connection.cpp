@@ -89,20 +89,20 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
         // as an indication that we can handle Unicode.  We are going to use the
         // same unicode ending as we do for binding parameters.
 
-        SQLWChar wchar(pConnectString, encoding, "utf-16le");
+        SQLWChar wchar(pConnectString, SQL_C_WCHAR, encoding, "utf-16le");
         if (!wchar)
             return false;
 
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLDriverConnectW(hdbc, 0, (SQLWCHAR*)wchar.value(), (SQLSMALLINT)wchar.len(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
+        ret = SQLDriverConnectW(hdbc, 0, (SQLWCHAR*)wchar.value(), (SQLSMALLINT)wchar.charlen(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
         Py_END_ALLOW_THREADS
         if (SQL_SUCCEEDED(ret))
             return true;
     }
 
-    SQLWChar ch(pConnectString, encoding, "utf-8");
+    SQLWChar ch(pConnectString, SQL_CHAR, encoding, "utf-8");
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLDriverConnect(hdbc, 0, (SQLCHAR*)ch.value(), (SQLSMALLINT)ch.len(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
+    ret = SQLDriverConnect(hdbc, 0, (SQLCHAR*)ch.value(), (SQLSMALLINT)ch.charlen(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
     Py_END_ALLOW_THREADS
     if (SQL_SUCCEEDED(ret))
         return true;
@@ -211,14 +211,18 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->conv_types   = 0;
     cnxn->conv_funcs   = 0;
 
-    cnxn->sqlchar_enc.optenc = OPTENC_UTF8;
-    cnxn->sqlchar_enc.name   = _strdup("utf-8");
-    cnxn->sqlchar_enc.ctype  = SQL_C_CHAR;
+    cnxn->sqlchar_enc.optenc = OPTENC_UTF16LE;
+    cnxn->sqlchar_enc.name   = _strdup("utf-16le");
+    cnxn->sqlchar_enc.ctype  = SQL_C_WCHAR;
 
     cnxn->sqlwchar_enc.optenc = OPTENC_UTF16LE;
     cnxn->sqlwchar_enc.name   = _strdup("utf-16le");
     cnxn->sqlwchar_enc.ctype  = SQL_C_WCHAR;
 
+    // Note: I attempted to use UTF-8 here too since it can hold any type, but SQL Server fails
+    // with a data truncation error if we send something encoded in 2 bytes to a column with 1
+    // character.  I don't know if this is a bug in SQL Server's driver or if I'm missing
+    // something, so we'll stay with the default ODBC conversions.
     cnxn->unicode_enc.optenc = OPTENC_UTF16LE;
     cnxn->unicode_enc.name   = _strdup("utf-16le");
     cnxn->unicode_enc.ctype  = SQL_C_WCHAR;

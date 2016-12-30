@@ -57,6 +57,7 @@ inline bool IsWideType(SQLSMALLINT sqltype)
     case SQL_WCHAR:
     case SQL_WVARCHAR:
     case SQL_WLONGVARCHAR:
+    case SQL_SS_XML:
         return true;
     }
     return false;

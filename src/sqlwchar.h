@@ -24,19 +24,27 @@ private:
     // The value of the string.  If this is zero a Python error occurred in the
     // constructor and nothing further should be one with this.
 
-    Py_ssize_t cch;
+    Py_ssize_t cb;
+    // The length of `sz` in *bytes*.
 
-    void init(PyObject* value, PyObject* encoding, const char* szDefaultEncoding)
+    SQLSMALLINT ctype;
+    // The target C type, either SQL_C_CHAR or SQL_C_WCHAR.
+
+    void init(PyObject* value, SQLSMALLINT _ctype, PyObject* encoding, const char* szDefaultEncoding)
     {
         sz = 0;
-        cch = 0;
+        cb = 0;
+        ctype = _ctype;
+        I(ctype == SQL_C_CHAR || ctype == SQL_C_WCHAR);
         const char* szEncoding = szDefaultEncoding;
 
         if (strcmp(szEncoding, "raw") == 0)
         {
+            // If `value` is not a bytes object, PyBytes_AsString below will return 0 which we
+            // handle later.  (Do not use AS_STRING which does no error checking.)
             tmp = value;
             sz  = PyBytes_AsString(tmp);
-            cch = PyBytes_Size(tmp);
+            cb = PyBytes_Size(tmp);
         }
         else
         {
@@ -54,26 +62,28 @@ private:
                 if (tmp)
                 {
                     sz  = PyBytes_AsString(tmp);
-                    cch = PyBytes_Size(tmp);
+                    cb = PyBytes_Size(tmp);
                 }
             }
         }
     }
 
 public:
-    SQLWChar(PyObject* value, const char* szEncoding)
+    SQLWChar(PyObject* value, SQLSMALLINT ctype, const char* szEncoding)
     {
-        init(value, 0, szEncoding);
+        init(value, ctype, 0, szEncoding);
     }
-    SQLWChar(PyObject* value, PyObject* encoding, const char* szDefaultEncoding)
+    SQLWChar(PyObject* value, SQLSMALLINT ctype, PyObject* encoding, const char* szDefaultEncoding)
     {
-        init(value, encoding, szDefaultEncoding);
+        init(value, ctype, encoding, szDefaultEncoding);
     }
 
     operator bool() const { return sz != 0; }
 
     const char* value() const { return sz; }
-    Py_ssize_t len() const { return cch; }
+
+    Py_ssize_t bytelen() const { return cb; }
+    Py_ssize_t charlen() const { return cb / (ctype == SQL_C_WCHAR ? ODBCCHAR_SIZE : 1); }
 };
 
 #endif // _PYODBCSQLWCHAR_H

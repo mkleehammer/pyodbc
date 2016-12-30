@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# -*- coding: latin-1 -*-
+# -*- coding: utf-8 -*-
 
 from __future__ import print_function
 
@@ -83,8 +83,6 @@ class SqlServerTestCase(unittest.TestCase):
     def setUp(self):
         self.cnxn   = pyodbc.connect(self.connection_string)
         self.cursor = self.cnxn.cursor()
-
-        self.cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='latin1')
 
         for i in range(3):
             try:
@@ -191,7 +189,7 @@ class SqlServerTestCase(unittest.TestCase):
         row = next(self.cursor)
         self.assertEqual(1, row.i)
         self.assertRaises(pyodbc.ProgrammingError, self.cursor.nextset)
-    
+
     def test_fixed_unicode(self):
         value = u"t\xebsting"
         self.cursor.execute("create table t1(s nchar(7))")
@@ -297,9 +295,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(v3, row.c3)
 
     def test_varchar_upperlatin(self):
-        # c2 is an A with a hat (circumflex) ; CA is E hat
-        # self._test_strtype('varchar', u'<\x00c2 - \x00ca>', colsize=100)
-        self._test_strtype('varchar', u'xยz', colsize=100)
+        self._test_strtype('varchar', u'\u00e5', colsize=1)
 
     #
     # nvarchar
@@ -325,7 +321,7 @@ class SqlServerTestCase(unittest.TestCase):
         locals()['test_nvarcharmax_%s' % len(value)] = _maketest(value)
 
     def test_unicode_upperlatin(self):
-        self._test_strtype('nvarchar', u'แ')
+        self._test_strtype('nvarchar', u'\u00e5', colsize=1)
 
     def test_unicode_longmax(self):
         # Issue 188:    Segfault when fetching NVARCHAR(MAX) data over 511 bytes
@@ -414,7 +410,7 @@ class SqlServerTestCase(unittest.TestCase):
             locals()['test_image_bytearray_%s' % len(value)] = _maketest(value)
 
     def test_image_upperlatin(self):
-        self._test_strliketype('image', buffer('แ'), pyodbc.BINARY)
+        self._test_strliketype('image', buffer('รก'), pyodbc.BINARY)
 
     #
     # text
@@ -435,7 +431,7 @@ class SqlServerTestCase(unittest.TestCase):
         locals()['test_text_buffer_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strliketype('text', u'แ')
+        self._test_strliketype('text', u'รก')
 
     #
     # xml
@@ -455,8 +451,33 @@ class SqlServerTestCase(unittest.TestCase):
     for value in UNICODE_SMALL_FENCEPOSTS:
         locals()['test_xml_buffer_%s' % len(value)] = _maketest(value)
 
+    def test_xml_str(self):
+        # SQL Server treats XML like *binary* data.
+        # See https://msdn.microsoft.com/en-us/library/ms131375.aspx
+        #
+        # The real problem with this is that we *don't* know that a value is
+        # XML when we write it to the database.  It is either an `str` or a
+        # `unicode` object, so we're going to convert it into one of *two*
+        # different formats.
+        #
+        # When we read it out of the database, all we know is that it is XML
+        # and we don't know how it was encoded so we don't know how to decode
+        # it.  Since almost everyone treats XML as Unicode nowdays, we're going
+        # to decode XML as Unicode.  Force your XML to Unicode before writing
+        # to the database.  (Otherwise, set a global encoder for the XMl type.)
+        ascii = 'test'
+        val = unicode(ascii)
+        self.cursor.execute("create table t1(a xml)")
+        self.cursor.execute("insert into t1 values (?)", val)
+        result = self.cursor.execute("select a from t1").fetchval()
+        self.assertEqual(result, val)
+
     def test_xml_upperlatin(self):
-        self._test_strliketype('xml', u'แ')
+        val = u'รก'
+        self.cursor.execute("create table t1(a xml)")
+        self.cursor.execute("insert into t1 values (?)", val)
+        result = self.cursor.execute("select a from t1").fetchval()
+        self.assertEqual(result, val)
 
     #
     # bit

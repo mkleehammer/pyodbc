@@ -29,85 +29,6 @@ static void FreeInfos(ParamInfo* a, Py_ssize_t count)
     pyodbc_free(a);
 }
 
-#define _MAKESTR(n) case n: return #n
-static const char* SqlTypeName(SQLSMALLINT n)
-{
-    switch (n)
-    {
-        _MAKESTR(SQL_UNKNOWN_TYPE);
-        _MAKESTR(SQL_CHAR);
-        _MAKESTR(SQL_VARCHAR);
-        _MAKESTR(SQL_LONGVARCHAR);
-        _MAKESTR(SQL_NUMERIC);
-        _MAKESTR(SQL_DECIMAL);
-        _MAKESTR(SQL_INTEGER);
-        _MAKESTR(SQL_SMALLINT);
-        _MAKESTR(SQL_FLOAT);
-        _MAKESTR(SQL_REAL);
-        _MAKESTR(SQL_DOUBLE);
-        _MAKESTR(SQL_DATETIME);
-        _MAKESTR(SQL_WCHAR);
-        _MAKESTR(SQL_WVARCHAR);
-        _MAKESTR(SQL_WLONGVARCHAR);
-        _MAKESTR(SQL_TYPE_DATE);
-        _MAKESTR(SQL_TYPE_TIME);
-        _MAKESTR(SQL_TYPE_TIMESTAMP);
-        _MAKESTR(SQL_SS_TIME2);
-        _MAKESTR(SQL_SS_XML);
-        _MAKESTR(SQL_BINARY);
-        _MAKESTR(SQL_VARBINARY);
-        _MAKESTR(SQL_LONGVARBINARY);
-    }
-    return "unknown";
-}
-
-static const char* CTypeName(SQLSMALLINT n)
-{
-    switch (n)
-    {
-        _MAKESTR(SQL_C_CHAR);
-        _MAKESTR(SQL_C_WCHAR);
-        _MAKESTR(SQL_C_LONG);
-        _MAKESTR(SQL_C_SHORT);
-        _MAKESTR(SQL_C_FLOAT);
-        _MAKESTR(SQL_C_DOUBLE);
-        _MAKESTR(SQL_C_NUMERIC);
-        _MAKESTR(SQL_C_DEFAULT);
-        _MAKESTR(SQL_C_DATE);
-        _MAKESTR(SQL_C_TIME);
-        _MAKESTR(SQL_C_TIMESTAMP);
-        _MAKESTR(SQL_C_TYPE_DATE);
-        _MAKESTR(SQL_C_TYPE_TIME);
-        _MAKESTR(SQL_C_TYPE_TIMESTAMP);
-        _MAKESTR(SQL_C_INTERVAL_YEAR);
-        _MAKESTR(SQL_C_INTERVAL_MONTH);
-        _MAKESTR(SQL_C_INTERVAL_DAY);
-        _MAKESTR(SQL_C_INTERVAL_HOUR);
-        _MAKESTR(SQL_C_INTERVAL_MINUTE);
-        _MAKESTR(SQL_C_INTERVAL_SECOND);
-        _MAKESTR(SQL_C_INTERVAL_YEAR_TO_MONTH);
-        _MAKESTR(SQL_C_INTERVAL_DAY_TO_HOUR);
-        _MAKESTR(SQL_C_INTERVAL_DAY_TO_MINUTE);
-        _MAKESTR(SQL_C_INTERVAL_DAY_TO_SECOND);
-        _MAKESTR(SQL_C_INTERVAL_HOUR_TO_MINUTE);
-        _MAKESTR(SQL_C_INTERVAL_HOUR_TO_SECOND);
-        _MAKESTR(SQL_C_INTERVAL_MINUTE_TO_SECOND);
-        _MAKESTR(SQL_C_BINARY);
-        _MAKESTR(SQL_C_BIT);
-        _MAKESTR(SQL_C_SBIGINT);
-        _MAKESTR(SQL_C_UBIGINT);
-        _MAKESTR(SQL_C_TINYINT);
-        _MAKESTR(SQL_C_SLONG);
-        _MAKESTR(SQL_C_SSHORT);
-        _MAKESTR(SQL_C_STINYINT);
-        _MAKESTR(SQL_C_ULONG);
-        _MAKESTR(SQL_C_USHORT);
-        _MAKESTR(SQL_C_UTINYINT);
-        _MAKESTR(SQL_C_GUID);
-    }
-    return "unknown";
-}
-
 static bool GetNullInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 {
     if (!GetParamType(cur, index, info.ParameterType))
@@ -251,17 +172,15 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
 
     if (maxlength == 0 || cb <= maxlength)
     {
-        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
+        info.ParameterType     = SQL_WVARCHAR;
         info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
+        info.BufferLength      = (SQLINTEGER)cb;
         info.StrLen_or_Ind     = (SQLINTEGER)cb;
     }
     else
     {
         // Too long to pass all at once, so we'll provide the data at execute.
-        // TODO: This is not correct - until we encode we don't know the proper
-        // length!
-
-        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_LONGVARCHAR : SQL_WLONGVARCHAR;
+        info.ParameterType     = SQL_WLONGVARCHAR;
         info.ParameterValuePtr = &info;
         info.BufferLength      = sizeof(ParamInfo*);
         info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLINTEGER)cb) : SQL_DATA_AT_EXEC;
@@ -744,12 +663,12 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
         if (PyUnicode_Check(pSql))
         {
             const TextEnc& enc = cur->cnxn->unicode_enc;
-            SQLWChar sql(pSql, 0, enc.name);
+            SQLWChar sql(pSql, enc.ctype, 0, enc.name);
             Py_BEGIN_ALLOW_THREADS
             if (enc.ctype == SQL_C_WCHAR)
-                ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)sql.value(), (SQLINTEGER)sql.len());
+                ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)sql.value(), (SQLINTEGER)sql.charlen());
             else
-                ret = SQLPrepare(cur->hstmt, (SQLCHAR*)sql.value(), (SQLINTEGER)sql.len());
+                ret = SQLPrepare(cur->hstmt, (SQLCHAR*)sql.value(), (SQLINTEGER)sql.charlen());
             if (SQL_SUCCEEDED(ret))
             {
                 szErrorFunc = "SQLNumParams";
@@ -761,13 +680,13 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
         else
         {
             const TextEnc& enc = cur->cnxn->str_enc;
-            SQLWChar sql(pSql, 0, enc.name);
+            SQLWChar sql(pSql, enc.ctype, 0, enc.name);
             TRACE("SQLPrepare(%s)\n", PyString_AS_STRING(pSql));
             Py_BEGIN_ALLOW_THREADS
             if (enc.ctype == SQL_C_WCHAR)
-                ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)sql.value(), (SQLINTEGER)sql.len());
+                ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)sql.value(), (SQLINTEGER)sql.charlen());
             else
-                ret = SQLPrepare(cur->hstmt, (SQLCHAR*)sql.value(), (SQLINTEGER)sql.len());
+                ret = SQLPrepare(cur->hstmt, (SQLCHAR*)sql.value(), (SQLINTEGER)sql.charlen());
             if (SQL_SUCCEEDED(ret))
             {
                 szErrorFunc = "SQLNumParams";
