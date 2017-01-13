@@ -193,32 +193,6 @@ def get_compiler_settings(version_str):
     return settings
 
 
-def add_to_path():
-    """
-    Prepends the build directory to the path so pyodbcconf can be imported without installing it.
-    """
-    # Now run the utility
-
-    import imp
-    library_exts  = [ t[0] for t in imp.get_suffixes() if t[-1] == imp.C_EXTENSION ]
-    library_names = [ 'pyodbcconf%s' % ext for ext in library_exts ]
-
-    # Only go into directories that match our version number.
-
-    dir_suffix = '-%s.%s' % (sys.version_info[0], sys.version_info[1])
-
-    build = join(dirname(abspath(__file__)), 'build')
-
-    for top, dirs, files in os.walk(build):
-        dirs = [ d for d in dirs if d.endswith(dir_suffix) ]
-        for name in library_names:
-            if name in files:
-                sys.path.insert(0, top)
-                return
-
-    raise SystemExit('Did not find pyodbcconf')
-
-
 def get_version():
     """
     Returns the version of the product as (description, [major,minor,micro,beta]).
