@@ -577,6 +577,14 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s varchar(20))")
         self.cursor.execute("insert into t1 values(?)", "")
 
+    def test_empty_string_encoding(self):
+        self.cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='shift_jis')
+        value = ""
+        self.cursor.execute("create table t1(s varchar(20))")
+        self.cursor.execute("insert into t1 values(?)", value)
+        v = self.cursor.execute("select * from t1").fetchone()[0]
+        self.assertEqual(v, value)
+
     def test_fixed_char(self):
         value = "testing"
         self.cursor.execute("create table t1(s char(7))")
@@ -587,6 +595,14 @@ class SqlServerTestCase(unittest.TestCase):
     def test_empty_unicode(self):
         self.cursor.execute("create table t1(s nvarchar(20))")
         self.cursor.execute("insert into t1 values(?)", u"")
+
+    def test_empty_unicode_encoding(self):
+        self.cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='shift_jis')
+        value = ""
+        self.cursor.execute("create table t1(s nvarchar(20))")
+        self.cursor.execute("insert into t1 values(?)", value)
+        v = self.cursor.execute("select * from t1").fetchone()[0]
+        self.assertEqual(v, value)
 
     def test_unicode_query(self):
         self.cursor.execute(u"select 1")

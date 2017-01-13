@@ -465,10 +465,18 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s varchar(20))")
         self.cursor.execute("insert into t1 values(?)", "")
 
+    def test_empty_string_encoding(self):
+        self.cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='shift_jis')
+        value = ""
+        self.cursor.execute("create table t1(s varchar(20))")
+        self.cursor.execute("insert into t1 values(?)", value)
+        v = self.cursor.execute("select * from t1").fetchone()[0]
+        self.assertEqual(v, value)
+
     def test_fixed_str(self):
         value = "testing"
         self.cursor.execute("create table t1(s char(7))")
-        self.cursor.execute("insert into t1 values(?)", "testing")
+        self.cursor.execute("insert into t1 values(?)", value)
         v = self.cursor.execute("select * from t1").fetchone()[0]
         self.assertEqual(type(v), str)
         self.assertEqual(len(v), len(value)) # If we alloc'd wrong, the test below might work because of an embedded NULL
@@ -477,6 +485,14 @@ class SqlServerTestCase(unittest.TestCase):
     def test_empty_unicode(self):
         self.cursor.execute("create table t1(s nvarchar(20))")
         self.cursor.execute("insert into t1 values(?)", "")
+
+    def test_empty_unicode_encoding(self):
+        self.cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='shift_jis')
+        value = ""
+        self.cursor.execute("create table t1(s nvarchar(20))")
+        self.cursor.execute("insert into t1 values(?)", value)
+        v = self.cursor.execute("select * from t1").fetchone()[0]
+        self.assertEqual(v, value)
 
     def test_negative_row_index(self):
         self.cursor.execute("create table t1(s varchar(20))")

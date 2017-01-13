@@ -261,9 +261,10 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
     }
 
-    //
-    // Decode the bytes to a Unicode string.
-    //
+    // NB: In each branch we make a check for a zero length string and handle it specially
+    // since PyUnicode_Decode may (will?) fail if we pass a zero-length string.  Issue #172
+    // first pointed this out with shift_jis.  I'm not sure if it is a fault in the
+    // implementation of this codec or if others will have it also.
 
     PyObject* str;
 
@@ -272,35 +273,44 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
     if (enc.to == TO_UNICODE)
     {
 #endif
-
-        int byteorder = 0;
-        switch (enc.optenc)
+        if (cbData == 0)
         {
-        case OPTENC_UTF8:
-            str = PyUnicode_DecodeUTF8((char*)pbData, cbData, "strict");
-            break;
-        case OPTENC_UTF16:
-            byteorder = BYTEORDER_NATIVE;
-            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-            break;
-        case OPTENC_UTF16LE:
-            byteorder = BYTEORDER_LE;
-            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-            break;
-        case OPTENC_UTF16BE:
-            byteorder = BYTEORDER_BE;
-            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-            break;
-        case OPTENC_LATIN1:
-            str = PyUnicode_DecodeLatin1((char*)pbData, cbData, "strict");
-            break;
-        default:
-            // The user set an encoding by name.
-            str = PyUnicode_Decode((char*)pbData, cbData, enc.name, "strict");
-            break;
+            str = PyUnicode_FromStringAndSize("", 0);
         }
-
+        else
+        {
+            int byteorder = 0;
+            switch (enc.optenc)
+            {
+            case OPTENC_UTF8:
+                str = PyUnicode_DecodeUTF8((char*)pbData, cbData, "strict");
+                break;
+            case OPTENC_UTF16:
+                byteorder = BYTEORDER_NATIVE;
+                str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
+                break;
+            case OPTENC_UTF16LE:
+                byteorder = BYTEORDER_LE;
+                str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
+                break;
+            case OPTENC_UTF16BE:
+                byteorder = BYTEORDER_BE;
+                str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
+                break;
+            case OPTENC_LATIN1:
+                str = PyUnicode_DecodeLatin1((char*)pbData, cbData, "strict");
+                break;
+            default:
+                // The user set an encoding by name.
+                str = PyUnicode_Decode((char*)pbData, cbData, enc.name, "strict");
+                break;
+            }
+        }
 #if PY_MAJOR_VERSION < 3
+    }
+    else if (cbData == 0)
+    {
+        str = PyString_FromStringAndSize("", 0);
     }
     else if (enc.optenc == OPTENC_RAW)
     {
@@ -333,7 +343,7 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
             encoding = enc.name;
         }
 
-        str = PyString_Decode((char*)pbData, cbData, encoding, "string");
+        str = PyString_Decode((char*)pbData, cbData, encoding, "strict");
     }
 #endif
 
