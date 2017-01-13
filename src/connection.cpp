@@ -978,7 +978,7 @@ static bool _add_converter(PyObject* self, SQLSMALLINT sqltype, PyObject* func)
     if (oldcount != 0)
     {
         // copy old items
-        memcpy(&newtypes[1], oldtypes, sizeof(int) * oldcount);
+        memcpy(&newtypes[1], oldtypes, sizeof(SQLSMALLINT) * oldcount);
         memcpy(&newfuncs[1], oldfuncs, sizeof(PyObject*) * oldcount);
 
         pyodbc_free(oldtypes);
@@ -1002,8 +1002,13 @@ static char conv_add_doc[] =
     "func\n"
     "  The converter function which will be called with a single parameter, the\n"
     "  value, and should return the converted value.  If the value is NULL, the\n"
-    "  parameter will be None.  Otherwise it will be a Python string.";
-
+    "  parameter will be None.  Otherwise it will be a "
+#if PY_MAJOR_VERSION >= 3
+    "bytes object."
+#else
+    "str object with the raw bytes."
+#endif
+    ;
 
 static PyObject* Connection_conv_add(PyObject* self, PyObject* args)
 {
