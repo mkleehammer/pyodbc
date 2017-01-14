@@ -1,4 +1,3 @@
-
 // The functions for reading a single value from the database using SQLGetData.  There is a different function for
 // every data type.
 
@@ -11,6 +10,9 @@
 #include "dbspecific.h"
 #include "sqlwchar.h"
 #include <datetime.h>
+#include <string.h> /* strdup */
+#include <stdlib.h> /* strtol, NULL */
+#include <vector> /* std::vector */
 
 // NULL terminator notes:
 //
@@ -670,6 +672,74 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
 }
 
 
+static std::vector<long int> read_time_token_list(const char *deltastr)
+{
+    const char* delim = " :.";
+    char* saveptr = NULL, *endptr = NULL;
+    char* current_token = NULL;
+    char* deltacopy = strdup(deltastr);
+    std::vector<long int> time_numbers;
+
+    current_token = strtok_r(deltacopy, delim, &saveptr);
+    while (current_token != NULL) {
+        errno = 0;
+        long int num = strtol(current_token, &endptr, 10);
+
+        /* There was an error, so return an empty vector of numbers. */
+        if (errno != 0)
+            return std::vector<long int>();
+
+        time_numbers.push_back(num);
+        current_token = strtok_r(NULL, delim, &saveptr);
+    }
+
+    free(deltacopy);
+    return time_numbers;
+}
+
+
+static PyObject* GetDataInterval(Cursor* cur, Py_ssize_t iCol)
+{
+    char value[1024] = { 0 };
+
+    SQLLEN cbFetched = 0;
+    SQLRETURN ret;
+
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_CHAR, &value, sizeof(value), &cbFetched);
+    Py_END_ALLOW_THREADS
+
+    /* There were more than 1024 characters of date data. This is a problem. */
+    if (ret == SQL_SUCCESS_WITH_INFO)
+        return RaiseErrorFromHandle("SQLGetDataInterval", cur->cnxn->hdbc, cur->hstmt);
+
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+
+    if (cbFetched == SQL_NULL_DATA)
+        Py_RETURN_NONE;
+
+    const unsigned int EXPECTED_NUM_TOKENS = 5;
+
+    std::vector<long int> time_numbers = read_time_token_list(value);
+    if (time_numbers.size() != EXPECTED_NUM_TOKENS)
+        Py_RETURN_NONE;
+
+    long int days    = time_numbers[0];
+    long int hours   = time_numbers[1];
+    long int mins    = time_numbers[2];
+    long int seconds = time_numbers[3];
+    long int micros  = time_numbers[4];
+
+    long int hours_in_seconds = hours * 60 * 60;
+    long int mins_in_seconds  = mins * 60;
+
+    return PyDelta_FromDSU(days,
+                           hours_in_seconds + mins_in_seconds + seconds,
+                           micros);
+}
+
+
 int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
 {
     // If this sql type has a user-defined conversion, the index into the connection's `conv_funcs` array is returned.
@@ -745,6 +815,21 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_TYPE_TIME:
     case SQL_TYPE_TIMESTAMP:
         return GetDataTimestamp(cur, iCol);
+
+    case SQL_INTERVAL_YEAR:
+    case SQL_INTERVAL_MONTH:
+    case SQL_INTERVAL_DAY:
+    case SQL_INTERVAL_HOUR:
+    case SQL_INTERVAL_MINUTE:
+    case SQL_INTERVAL_SECOND:
+    case SQL_INTERVAL_YEAR_TO_MONTH:
+    case SQL_INTERVAL_DAY_TO_HOUR:
+    case SQL_INTERVAL_DAY_TO_MINUTE:
+    case SQL_INTERVAL_DAY_TO_SECOND:
+    case SQL_INTERVAL_HOUR_TO_MINUTE:
+    case SQL_INTERVAL_HOUR_TO_SECOND:
+    case SQL_INTERVAL_MINUTE_TO_SECOND:
+        return GetDataInterval(cur, iCol);
 
     case SQL_SS_TIME2:
         return GetSqlServerTime(cur, iCol);
