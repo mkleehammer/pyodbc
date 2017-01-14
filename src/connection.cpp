@@ -85,9 +85,9 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
 
     if (!fAnsi)
     {
-        // I want to call the W version when possible since the driver uses it
-        // as an indication that we can handle Unicode.  We are going to use the
-        // same unicode ending as we do for binding parameters.
+        // I want to call the W version when possible since the driver can use it as an
+        // indication that we can handle Unicode.  We are going to use the same unicode ending
+        // as we do for binding parameters.
 
         SQLWChar wchar(pConnectString, SQL_C_WCHAR, encoding, "utf-16le");
         if (!wchar)
@@ -100,7 +100,7 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
             return true;
     }
 
-    SQLWChar ch(pConnectString, SQL_CHAR, encoding, "utf-8");
+    SQLWChar ch(pConnectString, SQL_C_CHAR, encoding, "utf-8");
     Py_BEGIN_ALLOW_THREADS
     ret = SQLDriverConnect(hdbc, 0, (SQLCHAR*)ch.value(), (SQLSMALLINT)ch.charlen(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
     Py_END_ALLOW_THREADS
@@ -346,7 +346,7 @@ static PyObject* Connection_set_attr(PyObject* self, PyObject* args)
 
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLSetConnectAttr(cnxn->hdbc, id, (SQLPOINTER)(uintptr_t)value, SQL_IS_INTEGER);
+    ret = SQLSetConnectAttr(cnxn->hdbc, id, (SQLPOINTER)(intptr_t)value, SQL_IS_INTEGER);
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))
@@ -376,19 +376,17 @@ static int Connection_clear(PyObject* self)
 
     if (cnxn->hdbc != SQL_NULL_HANDLE)
     {
-        // REVIEW: Release threads? (But make sure you zero out hdbc *first*!
-
         TRACE("cnxn.clear cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
 
+        HDBC hdbc = cnxn->hdbc;
+        cnxn->hdbc = SQL_NULL_HANDLE;
         Py_BEGIN_ALLOW_THREADS
         if (cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF)
-            SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, SQL_ROLLBACK);
+            SQLEndTran(SQL_HANDLE_DBC, hdbc, SQL_ROLLBACK);
 
-        SQLDisconnect(cnxn->hdbc);
-        SQLFreeHandle(SQL_HANDLE_DBC, cnxn->hdbc);
+        SQLDisconnect(hdbc);
+        SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
         Py_END_ALLOW_THREADS
-
-        cnxn->hdbc = SQL_NULL_HANDLE;
     }
 
     Py_XDECREF(cnxn->searchescape);
@@ -649,7 +647,7 @@ static PyObject* Connection_getinfo(PyObject* self, PyObject* args)
     }
 
     if (i == _countof(aInfoTypes))
-        return RaiseErrorV(0, ProgrammingError, "Invalid getinfo value: %d", infotype);
+        return RaiseErrorV(0, ProgrammingError, "Unsupported getinfo value: %d", infotype);
 
     char szBuffer[0x1000];
     SQLSMALLINT cch = 0;
@@ -1029,7 +1027,7 @@ static void NormalizeCodecName(const char* src, char* dest, size_t cbDest)
     // (Same as _Py_normalize_encoding which is not public.)  It also wraps the value with
     // pipes so we can search with it.
     //
-    // utf_8 --> |utf-8|
+    // UTF_8 --> |utf-8|
     //
     // This is an internal function - it will truncate so you should use a buffer bigger than
     // anything you expect to search for.
@@ -1041,8 +1039,6 @@ static void NormalizeCodecName(const char* src, char* dest, size_t cbDest)
 
     while (*src && pch < pchLast)
     {
-        // TODO: Py_ISUPPEr and Py_TOLOWER aren't found when linking on Windows
-        // Python 3.5.
         if (isupper(*src))
         {
             *pch++ = (char)tolower(*src++);
@@ -1079,20 +1075,28 @@ static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype, bool
     NormalizeCodecName(encoding, lower, sizeof(lower));
 
 #if PY_MAJOR_VERSION < 3
-    // Give a better error message for 'raw' than "not a registered codec".  It is never
-    // registered.
-    if (strcmp(lower, "|raw|") == 0 && !allow_raw)
+    if (strcmp(lower, "|raw|") == 0)
     {
-        PyErr_Format(PyExc_ValueError, "Raw codec is only allowed for str / SQL_CHAR");
-        return false;
+        if (!allow_raw)
+        {
+            // Give a better error message for 'raw' than "not a registered codec".  It is never
+            // registered.
+            PyErr_Format(PyExc_ValueError, "Raw codec is only allowed for str / SQL_CHAR");
+            return false;
+        }
     }
-#endif
-
-    if (!PyCodec_KnownEncoding(encoding) && (!allow_raw || strcmp(lower, "|raw|") != 0))
+    else if (!PyCodec_KnownEncoding(encoding))
     {
         PyErr_Format(PyExc_ValueError, "not a registered codec: '%s'", encoding);
         return false;
     }
+#else
+    if (!PyCodec_KnownEncoding(encoding))
+    {
+        PyErr_Format(PyExc_ValueError, "not a registered codec: '%s'", encoding);
+        return false;
+    }
+#endif
 
     if (ctype != 0 && ctype != SQL_WCHAR && ctype != SQL_CHAR)
     {
@@ -1230,8 +1234,6 @@ static PyObject* Connection_setdecoding(PyObject* self, PyObject* args, PyObject
 
     if (toObj)
     {
-        // Type objects are classes so they should be the same object.  (I'm not
-        // sure if there is a proper way to do this in Python.)
         if (IsUnicodeType(toObj))
             to = TO_UNICODE;
         else if (IsStringType(toObj))

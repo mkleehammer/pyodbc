@@ -91,7 +91,7 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
     const Py_ssize_t cbNullTerminator = IsBinaryType(ctype) ? 0 : cbElement;
 
     // TODO: Make the initial allocation size configurable?
-    Py_ssize_t cbAllocated = 256;
+    Py_ssize_t cbAllocated = 4096;
     Py_ssize_t cbUsed = 0;
     byte* pb = (byte*)malloc((size_t)cbAllocated);
     if (!pb)
@@ -154,7 +154,7 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
                 // will be added *every* time, not just at the end, so we need to subtract it.
 
                 cbRead = (cbAvailable - cbNullTerminator);
-                cbRemaining = 2048;
+                cbRemaining = 1024 * 1024;
             }
             else if ((Py_ssize_t)cbData >= cbAvailable)
             {
@@ -213,6 +213,7 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
     {
         pyodbc_free(pb);
     }
+
     return true;
 }
 
@@ -233,34 +234,8 @@ static byte* ReallocOrFreeBuffer(byte* pb, Py_ssize_t cbNeed)
 }
 
 
-static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
+static PyObject* ToText(const TextEnc& enc, byte* pbData, Py_ssize_t cbData)
 {
-    // We are reading one of the SQL_WCHAR, SQL_WVARCHAR, etc., and will return
-    // a string.
-    //
-    // If there is no configuration we would expect this to be UTF-16 encoded data.  (If no
-    // byte-order-mark, we would expect it to be big-endian.)
-    //
-    // Now, just because the driver is telling us it is wide data doesn't mean it is true.
-    // psqlodbc with UTF-8 will tell us it is wide data but you must ask for single-byte.
-    // (Otherwise it is just UTF-8 with each character stored as 2 bytes.)  That's why we allow
-    // the user to configure.
-
-    ColumnInfo* pinfo = &cur->colinfos[iCol];
-    const TextEnc& enc = IsWideType(pinfo->sql_type) ? cur->cnxn->sqlwchar_enc : cur->cnxn->sqlchar_enc;
-
-    bool isNull = false;
-    byte* pbData = 0;
-    Py_ssize_t cbData = 0;
-    if (!ReadVarColumn(cur, iCol, enc.ctype, isNull, pbData, cbData))
-        return 0;
-
-    if (isNull)
-    {
-        I(pbData == 0 && cbData == 0);
-        Py_RETURN_NONE;
-    }
-
     // NB: In each branch we make a check for a zero length string and handle it specially
     // since PyUnicode_Decode may (will?) fail if we pass a zero-length string.  Issue #172
     // first pointed this out with shift_jis.  I'm not sure if it is a fault in the
@@ -347,10 +322,46 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
     }
 #endif
 
-    pyodbc_free(pbData);
-
     return str;
 }
+
+
+static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
+{
+    // We are reading one of the SQL_WCHAR, SQL_WVARCHAR, etc., and will return
+    // a string.
+    //
+    // If there is no configuration we would expect this to be UTF-16 encoded data.  (If no
+    // byte-order-mark, we would expect it to be big-endian.)
+    //
+    // Now, just because the driver is telling us it is wide data doesn't mean it is true.
+    // psqlodbc with UTF-8 will tell us it is wide data but you must ask for single-byte.
+    // (Otherwise it is just UTF-8 with each character stored as 2 bytes.)  That's why we allow
+    // the user to configure.
+
+    ColumnInfo* pinfo = &cur->colinfos[iCol];
+    const TextEnc& enc = IsWideType(pinfo->sql_type) ? cur->cnxn->sqlwchar_enc : cur->cnxn->sqlchar_enc;
+
+    bool isNull = false;
+    byte* pbData = 0;
+    Py_ssize_t cbData = 0;
+    if (!ReadVarColumn(cur, iCol, enc.ctype, isNull, pbData, cbData))
+        return 0;
+
+    if (isNull)
+    {
+        I(pbData == 0 && cbData == 0);
+        Py_RETURN_NONE;
+    }
+
+    PyObject* result = ToText(enc, pbData, cbData);
+
+    pyodbc_free(pbData);
+
+    return result;
+}
+
+
 
 static PyObject* GetBinary(Cursor* cur, Py_ssize_t iCol)
 {
@@ -444,80 +455,96 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
     // is universal), and a decimal point ('.' or ',' usually).  We'll do everything as Unicode in case currencies,
     // etc. are too far out.
 
-    // TODO: Is Unicode a good idea for Python 2.7?  We need to know which drivers support Unicode.
+    const TextEnc& enc = cur->cnxn->sqlwchar_enc;
+    // I'm going to request the data as Unicode in case there is a weird currency symbol.  If
+    // this is a performance problems we may want a flag on this.
 
-    const int buffsize = 100;
-    ODBCCHAR buffer[buffsize];
-    SQLLEN cbFetched = 0; // Note: will not include the NULL terminator.
+    bool isNull = false;
+    byte* pbData = 0;
+    Py_ssize_t cbData = 0;
+    if (!ReadVarColumn(cur, iCol, enc.ctype, isNull, pbData, cbData))
+        return 0;
 
-    SQLRETURN ret;
-    Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_WCHAR, buffer, sizeof(buffer), &cbFetched);
-    Py_END_ALLOW_THREADS
-    if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
-
-    if (cbFetched == SQL_NULL_DATA || cbFetched > (buffsize * ODBCCHAR_SIZE))
+    if (isNull)
+    {
+        I(pbData == 0 && cbData == 0);
         Py_RETURN_NONE;
+    }
+
+    Object result(ToText(enc, pbData, cbData));
+
+    pyodbc_free(pbData);
+
+    if (!result)
+        return 0;
 
     // Remove non-digits and convert the databases decimal to a '.' (required by decimal ctor).
     //
     // We are assuming that the decimal point and digits fit within the size of ODBCCHAR.
 
-    int cch = (int)(cbFetched / ODBCCHAR_SIZE);
+    // If Unicode, convert to UTF-8 and copy the digits and punctuation out.  Since these are
+    // all ASCII characters, we can ignore any multiple-byte characters.  Fortunately, if a
+    // character is multi-byte all bytes will have the high bit set.
 
-    char ascii[buffsize];
-    size_t asciilen = 0;
-    for (int i = 0; i < cch; i++)
+    char* pch;
+    Py_ssize_t cch;
+
+#if PY_MAJOR_VERSION >= 3
+    if (PyUnicode_Check(result))
     {
-        if (buffer[i] == chDecimal)
+        pch = PyUnicode_AsUTF8AndSize(result, &cch);
+    }
+    else
+    {
+        int n = PyBytes_AsStringAndSize(result, &pch, &cch);
+        if (n < 0)
+            pch = 0;
+    }
+#else
+    Object encoded;
+    if (PyUnicode_Check(result))
+    {
+        encoded = PyUnicode_AsUTF8String(result);
+        if (!encoded)
+            return 0;
+        result = encoded.Detach();
+    }
+    int n = PyString_AsStringAndSize(result, &pch, &cch);
+    if (n < 0)
+        pch = 0;
+#endif
+
+    if (!pch)
+        return 0;
+
+    // TODO: Why is this limited to 100?  Also, can we perform a check on the original and use
+    // it as-is?
+    char ascii[100];
+    size_t asciilen = 0;
+
+    const char* pchMax = pch + cch;
+    while (pch < pchMax)
+    {
+        if ((*pch & 0x80) == 0)
         {
-            // Must force it to use '.' since the Decimal class doesn't pay attention to the locale.
-            ascii[asciilen++] = '.';
+            if (*pch == chDecimal)
+            {
+                // Must force it to use '.' since the Decimal class doesn't pay attention to the locale.
+                ascii[asciilen++] = '.';
+            }
+            else if ((*pch >= '0' && *pch <= '9') || *pch == '-')
+            {
+                ascii[asciilen++] = (char)(*pch);
+            }
         }
-        else if (buffer[i] > 0xFF || ((buffer[i] < '0' || buffer[i] > '9') && buffer[i] != '-'))
-        {
-            // We are expecting only digits, '.', and '-'.  This could be a
-            // Unicode currency symbol or group separator (',').  Ignore.
-        }
-        else
-        {
-            ascii[asciilen++] = (char)buffer[i];
-        }
+        pch++;
     }
 
     ascii[asciilen] = 0;
 
-    /*
-    for (int i = (cch - 1); i >= 0; i--)
-    {
-        if (buffer[i] == chDecimal)
-        {
-            // Must force it to use '.' since the Decimal class doesn't pay attention to the locale.
-            buffer[i] = '.';
-        }
-        else if ((buffer[i] < '0' || buffer[i] > '9') && buffer[i] != '-')
-        {
-            memmove(&buffer[i], &buffer[i] + 1, (cch - i) * (size_t)ODBCCHAR_SIZE);
-            cch--;
-        }
-    }
-
-    I(buffer[cch] == 0);
-
-    Object str(PyUnicode_FromSQLWCHAR((const SQLWCHAR*)buffer, cch));
+    Object str(PyString_FromStringAndSize(ascii, (Py_ssize_t)asciilen));
     if (!str)
         return 0;
-    */
-    Object str;
-
-#if PY_MAJOR_VERSION < 3
-    str.Attach(PyString_FromStringAndSize(ascii, (Py_ssize_t)asciilen));
-#else
-    // This treats the string like UTF-8 which is fine for a reall ASCII string.
-    str.Attach(PyString_FromStringAndSize(ascii, (Py_ssize_t)asciilen));
-#endif
-
     return PyObject_CallFunction(decimal_type, "O", str.Get());
 }
 
@@ -681,6 +708,105 @@ int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
     return -1;
 }
 
+
+PyObject* PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMALLINT type)
+{
+    // Returns a type object ('int', 'str', etc.) for the given ODBC C type.  This is used to populate
+    // Cursor.description with the type of Python object that will be returned for each column.
+    //
+    // name
+    //   The name of the column, only used to create error messages.
+    //
+    // type
+    //   The ODBC C type (SQL_C_CHAR, etc.) of the column.
+    //
+    // The returned object does not have its reference count incremented (is a borrowed
+    // reference).
+    //
+    // Keep this in sync with GetData below.
+
+    int conv_index = GetUserConvIndex(cur, type);
+    if (conv_index != -1)
+        return (PyObject*)&PyString_Type;
+
+    PyObject* pytype = 0;
+
+    switch (type)
+    {
+    case SQL_CHAR:
+    case SQL_VARCHAR:
+    case SQL_LONGVARCHAR:
+    case SQL_GUID:
+#if PY_MAJOR_VERSION < 3
+        if (cur->cnxn->str_enc.ctype == SQL_C_CHAR)
+            pytype = (PyObject*)&PyString_Type;
+        else
+            pytype = (PyObject*)&PyUnicode_Type;
+#else
+        pytype = (PyObject*)&PyUnicode_Type;
+#endif
+        break;
+
+    case SQL_WCHAR:
+    case SQL_WVARCHAR:
+    case SQL_WLONGVARCHAR:
+    case SQL_SS_XML:
+        pytype = (PyObject*)&PyUnicode_Type;
+        break;
+
+    case SQL_DECIMAL:
+    case SQL_NUMERIC:
+        pytype = (PyObject*)decimal_type;
+        break;
+
+    case SQL_REAL:
+    case SQL_FLOAT:
+    case SQL_DOUBLE:
+        pytype = (PyObject*)&PyFloat_Type;
+        break;
+
+    case SQL_SMALLINT:
+    case SQL_INTEGER:
+    case SQL_TINYINT:
+        pytype = (PyObject*)&PyInt_Type;
+        break;
+
+    case SQL_TYPE_DATE:
+        pytype = (PyObject*)PyDateTimeAPI->DateType;
+        break;
+
+    case SQL_TYPE_TIME:
+    case SQL_SS_TIME2:          // SQL Server 2008+
+        pytype = (PyObject*)PyDateTimeAPI->TimeType;
+        break;
+
+    case SQL_TYPE_TIMESTAMP:
+        pytype = (PyObject*)PyDateTimeAPI->DateTimeType;
+        break;
+
+    case SQL_BIGINT:
+        pytype = (PyObject*)&PyLong_Type;
+        break;
+
+    case SQL_BIT:
+        pytype = (PyObject*)&PyBool_Type;
+        break;
+
+    case SQL_BINARY:
+    case SQL_VARBINARY:
+    case SQL_LONGVARBINARY:
+    default:
+#if PY_VERSION_HEX >= 0x02060000
+        pytype = (PyObject*)&PyByteArray_Type;
+#else
+        pytype = (PyObject*)&PyBuffer_Type;
+#endif
+        break;
+    }
+
+    Py_INCREF(pytype);
+    return pytype;
+}
 
 PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
 {

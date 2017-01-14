@@ -37,7 +37,7 @@ struct CnxnInfo
     int binary_maxlength;
 };
 
-void CnxnInfo_init();
+bool CnxnInfo_init();
 
 // Looks-up or creates a CnxnInfo object for the given connection string.  The connection string can be a Unicode or
 // String object.

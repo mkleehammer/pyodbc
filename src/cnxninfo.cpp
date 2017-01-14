@@ -13,11 +13,10 @@
 //
 static PyObject* map_hash_to_info;
 
-static PyObject* hashlib;       // The hashlib module if Python 2.5+
-static PyObject* sha;           // The sha module if Python 2.4
+static PyObject* hashlib;       // The hashlib module
 static PyObject* update;        // The string 'update', used in GetHash.
 
-void CnxnInfo_init()
+bool CnxnInfo_init()
 {
     // Called during startup to give us a chance to import the hash code.  If we can't find it, we'll print a warning
     // to the console and not cache anything.
@@ -28,12 +27,15 @@ void CnxnInfo_init()
     map_hash_to_info = PyDict_New();
 
     update = PyString_FromString("update");
+    if (!map_hash_to_info || !update)
+        return false;
 
     hashlib = PyImport_ImportModule("hashlib");
+
     if (!hashlib)
-    {
-        sha = PyImport_ImportModule("sha");
-    }
+        return false;
+
+    return true;
 }
 
 static PyObject* GetHash(PyObject* p)
@@ -45,27 +47,12 @@ static PyObject* GetHash(PyObject* p)
     p = bytes.Get();
 #endif
 
-    if (hashlib)
-    {
-        Object hash(PyObject_CallMethod(hashlib, "new", "s", "sha1"));
-        if (!hash.IsValid())
-            return 0;
+    Object hash(PyObject_CallMethod(hashlib, "new", "s", "sha1"));
+    if (!hash.IsValid())
+        return 0;
 
-        PyObject_CallMethodObjArgs(hash, update, p, 0);
-        return PyObject_CallMethod(hash, "hexdigest", 0);
-    }
-
-    if (sha)
-    {
-        Object hash(PyObject_CallMethod(sha, "new", 0));
-        if (!hash.IsValid())
-            return 0;
-
-        PyObject_CallMethodObjArgs(hash, update, p, 0);
-        return PyObject_CallMethod(hash, "hexdigest", 0);
-    }
-
-    return 0;
+    PyObject_CallMethodObjArgs(hash, update, p, 0);
+    return PyObject_CallMethod(hash, "hexdigest", 0);
 }
 
 

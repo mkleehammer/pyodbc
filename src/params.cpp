@@ -463,9 +463,9 @@ static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamI
 
         info.ParameterType     = SQL_VARBINARY;
         info.ParameterValuePtr = (SQLPOINTER)pb;
-        info.BufferLength      = cb;
+        info.BufferLength      = (SQLINTEGER)cb;
         info.ColumnSize        = (SQLUINTEGER)max(cb, 1);
-        info.StrLen_or_Ind     = cb;
+        info.StrLen_or_Ind     = (SQLINTEGER)cb;
     }
     else
     {
@@ -499,9 +499,9 @@ static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     {
         info.ParameterType     = SQL_VARBINARY;
         info.ParameterValuePtr = (SQLPOINTER)PyByteArray_AsString(param);
-        info.BufferLength      = cb;
+        info.BufferLength      = (SQLINTEGER)cb;
         info.ColumnSize        = (SQLUINTEGER)max(cb, 1);
-        info.StrLen_or_Ind     = cb;
+        info.StrLen_or_Ind     = (SQLINTEGER)cb;
     }
     else
     {

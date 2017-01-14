@@ -175,7 +175,8 @@ static bool import_types()
     PyDateTime_IMPORT;
 
     Cursor_init();
-    CnxnInfo_init();
+    if (!CnxnInfo_init())
+        return false;
     GetData_init();
     if (!Params_init())
         return false;

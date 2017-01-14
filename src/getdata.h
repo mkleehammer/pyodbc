@@ -4,6 +4,8 @@
 
 void GetData_init();
 
+PyObject* PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMALLINT type);
+
 PyObject* GetData(Cursor* cur, Py_ssize_t iCol);
 
 /**

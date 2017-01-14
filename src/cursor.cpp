@@ -1,4 +1,3 @@
-
 // Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 // documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
 // rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
@@ -126,103 +125,6 @@ inline bool IsNumericType(SQLSMALLINT sqltype)
 }
 
 
-static PyObject* PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMALLINT type)
-{
-    // Returns a type object ('int', 'str', etc.) for the given ODBC C type.  This is used to populate
-    // Cursor.description with the type of Python object that will be returned for each column.
-    //
-    // name
-    //   The name of the column, only used to create error messages.
-    //
-    // type
-    //   The ODBC C type (SQL_C_CHAR, etc.) of the column.
-    //
-    // The returned object does not have its reference count incremented!
-
-    int conv_index = GetUserConvIndex(cur, type);
-    if (conv_index != -1)
-        return (PyObject*)&PyString_Type;
-
-    PyObject* pytype = 0;
-
-    switch (type)
-    {
-    case SQL_CHAR:
-    case SQL_VARCHAR:
-    case SQL_LONGVARCHAR:
-    case SQL_GUID:
-    case SQL_SS_XML:
-#if PY_MAJOR_VERSION < 3
-        pytype = (PyObject*)&PyString_Type;
-#else
-        pytype = (PyObject*)&PyUnicode_Type;
-#endif
-        break;
-
-    case SQL_DECIMAL:
-    case SQL_NUMERIC:
-        pytype = (PyObject*)decimal_type;
-        break;
-
-    case SQL_REAL:
-    case SQL_FLOAT:
-    case SQL_DOUBLE:
-        pytype = (PyObject*)&PyFloat_Type;
-        break;
-
-    case SQL_SMALLINT:
-    case SQL_INTEGER:
-    case SQL_TINYINT:
-        pytype = (PyObject*)&PyInt_Type;
-        break;
-
-    case SQL_TYPE_DATE:
-        pytype = (PyObject*)PyDateTimeAPI->DateType;
-        break;
-
-    case SQL_TYPE_TIME:
-    case SQL_SS_TIME2:          // SQL Server 2008+
-        pytype = (PyObject*)PyDateTimeAPI->TimeType;
-        break;
-
-    case SQL_TYPE_TIMESTAMP:
-        pytype = (PyObject*)PyDateTimeAPI->DateTimeType;
-        break;
-
-    case SQL_BIGINT:
-        pytype = (PyObject*)&PyLong_Type;
-        break;
-
-    case SQL_BIT:
-        pytype = (PyObject*)&PyBool_Type;
-        break;
-
-    case SQL_BINARY:
-    case SQL_VARBINARY:
-    case SQL_LONGVARBINARY:
-#if PY_VERSION_HEX >= 0x02060000
-        pytype = (PyObject*)&PyByteArray_Type;
-#else
-        pytype = (PyObject*)&PyBuffer_Type;
-#endif
-        break;
-
-
-    case SQL_WCHAR:
-    case SQL_WVARCHAR:
-    case SQL_WLONGVARCHAR:
-        pytype = (PyObject*)&PyUnicode_Type;
-        break;
-
-    default:
-        return RaiseErrorV(0, 0, "ODBC data type %d is not supported.  Cannot read column %s.", type, (const char*)name);
-    }
-
-    Py_INCREF(pytype);
-    return pytype;
-}
-
-
 static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 {
     // Called after an execute to construct the map shared by rows.
@@ -274,7 +176,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
             goto done;
         }
 
-        TRACE("Col %d: type=%d colsize=%d\n", (i+1), (int)nDataType, (int)nColSize);
+        TRACE("Col %d: type=%s (%d) colsize=%d\n", (i+1), SqlTypeName(nDataType), (int)nDataType, (int)nColSize);
 
         if (lower)
             _strlwr((char*)name);
@@ -716,7 +618,6 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         // The connection was closed by another thread in the ALLOW_THREADS block above.
 
         FreeParameterData(cur);
-
         return RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
     }
 
@@ -1015,7 +916,7 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
                 return 0;
             }
         }
-        
+
         if (PyErr_Occurred())
             return 0;
     }
@@ -1251,7 +1152,7 @@ static PyObject* Cursor_tables(PyObject* self, PyObject* args, PyObject* kwargs)
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
-    
+
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
 
@@ -1320,7 +1221,7 @@ static PyObject* Cursor_columns(PyObject* self, PyObject* args, PyObject* kwargs
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
-    
+
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
 
@@ -1392,7 +1293,7 @@ static PyObject* Cursor_statistics(PyObject* self, PyObject* args, PyObject* kwa
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
-    
+
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
 
@@ -1469,7 +1370,7 @@ static PyObject* _specialColumns(PyObject* self, PyObject* args, PyObject* kwarg
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
-    
+
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
 
@@ -1540,7 +1441,7 @@ static PyObject* Cursor_primaryKeys(PyObject* self, PyObject* args, PyObject* kw
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
-    
+
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
 
@@ -1611,7 +1512,7 @@ static PyObject* Cursor_foreignKeys(PyObject* self, PyObject* args, PyObject* kw
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
-    
+
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
 
@@ -1673,20 +1574,20 @@ static PyObject* Cursor_getTypeInfo(PyObject* self, PyObject* args, PyObject* kw
 {
     UNUSED(kwargs);
 
-    SQLSMALLINT nDataType = SQL_ALL_TYPES;
+    int nDataType = SQL_ALL_TYPES;
 
     if (!PyArg_ParseTuple(args, "|i", &nDataType))
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
-    
+
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
 
     SQLRETURN ret = 0;
 
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetTypeInfo(cur->hstmt, nDataType);
+    ret = SQLGetTypeInfo(cur->hstmt, (SQLSMALLINT)nDataType);
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))
@@ -1740,7 +1641,7 @@ static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
         PyObject* pError = GetErrorFromHandle("SQLMoreResults", cur->cnxn->hdbc, cur->hstmt);
         //
         // free_results must be run after the error has been collected
-        // from the cursor as it's lost otherwise. 
+        // from the cursor as it's lost otherwise.
         // If free_results raises an error (eg a lost connection) report that instead.
         //
         if (!free_results(cur, FREE_STATEMENT | KEEP_PREPARED)) {
@@ -1755,7 +1656,7 @@ static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
             Py_DECREF(pError);
             return 0;
         }
-        
+
         //
         // Not clear how we'd get here, but if we're in an error state
         // without an error, behave as if we had no nextset
@@ -1838,7 +1739,7 @@ static PyObject* Cursor_procedureColumns(PyObject* self, PyObject* args, PyObjec
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
-    
+
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
 
@@ -1897,7 +1798,7 @@ static PyObject* Cursor_procedures(PyObject* self, PyObject* args, PyObject* kwa
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
-    
+
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
 
@@ -2178,11 +2079,11 @@ static PyObject* Cursor_exit(PyObject* self, PyObject* args)
         if (!SQL_SUCCEEDED(ret))
             return RaiseErrorFromHandle("SQLEndTran(SQL_COMMIT)", cursor->cnxn->hdbc, cursor->hstmt);
     }
-    
+
     Py_RETURN_NONE;
 }
 
-    
+
 static PyMethodDef Cursor_methods[] =
 {
     { "close",            (PyCFunction)Cursor_close,            METH_NOARGS,                close_doc            },
@@ -2345,4 +2246,3 @@ void Cursor_init()
 {
     PyDateTime_IMPORT;
 }
-

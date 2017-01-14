@@ -13,9 +13,12 @@
 #define PYODBC_H
 
 #ifdef _MSC_VER
+// The MS headers generate a ton of warnings.
+#pragma warning(push, 0)
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <malloc.h>
+#pragma warning(pop)
 typedef __int64 INT64;
 typedef unsigned __int64 UINT64;
 #else
