@@ -1,4 +1,3 @@
-
 // The functions for reading a single value from the database using SQLGetData.  There is a different function for
 // every data type.
 
@@ -11,6 +10,8 @@
 #include "dbspecific.h"
 #include "sqlwchar.h"
 #include <datetime.h>
+#include <string.h> /* strdup */
+#include <stdlib.h> /* strtol, NULL */
 
 // NULL terminator notes:
 //
@@ -669,6 +670,96 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
     return PyDateTime_FromDateAndTime(value.year, value.month, value.day, value.hour, value.minute, value.second, micros);
 }
 
+static PyObject* GetDataTimeInterval(Cursor* cur, Py_ssize_t iCol)
+{
+    SQL_INTERVAL_STRUCT interval_value;
+    SQLRETURN ret;
+
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1),
+                     SQL_C_INTERVAL_DAY_TO_SECOND,
+                     &interval_value, sizeof(interval_value), NULL);
+    Py_END_ALLOW_THREADS
+
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+
+    long int days    = 0;
+    long int seconds = 0;
+    long int micros  = 0;
+    const SQL_DAY_SECOND_STRUCT& day_second = interval_value.intval.day_second;
+    const SQL_YEAR_MONTH_STRUCT& year_month = interval_value.intval.year_month;
+#ifdef _MSC_VER
+#pragma warning(disable : 4365)
+#endif
+    switch (interval_value.interval_type)
+    {
+    case SQL_IS_DAY_TO_SECOND:
+        days = day_second.day;
+        seconds = (day_second.hour * 3600 + day_second.minute * 60 +
+                   day_second.second);
+        micros = day_second.fraction;
+        break;
+    case SQL_IS_DAY:
+        days = day_second.day;
+        break;
+    case SQL_IS_HOUR:
+        seconds = day_second.hour * 3600;
+        break;
+    case SQL_IS_MINUTE:
+        seconds = day_second.minute * 60;
+        break;
+    case SQL_IS_SECOND:
+        seconds = day_second.second;
+        micros = day_second.fraction;
+        break;
+    case SQL_IS_DAY_TO_HOUR:
+        days = day_second.day;
+        seconds = day_second.hour * 3600;
+        break;
+    case SQL_IS_DAY_TO_MINUTE:
+        days = day_second.day;
+        seconds = (day_second.hour * 3600 + day_second.minute * 60);
+        break;
+    case SQL_IS_HOUR_TO_MINUTE:
+        seconds = (day_second.hour * 3600 + day_second.minute * 60);
+        break;
+    case SQL_IS_HOUR_TO_SECOND:
+        seconds = (day_second.hour * 3600 + day_second.minute * 60 +
+                   day_second.second);
+        micros = day_second.fraction;
+        break;
+    case SQL_IS_MINUTE_TO_SECOND:
+        seconds = (day_second.minute * 60 + day_second.second);
+        micros = day_second.fraction;
+        break;
+    case SQL_IS_YEAR_TO_MONTH:
+        // TODO: Represent YEAR-MONTH intervals.  Define a simple
+        // yearmonth_timedelta type here, from which caller can construct a
+        // python-dateutil.relativedelta, mx.DateTime.RelativeDateTime, or
+        // something else.
+        //
+        // This is a temporary hack.
+        days = year_month.year * 365 + year_month.month * 30;
+        break;
+    case SQL_IS_YEAR:
+        days = year_month.year * 365;
+        break;
+    case SQL_IS_MONTH:
+        days = year_month.month * 30;
+        break;
+    default:
+        return RaiseErrorV(NULL, IntegrityError,
+                           "SQLINTERVAL type not recognized: %d",
+                           interval_value.interval_type);
+    }
+#ifdef _MSC_VER
+#pragma warning(default : 4365)
+#endif
+    int sign = interval_value.interval_sign == SQL_TRUE ? -1 : 1;
+    return PyDelta_FromDSU(days * sign, seconds * sign, micros * sign);
+}
+
 
 int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
 {
@@ -745,6 +836,21 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_TYPE_TIME:
     case SQL_TYPE_TIMESTAMP:
         return GetDataTimestamp(cur, iCol);
+
+    case SQL_INTERVAL_YEAR:
+    case SQL_INTERVAL_MONTH:
+    case SQL_INTERVAL_YEAR_TO_MONTH:
+    case SQL_INTERVAL_DAY:
+    case SQL_INTERVAL_HOUR:
+    case SQL_INTERVAL_MINUTE:
+    case SQL_INTERVAL_SECOND:
+    case SQL_INTERVAL_DAY_TO_HOUR:
+    case SQL_INTERVAL_DAY_TO_MINUTE:
+    case SQL_INTERVAL_DAY_TO_SECOND:
+    case SQL_INTERVAL_HOUR_TO_MINUTE:
+    case SQL_INTERVAL_HOUR_TO_SECOND:
+    case SQL_INTERVAL_MINUTE_TO_SECOND:
+      return GetDataTimeInterval(cur, iCol);
 
     case SQL_SS_TIME2:
         return GetSqlServerTime(cur, iCol);
