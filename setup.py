@@ -130,10 +130,6 @@ def get_compiler_settings(version_str):
         except ValueError:
             pass
 
-    from array import array
-    UNICODE_WIDTH = array('u').itemsize
-    settings['define_macros'].append(('PYODBC_UNICODE_WIDTH', str(UNICODE_WIDTH)))
-
     if os.name == 'nt':
         settings['extra_compile_args'].extend([
             '/Wall',
@@ -183,6 +179,8 @@ def get_compiler_settings(version_str):
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].append('-Wno-write-strings')
 
+        from array import array
+        UNICODE_WIDTH = array('u').itemsize
         if UNICODE_WIDTH == 4:
             # This makes UnixODBC use UCS-4 instead of UCS-2, which works better with sizeof(wchar_t)==4.
             # Thanks to Marc-Antoine Parent
@@ -203,7 +201,7 @@ def get_version():
       1. If in a git repository, use the latest tag (git describe).
       2. If in an unzipped source directory (from setup.py sdist),
          read the version from the PKG-INFO file.
-      3. Use 3.0.0.0 and complain a lot.
+      3. Use 4.0.0.0 and complain a lot.
     """
     # My goal is to (1) provide accurate tags for official releases but (2) not have to manage tags for every test
     # release.
@@ -231,8 +229,8 @@ def get_version():
         name, numbers = _get_version_git()
 
     if not numbers:
-        _print('WARNING: Unable to determine version.  Using 3.0.0.0')
-        name, numbers = '3.0.0-unsupported', [3,0,0,0]
+        _print('WARNING: Unable to determine version.  Using 4.0.0.0')
+        name, numbers = '4.0.0-unsupported', [4,0,0,0]
 
     return name, numbers
 
