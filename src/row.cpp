@@ -39,6 +39,8 @@ struct Row
 
 void FreeRowValues(Py_ssize_t cValues, PyObject** apValues)
 {
+    // Frees each pointer in the apValues buffer *and* the buffer itself.
+
     if (apValues)
     {
         for (Py_ssize_t i = 0; i < cValues; i++)
@@ -118,13 +120,9 @@ static PyObject* new_check(PyObject* args)
         Py_INCREF(apValues[i]);
     }
 
-    // Row_Internal will incref desc and map.
+    // Row_Internal will incref desc and map.  If something goes wrong, it will free apValues.
 
-    PyObject* self = (PyObject*)Row_InternalNew(desc, map, cols, apValues);
-    if (!self)
-        pyodbc_free(apValues);
-
-    return self;
+    return (PyObject*)Row_InternalNew(desc, map, cols, apValues);
 }
 
 static PyObject* Row_new(PyTypeObject* type, PyObject* args, PyObject* kwargs)
