@@ -220,14 +220,16 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
             }
         }
 
-        colinfo = Py_BuildValue("(sOOiiiO)",
+        colinfo = Py_BuildValue("(sOOiiiOi)",
                                 (char*)name,
                                 type,                // type_code
                                 Py_None,             // display size
                                 (int)nColSize,       // internal_size
                                 (int)nColSize,       // precision
                                 (int)cDecimalDigits, // scale
-                                nullable_obj);       // null_ok
+                                nullable_obj,        // null_ok
+                                (int)nDataType
+                                );
         if (!colinfo)
             goto done;
 
