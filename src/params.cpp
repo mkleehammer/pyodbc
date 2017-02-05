@@ -116,7 +116,7 @@ static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
     else
     {
         // Encode the text with the user's encoding.
-        encoded = PyCodec_Encode(param, enc.name, "errors");
+        encoded = PyCodec_Encode(param, enc.name, "strict");
         if (!encoded)
             return false;
 
@@ -164,7 +164,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
 
     info.ColumnSize = (SQLUINTEGER)max(cch, 1);
 
-    Object encoded(PyCodec_Encode(param, enc.name, "errors"));
+    Object encoded(PyCodec_Encode(param, enc.name, "strict"));
     if (!encoded)
         return false;
 
