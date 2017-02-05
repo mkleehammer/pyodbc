@@ -32,6 +32,7 @@ extern PyObject* NotSupportedError;
 extern PyObject* null_binary;
 
 extern PyObject* decimal_type;
+extern PyObject* uuid_type;
 
 inline bool PyDecimal_Check(PyObject* p)
 {
@@ -52,5 +53,8 @@ inline bool lowercase()
 }
 
 extern Py_UNICODE chDecimal;
+
+bool UseNativeUUID();
+// Returns True if pyodbc.native_uuid is true, meaning uuid.UUID objects should be returned.
 
 #endif // _PYPGMODULE_H

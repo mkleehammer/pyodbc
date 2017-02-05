@@ -421,6 +421,28 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
     return pch;
 }
 
+static bool GetUUIDInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+{
+    info.ValueType = SQL_C_GUID;
+    info.ParameterType = SQL_GUID;
+    info.ColumnSize = 16;
+
+    info.allocated = true;
+    info.ParameterValuePtr = pyodbc_malloc(sizeof(SQLGUID));
+    if (!info.ParameterValuePtr)
+    {
+        PyErr_NoMemory();
+        return false;
+    }
+
+    // Do we need to use "bytes" on a big endian machine?
+    Object b(PyObject_GetAttrString(param, "bytes_le"));
+    if (!b)
+        return false;
+    memcpy(info.ParameterValuePtr, PyBytes_AS_STRING(b.Get()), sizeof(SQLGUID));
+    return true;
+}
+
 static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
 {
     // The NUMERIC structure never works right with SQL Server and probably a lot of other drivers.  We'll bind as a
@@ -589,6 +611,9 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
 
     if (PyDecimal_Check(param))
         return GetDecimalInfo(cur, index, param, info);
+
+    if (uuid_type && PyObject_IsInstance(param, uuid_type))
+        return GetUUIDInfo(cur, index, param, info);
 
 #if PY_VERSION_HEX >= 0x02060000
     if (PyByteArray_Check(param))

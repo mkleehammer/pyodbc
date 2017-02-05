@@ -27,7 +27,7 @@ is installed:
   2008: DRIVER={SQL Server Native Client 10.0}
 """
 
-import sys, os, re
+import sys, os, re, uuid
 import unittest
 from decimal import Decimal
 from datetime import datetime, date, time
@@ -157,12 +157,28 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.noscan = True
         self.assertEqual(self.cursor.noscan, True)
 
-    def test_guid(self):
-        self.cursor.execute("create table t1(g1 uniqueidentifier)")
-        self.cursor.execute("insert into t1 values (newid())")
-        v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), str)
-        self.assertEqual(len(v), 36)
+    def test_nonnative_uuid(self):
+        # The default is False meaning we should return a string.  Note that
+        # SQL Server seems to always return uppercase.
+        value = uuid.uuid4()
+        self.cursor.execute("create table t1(n uniqueidentifier)")
+        self.cursor.execute("insert into t1 values (?)", value)
+
+        pyodbc.native_uuid = False
+        result = self.cursor.execute("select n from t1").fetchval()
+        self.assertEqual(type(result), str)
+        self.assertEqual(result, str(value).upper())
+
+    def test_native_uuid(self):
+        # When true, we should return a uuid.UUID object.
+        value = uuid.uuid4()
+        self.cursor.execute("create table t1(n uniqueidentifier)")
+        self.cursor.execute("insert into t1 values (?)", value)
+
+        pyodbc.native_uuid = True
+        result = self.cursor.execute("select n from t1").fetchval()
+        self.assertIsInstance(result, uuid.UUID)
+        self.assertEqual(value, result)
 
     def test_nextset(self):
         self.cursor.execute("create table t1(i int)")
@@ -632,7 +648,6 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
         result  = self.cursor.execute("select n from t1").fetchone()[0]
         self.assertEqual(value, result)
-
 
     #
     # stored procedures

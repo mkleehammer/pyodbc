@@ -572,6 +572,33 @@ static PyObject* GetSqlServerTime(Cursor* cur, Py_ssize_t iCol)
     return PyTime_FromTime(value.hour, value.minute, value.second, micros);
 }
 
+static PyObject* GetUUID(Cursor* cur, Py_ssize_t iCol)
+{
+    // REVIEW: Since GUID is a fixed size, do we need to pass the size or cbFetched?
+
+    PYSQLGUID guid;
+    SQLLEN cbFetched = 0;
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_GUID, &guid, sizeof(guid), &cbFetched);
+    Py_END_ALLOW_THREADS
+
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+
+    if (cbFetched == SQL_NULL_DATA)
+        Py_RETURN_NONE;
+
+#if PY_MAJOR_VERSION >= 3
+    const char* szFmt = "(yyy#)";
+#else
+    const char* szFmt = "(sss#)";
+#endif
+    Object args = Py_BuildValue(szFmt, NULL, NULL, &guid, (int)sizeof(guid));
+    if (!args)
+        return 0;
+    return PyObject_CallObject(uuid_type, args.Get());
+}
 
 static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
 {
@@ -642,7 +669,6 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
     case SQL_CHAR:
     case SQL_VARCHAR:
     case SQL_LONGVARCHAR:
-    case SQL_GUID:
 #if PY_MAJOR_VERSION < 3
         if (cur->cnxn->str_enc.ctype == SQL_C_CHAR)
             pytype = (PyObject*)&PyString_Type;
@@ -651,6 +677,24 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
 #else
         pytype = (PyObject*)&PyUnicode_Type;
 #endif
+        break;
+
+    case SQL_GUID:
+        if (UseNativeUUID())
+        {
+            pytype = uuid_type;
+        }
+        else
+        {
+#if PY_MAJOR_VERSION < 3
+            if (cur->cnxn->str_enc.ctype == SQL_C_CHAR)
+                pytype = (PyObject*)&PyString_Type;
+            else
+                pytype = (PyObject*)&PyUnicode_Type;
+#else
+            pytype = (PyObject*)&PyUnicode_Type;
+#endif
+        }
         break;
 
     case SQL_WCHAR:
@@ -738,9 +782,14 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_CHAR:
     case SQL_VARCHAR:
     case SQL_LONGVARCHAR:
-    case SQL_GUID:
     case SQL_SS_XML:
         return GetText(cur, iCol);
+
+    case SQL_GUID:
+        if (UseNativeUUID())
+            return GetUUID(cur, iCol);
+        return GetText(cur, iCol);
+        break;
 
     case SQL_BINARY:
     case SQL_VARBINARY:
