@@ -214,20 +214,20 @@ static bool AllocateEnv()
     {
         if (!SQL_SUCCEEDED(SQLSetEnvAttr(SQL_NULL_HANDLE, SQL_ATTR_CONNECTION_POOLING, (SQLPOINTER)SQL_CP_ONE_PER_HENV, sizeof(int))))
         {
-            Py_FatalError("Unable to set SQL_ATTR_CONNECTION_POOLING attribute.");
+            PyErr_SetString(PyExc_RuntimeError, "Unable to set SQL_ATTR_CONNECTION_POOLING attribute.");
             return false;
         }
     }
 
     if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &henv)))
     {
-        Py_FatalError("Can't initialize module pyodbc.  SQLAllocEnv failed.");
+        PyErr_SetString(PyExc_RuntimeError, "Can't initialize module pyodbc.  SQLAllocEnv failed.");
         return false;
     }
 
     if (!SQL_SUCCEEDED(SQLSetEnvAttr(henv, SQL_ATTR_ODBC_VERSION, (SQLPOINTER)SQL_OV_ODBC3, sizeof(int))))
     {
-        Py_FatalError("Unable to set SQL_ATTR_ODBC_VERSION attribute.");
+        PyErr_SetString(PyExc_RuntimeError, "Unable to set SQL_ATTR_ODBC_VERSION attribute.");
         return false;
     }
 
