@@ -1281,15 +1281,19 @@ static PyObject* Connection_exit(PyObject* self, PyObject* args)
     // If an error has occurred, `args` will be a tuple of 3 values.  Otherwise it will be a tuple of 3 `None`s.
     I(PyTuple_Check(args));
 
-    if (cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF && PyTuple_GetItem(args, 0) == Py_None)
+    if (cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF)
     {
+        SQLSMALLINT CompletionType = (PyTuple_GetItem(args, 0) == Py_None) ? SQL_COMMIT : SQL_ROLLBACK;
         SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, SQL_COMMIT);
+        ret = SQLEndTran(SQL_HANDLE_DBC, cnxn->hdbc, CompletionType);
         Py_END_ALLOW_THREADS
 
         if (!SQL_SUCCEEDED(ret))
-            return RaiseErrorFromHandle("SQLEndTran(SQL_COMMIT)", cnxn->hdbc, SQL_NULL_HANDLE);
+        {
+            const char* szFunc = (CompletionType == SQL_COMMIT) ? "SQLEndTran(SQL_COMMIT)" : "SQLEndTran(SQL_ROLLBACK)";
+            return RaiseErrorFromHandle(szFunc, cnxn->hdbc, SQL_NULL_HANDLE);
+        }
     }
 
     Py_RETURN_NONE;

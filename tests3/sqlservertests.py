@@ -1236,23 +1236,36 @@ class SqlServerTestCase(unittest.TestCase):
         rows.sort() # uses <
 
     def test_context_manager_success(self):
-
+        "Ensure `with` commits if an exception is not raised"
         self.cursor.execute("create table t1(n int)")
         self.cnxn.commit()
 
-        try:
-            with pyodbc.connect(self.connection_string) as cnxn:
-                cursor = cnxn.cursor()
-                cursor.execute("insert into t1 values (1)")
-        except Exception:
-            pass
-
-        cnxn = None
-        cursor = None
+        with self.cnxn:
+            self.cursor.execute("insert into t1 values (1)")
 
         rows = self.cursor.execute("select n from t1").fetchall()
         self.assertEquals(len(rows), 1)
         self.assertEquals(rows[0][0], 1)
+
+    def test_context_manager_failure(self):
+        "Ensure `with` rolls back if an exception is raised"
+        # We'll insert a row and commit it.  Then we'll insert another row followed by an
+        # exception.
+
+        self.cursor.execute("create table t1(n int)")
+        self.cursor.execute("insert into t1 values (1)")
+        self.cnxn.commit()
+
+        def _fail():
+            with self.cnxn:
+                self.cursor.execute("insert into t1 values (2)")
+                self.cursor.execute("delete from bogus")
+
+        self.assertRaises(pyodbc.Error, _fail)
+
+        self.cursor.execute("select max(n) from t1")
+        val = self.cursor.fetchval()
+        self.assertEqual(val, 1)
 
 
     def test_untyped_none(self):
