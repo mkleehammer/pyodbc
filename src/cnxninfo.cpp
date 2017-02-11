@@ -6,6 +6,7 @@
 
 #include "pyodbc.h"
 #include "wrapper.h"
+#include "textenc.h"
 #include "cnxninfo.h"
 #include "connection.h"
 

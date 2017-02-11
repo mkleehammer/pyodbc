@@ -4,6 +4,7 @@
 
 #include "pyodbc.h"
 #include "wrapper.h"
+#include "textenc.h"
 #include "pyodbcmodule.h"
 #include "cursor.h"
 #include "connection.h"
@@ -234,98 +235,6 @@ static byte* ReallocOrFreeBuffer(byte* pb, Py_ssize_t cbNeed)
 }
 
 
-static PyObject* ToText(const TextEnc& enc, byte* pbData, Py_ssize_t cbData)
-{
-    // NB: In each branch we make a check for a zero length string and handle it specially
-    // since PyUnicode_Decode may (will?) fail if we pass a zero-length string.  Issue #172
-    // first pointed this out with shift_jis.  I'm not sure if it is a fault in the
-    // implementation of this codec or if others will have it also.
-
-    PyObject* str;
-
-#if PY_MAJOR_VERSION < 3
-    // The Unicode paths use the same code.
-    if (enc.to == TO_UNICODE)
-    {
-#endif
-        if (cbData == 0)
-        {
-            str = PyUnicode_FromStringAndSize("", 0);
-        }
-        else
-        {
-            int byteorder = 0;
-            switch (enc.optenc)
-            {
-            case OPTENC_UTF8:
-                str = PyUnicode_DecodeUTF8((char*)pbData, cbData, "strict");
-                break;
-            case OPTENC_UTF16:
-                byteorder = BYTEORDER_NATIVE;
-                str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-                break;
-            case OPTENC_UTF16LE:
-                byteorder = BYTEORDER_LE;
-                str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-                break;
-            case OPTENC_UTF16BE:
-                byteorder = BYTEORDER_BE;
-                str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-                break;
-            case OPTENC_LATIN1:
-                str = PyUnicode_DecodeLatin1((char*)pbData, cbData, "strict");
-                break;
-            default:
-                // The user set an encoding by name.
-                str = PyUnicode_Decode((char*)pbData, cbData, enc.name, "strict");
-                break;
-            }
-        }
-#if PY_MAJOR_VERSION < 3
-    }
-    else if (cbData == 0)
-    {
-        str = PyString_FromStringAndSize("", 0);
-    }
-    else if (enc.optenc == OPTENC_RAW)
-    {
-        // No conversion.
-        str = PyString_FromStringAndSize((char*)pbData, cbData);
-    }
-    else
-    {
-        // The user has requested a string object.  Unfortunately we don't have
-        // str versions of all of the optimized functions.
-        const char* encoding;
-        switch (enc.optenc)
-        {
-        case OPTENC_UTF8:
-            encoding = "utf-8";
-            break;
-        case OPTENC_UTF16:
-            encoding = "utf-16";
-            break;
-        case OPTENC_UTF16LE:
-            encoding = "utf-16-le";
-            break;
-        case OPTENC_UTF16BE:
-            encoding = "utf-16-be";
-            break;
-        case OPTENC_LATIN1:
-            encoding = "latin-1";
-            break;
-        default:
-            encoding = enc.name;
-        }
-
-        str = PyString_Decode((char*)pbData, cbData, encoding, "strict");
-    }
-#endif
-
-    return str;
-}
-
-
 static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
 {
     // We are reading one of the SQL_WCHAR, SQL_WVARCHAR, etc., and will return
@@ -354,7 +263,7 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
     }
 
-    PyObject* result = ToText(enc, pbData, cbData);
+    PyObject* result = TextBufferToObject(enc, pbData, cbData);
 
     pyodbc_free(pbData);
 
@@ -471,7 +380,7 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
     }
 
-    Object result(ToText(enc, pbData, cbData));
+    Object result(TextBufferToObject(enc, pbData, cbData));
 
     pyodbc_free(pbData);
 
@@ -709,13 +618,10 @@ int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
 }
 
 
-PyObject* PythonTypeFromSqlType(Cursor* cur, const SQLCHAR* name, SQLSMALLINT type)
+PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
 {
     // Returns a type object ('int', 'str', etc.) for the given ODBC C type.  This is used to populate
     // Cursor.description with the type of Python object that will be returned for each column.
-    //
-    // name
-    //   The name of the column, only used to create error messages.
     //
     // type
     //   The ODBC C type (SQL_C_CHAR, etc.) of the column.

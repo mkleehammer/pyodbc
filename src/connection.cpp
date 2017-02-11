@@ -10,6 +10,7 @@
 
 #include "pyodbc.h"
 #include "wrapper.h"
+#include "textenc.h"
 #include "connection.h"
 #include "cursor.h"
 #include "pyodbcmodule.h"
@@ -211,6 +212,10 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->conv_types   = 0;
     cnxn->conv_funcs   = 0;
 
+    // This is an inefficient default, but should work all the time.  When we are offered
+    // single-byte text we don't actually know what the encoding is.  For example, with SQL
+    // Server the encoding is based on the database's collation.  We ask the driver / DB to
+    // convert to SQL_C_WCHAR and use the ODBC default of UTF-16LE.
     cnxn->sqlchar_enc.optenc = OPTENC_UTF16LE;
     cnxn->sqlchar_enc.name   = _strdup("utf-16le");
     cnxn->sqlchar_enc.ctype  = SQL_C_WCHAR;
@@ -218,6 +223,10 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->sqlwchar_enc.optenc = OPTENC_UTF16LE;
     cnxn->sqlwchar_enc.name   = _strdup("utf-16le");
     cnxn->sqlwchar_enc.ctype  = SQL_C_WCHAR;
+
+    cnxn->metadata_enc.optenc = OPTENC_UTF16LE;
+    cnxn->metadata_enc.name   = _strdup("utf-16le");
+    cnxn->metadata_enc.ctype  = SQL_C_WCHAR;
 
     // Note: I attempted to use UTF-8 here too since it can hold any type, but SQL Server fails
     // with a data truncation error if we send something encoded in 2 bytes to a column with 1
@@ -234,9 +243,10 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
 
     cnxn->sqlchar_enc.to  = TO_UNICODE;
     cnxn->sqlwchar_enc.to = TO_UNICODE;
+    cnxn->metadata_enc.to = TO_UNICODE;
 #endif
 
-    if (!cnxn->sqlchar_enc.name || !cnxn->sqlwchar_enc.name || !cnxn->unicode_enc.name
+    if (!cnxn->sqlchar_enc.name || !cnxn->sqlwchar_enc.name || !cnxn->metadata_enc.name || !cnxn->unicode_enc.name
 #if PY_MAJOR_VERSION < 3
         || !cnxn->str_enc.name
 #endif
@@ -396,6 +406,8 @@ static int Connection_clear(PyObject* self)
     cnxn->sqlchar_enc.name = 0;
     free((void*)cnxn->sqlwchar_enc.name);
     cnxn->sqlwchar_enc.name = 0;
+    free((void*)cnxn->metadata_enc.name);
+    cnxn->metadata_enc.name = 0;
     free((void*)cnxn->unicode_enc.name);
     cnxn->unicode_enc.name = 0;
 #if PY_MAJOR_VERSION < 3
@@ -1245,10 +1257,11 @@ static PyObject* Connection_setdecoding(PyObject* self, PyObject* args, PyObject
     allow_raw = (sqltype == SQL_CHAR && to != TO_UNICODE);
 #endif
 
-    if (sqltype != SQL_WCHAR && sqltype != SQL_CHAR)
-        return PyErr_Format(PyExc_ValueError, "Invalid sqltype %d.  Must be SQL_CHAR or SQL_WCHAR", sqltype);
+    if (sqltype != SQL_WCHAR && sqltype != SQL_CHAR && sqltype != SQL_WMETADATA)
+        return PyErr_Format(PyExc_ValueError, "Invalid sqltype %d.  Must be SQL_CHAR or SQL_WCHAR or SQL_WMETADATA", sqltype);
 
-    TextEnc& enc = (sqltype == SQL_CHAR) ? cnxn->sqlchar_enc : cnxn->sqlwchar_enc;
+    TextEnc& enc = (sqltype == SQL_CHAR) ? cnxn->sqlchar_enc :
+        ((sqltype == SQL_WMETADATA) ? cnxn->metadata_enc : cnxn->sqlwchar_enc);
 
     if (!SetTextEncCommon(enc, encoding, ctype, allow_raw))
         return 0;

@@ -10,6 +10,7 @@
 
 #include "pyodbc.h"
 #include "wrapper.h"
+#include "textenc.h"
 #include "pyodbcmodule.h"
 #include "params.h"
 #include "cursor.h"
@@ -17,7 +18,6 @@
 #include "buffer.h"
 #include "errors.h"
 #include "dbspecific.h"
-#include "sqlwchar.h"
 #include <datetime.h>
 
 
@@ -670,41 +670,39 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
         SQLSMALLINT cParamsT = 0;
         const char* szErrorFunc = "SQLPrepare";
 
-        if (PyUnicode_Check(pSql))
-        {
-            const TextEnc& enc = cur->cnxn->unicode_enc;
-            SQLWChar sql(pSql, enc.ctype, 0, enc.name);
-            Py_BEGIN_ALLOW_THREADS
-            if (enc.ctype == SQL_C_WCHAR)
-                ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)sql.value(), (SQLINTEGER)sql.charlen());
-            else
-                ret = SQLPrepare(cur->hstmt, (SQLCHAR*)sql.value(), (SQLINTEGER)sql.charlen());
-            if (SQL_SUCCEEDED(ret))
-            {
-                szErrorFunc = "SQLNumParams";
-                ret = SQLNumParams(cur->hstmt, &cParamsT);
-            }
-            Py_END_ALLOW_THREADS
-        }
+        const TextEnc* penc;
+
 #if PY_MAJOR_VERSION < 3
-        else
+        if (PyBytes_Check(pSql))
         {
-            const TextEnc& enc = cur->cnxn->str_enc;
-            SQLWChar sql(pSql, enc.ctype, 0, enc.name);
-            TRACE("SQLPrepare(%s)\n", PyString_AS_STRING(pSql));
-            Py_BEGIN_ALLOW_THREADS
-            if (enc.ctype == SQL_C_WCHAR)
-                ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)sql.value(), (SQLINTEGER)sql.charlen());
-            else
-                ret = SQLPrepare(cur->hstmt, (SQLCHAR*)sql.value(), (SQLINTEGER)sql.charlen());
-            if (SQL_SUCCEEDED(ret))
-            {
-                szErrorFunc = "SQLNumParams";
-                ret = SQLNumParams(cur->hstmt, &cParamsT);
-            }
-            Py_END_ALLOW_THREADS
+            penc = &cur->cnxn->str_enc;
         }
+        else
 #endif
+        {
+            penc = &cur->cnxn->unicode_enc;
+        }
+
+        Object query(penc->Encode(pSql));
+        if (!query)
+            return 0;
+
+        const char* pch = PyBytes_AS_STRING(query.Get());
+        SQLINTEGER  cch = (SQLINTEGER)PyBytes_GET_SIZE(query.Get());
+
+        TRACE("SQLPrepare(%s)\n", pch);
+
+        Py_BEGIN_ALLOW_THREADS
+        if (penc->ctype == SQL_C_WCHAR)
+            ret = SQLPrepareW(cur->hstmt, (SQLWCHAR*)pch, cch);
+        else
+            ret = SQLPrepare(cur->hstmt, (SQLCHAR*)pch, cch);
+        if (SQL_SUCCEEDED(ret))
+        {
+            szErrorFunc = "SQLNumParams";
+            ret = SQLNumParams(cur->hstmt, &cParamsT);
+        }
+        Py_END_ALLOW_THREADS
 
         if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
         {

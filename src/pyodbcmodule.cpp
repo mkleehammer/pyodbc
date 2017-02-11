@@ -11,6 +11,7 @@
 
 #include "pyodbc.h"
 #include "wrapper.h"
+#include "textenc.h"
 #include "pyodbcmodule.h"
 #include "connection.h"
 #include "cursor.h"
@@ -728,6 +729,7 @@ struct ConstantDef
 #define MAKECONST(v) { #v, v }
 
 static const ConstantDef aConstants[] = {
+    MAKECONST(SQL_WMETADATA),
     MAKECONST(SQL_UNKNOWN_TYPE),
     MAKECONST(SQL_CHAR),
     MAKECONST(SQL_VARCHAR),

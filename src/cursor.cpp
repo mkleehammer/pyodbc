@@ -14,6 +14,7 @@
 
 #include "pyodbc.h"
 #include "wrapper.h"
+#include "textenc.h"
 #include "cursor.h"
 #include "pyodbcmodule.h"
 #include "connection.h"
@@ -153,14 +154,15 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
     for (int i = 0; i < field_count; i++)
     {
-        SQLCHAR name[300];
+        ODBCCHAR szName[300];
+        SQLSMALLINT cchName;
         SQLSMALLINT nDataType;
         SQLULEN nColSize;           // precision
         SQLSMALLINT cDecimalDigits; // scale
         SQLSMALLINT nullable;
 
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLDescribeCol(cur->hstmt, (SQLUSMALLINT)(i + 1), name, _countof(name), 0, &nDataType, &nColSize, &cDecimalDigits, &nullable);
+        ret = SQLDescribeColW(cur->hstmt, (SQLUSMALLINT)(i + 1), (SQLWCHAR*)szName, _countof(szName), &cchName, &nDataType, &nColSize, &cDecimalDigits, &nullable);
         Py_END_ALLOW_THREADS
 
         if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
@@ -178,10 +180,21 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
         TRACE("Col %d: type=%s (%d) colsize=%d\n", (i+1), SqlTypeName(nDataType), (int)nDataType, (int)nColSize);
 
-        if (lower)
-            _strlwr((char*)name);
+        const TextEnc& enc = cur->cnxn->metadata_enc;
+        Object name(TextBufferToObject(enc, szName, (Py_ssize_t)(cchName * sizeof(ODBCCHAR))));
 
-        type = PythonTypeFromSqlType(cur, name, nDataType);
+        if (!name)
+            goto done;
+
+        if (lower)
+        {
+            PyObject* l = PyObject_CallMethod(name, "lower", 0);
+            if (!l)
+                goto done;
+            name.Attach(l);
+        }
+
+        type = PythonTypeFromSqlType(cur, nDataType);
         if (!type)
             goto done;
 
@@ -220,8 +233,8 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
             }
         }
 
-        colinfo = Py_BuildValue("(sOOiiiO)",
-                                (char*)name,
+        colinfo = Py_BuildValue("(OOOiiiO)",
+                                name.Get(),
                                 type,                // type_code
                                 Py_None,             // display size
                                 (int)nColSize,       // internal_size
@@ -231,14 +244,13 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
         if (!colinfo)
             goto done;
 
-
         nullable_obj = 0;
 
         index = PyInt_FromLong(i);
         if (!index)
             goto done;
 
-        PyDict_SetItemString(colmap, (const char*)name, index);
+        PyDict_SetItem(colmap, name.Get(), index);
         Py_DECREF(index);       // SetItemString increments
         index = 0;
 
@@ -583,34 +595,33 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         cur->pPreparedSQL = 0;
 
         szLastFunction = "SQLExecDirect";
+
+        const TextEnc* penc = 0;
+
 #if PY_MAJOR_VERSION < 3
         if (PyString_Check(pSql))
         {
-            const TextEnc& enc = cur->cnxn->str_enc;
-            SQLWChar query(pSql, enc.ctype, enc.name);
-            if (!query)
-                return 0;
-            Py_BEGIN_ALLOW_THREADS
-            if (enc.ctype == SQL_C_WCHAR)
-                ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)query.value(), (SQLINTEGER)query.charlen());
-            else
-                ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.charlen());
-            Py_END_ALLOW_THREADS
+            penc = &cur->cnxn->str_enc;
         }
         else
 #endif
         {
-            const TextEnc& enc = cur->cnxn->unicode_enc;
-            SQLWChar query(pSql, enc.ctype, enc.name);
-            if (!query)
-                return 0;
-            Py_BEGIN_ALLOW_THREADS
-            if (enc.ctype == SQL_C_WCHAR)
-                ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)query.value(), (SQLINTEGER)query.charlen());
-            else
-                ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)query.value(), (SQLINTEGER)query.charlen());
-            Py_END_ALLOW_THREADS
+            penc = &cur->cnxn->unicode_enc;
         }
+
+        Object query(penc->Encode(pSql));
+        if (!query)
+            return 0;
+
+        const char* pch = PyBytes_AS_STRING(query.Get());
+        SQLINTEGER  cch = (SQLINTEGER)PyBytes_GET_SIZE(query.Get());
+
+        Py_BEGIN_ALLOW_THREADS
+        if (penc->ctype == SQL_C_WCHAR)
+            ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)pch, cch);
+        else
+            ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)pch, cch);
+        Py_END_ALLOW_THREADS
     }
 
     if (cur->cnxn->hdbc == SQL_NULL_HANDLE)

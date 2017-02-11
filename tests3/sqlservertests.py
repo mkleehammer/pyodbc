@@ -78,6 +78,13 @@ class SqlServerTestCase(unittest.TestCase):
         self.cnxn   = pyodbc.connect(self.connection_string)
         self.cursor = self.cnxn.cursor()
 
+        # I (Kleehammer) have been using a latin1 collation.  If you have a
+        # different collation, you'll need to update this.  If someone knows of
+        # a good way for this to be dynamic, please update.  (I suppose we
+        # could maintain a map from collation to encoding?)
+        self.cnxn.setencoding('latin1')
+        self.cnxn.setdecoding(pyodbc.SQL_CHAR, 'latin1')
+
         for i in range(3):
             try:
                 self.cursor.execute("drop table t%d" % i)
@@ -1013,20 +1020,6 @@ class SqlServerTestCase(unittest.TestCase):
         othercnxn.autocommit = False
         self.assertEqual(othercnxn.autocommit, False)
 
-    def test_unicode_results(self):
-        "Ensure unicode_results forces Unicode"
-        othercnxn = pyodbc.connect(self.connection_string, unicode_results=True)
-        othercursor = othercnxn.cursor()
-
-        # ANSI data in an ANSI column ...
-        othercursor.execute("create table t1(s varchar(20))")
-        othercursor.execute("insert into t1 values(?)", 'test')
-
-        # ... should be returned as Unicode
-        value = othercursor.execute("select s from t1").fetchone()[0]
-        self.assertEqual(value, 'test')
-
-
     def test_sqlserver_callproc(self):
         try:
             self.cursor.execute("drop procedure pyodbctest")
@@ -1309,6 +1302,15 @@ class SqlServerTestCase(unittest.TestCase):
         current = m.group(1)
         self.assert_(current in drivers)
 
+    def test_decode_meta(self):
+        """
+        Ensure column names with non-ASCII characters are converted using the configured encodings.
+        """
+        # This is from GitHub issue #190
+        self.cursor.execute("create table t1(a int)")
+        self.cursor.execute("insert into t1 values (1)")
+        self.cursor.execute('select a as "Tipología" from t1')
+        self.assertEqual(self.cursor.description[0][0], "Tipología")
 
 
 def main():

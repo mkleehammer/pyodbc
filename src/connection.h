@@ -16,55 +16,7 @@ struct Cursor;
 
 extern PyTypeObject ConnectionType;
 
-enum {
-    BYTEORDER_LE = -1,
-    BYTEORDER_NATIVE = 0,
-    BYTEORDER_BE = 1,
-
-    OPTENC_NONE    = 0,         // No optimized encoding - use the named encoding
-    OPTENC_RAW     = 1,         // In Python 2, pass bytes directly to string - no decoder
-    OPTENC_UTF8    = 2,
-    OPTENC_UTF16   = 3,         // "Native", so check for BOM and default to BE
-    OPTENC_UTF16BE = 4,
-    OPTENC_UTF16LE = 5,
-    OPTENC_LATIN1  = 6,
-
-#if PY_MAJOR_VERSION < 3
-    TO_UNICODE = 1,
-    TO_STR     = 2
-#endif
-};
-
-
-struct TextEnc
-{
-    // Holds encoding information for reading or writing text.  Since some drivers / databases
-    // are not easy to configure efficiently, a separate instance of this structure is
-    // configured for:
-    //
-    // * reading SQL_CHAR
-    // * reading SQL_WCHAR
-    // * writing unicode strings
-    // * writing non-unicode strings (Python 2.7 only)
-
-#if PY_MAJOR_VERSION < 3
-    int to;
-    // The type of object to return if reading from the database: str or unicode.
-#endif
-
-    int optenc;
-    // Set to one of the OPTENC constants to indicate whether an optimized encoding is to be
-    // used or a custom one.  If OPTENC_NONE, no optimized encoding is set and `name` should be
-    // used.
-
-    const char* name;
-    // The name of the encoding.  This must be freed using `free`.
-
-    SQLSMALLINT ctype;
-    // The C type to use, SQL_C_CHAR or SQL_C_WCHAR.  Normally this matches the SQL type of the
-    // column (SQL_C_CHAR is used for SQL_CHAR, etc.).  At least one database reports it has
-    // SQL_WCHAR data even when configured for UTF-8 which is better suited for SQL_C_CHAR.
-};
+struct TextEnc;
 
 struct Connection
 {
@@ -99,6 +51,13 @@ struct Connection
 #if PY_MAJOR_VERSION < 3
     TextEnc str_enc;            // encoding used when writing non-unicode strings
 #endif
+
+    TextEnc metadata_enc;
+    // Used when reading column names for Cursor.description.  I originally thought I could use
+    // the TextEncs above based on whether I called SQLDescribeCol vs SQLDescribeColW.
+    // Unfortunately it looks like PostgreSQL and MySQL (and probably others) ignore the ODBC
+    // specification regarding encoding everywhere *except* in these functions - SQLDescribeCol
+    // seems to always return UTF-16LE by them regardless of the connection settings.
 
     long maxwrite;
     // Used to override varchar_maxlength, etc.  Those are initialized from

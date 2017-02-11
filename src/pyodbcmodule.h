@@ -14,6 +14,10 @@
 #ifndef _PYPGMODULE_H
 #define _PYPGMODULE_H
 
+#define SQL_WMETADATA -888
+// This is a custom constant that can be passed to Connection.setencoding.  Pick a value that
+// is very different from SQL_CHAR and SQL_WCHAR and similar items.
+
 extern PyObject* Error;
 extern PyObject* Warning;
 extern PyObject* InterfaceError;
