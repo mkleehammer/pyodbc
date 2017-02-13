@@ -613,11 +613,13 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         if (!query)
             return 0;
 
+        bool isWide = (penc->ctype == SQL_C_WCHAR);
+
         const char* pch = PyBytes_AS_STRING(query.Get());
-        SQLINTEGER  cch = (SQLINTEGER)PyBytes_GET_SIZE(query.Get());
+        SQLINTEGER  cch = (SQLINTEGER)(PyBytes_GET_SIZE(query.Get()) / (isWide ? sizeof(ODBCCHAR) : 1));
 
         Py_BEGIN_ALLOW_THREADS
-        if (penc->ctype == SQL_C_WCHAR)
+        if (isWide)
             ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)pch, cch);
         else
             ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)pch, cch);
