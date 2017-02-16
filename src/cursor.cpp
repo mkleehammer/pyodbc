@@ -178,10 +178,28 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
             goto done;
         }
 
+        const TextEnc& enc = cur->cnxn->metadata_enc;
+
+        // HACK: I don't know the exact issue, but iODBC + Teradata results in either UCS4 data
+        // or 4-byte SQLWCHAR.  I'm going to use UTF-32 as an indication that's what we have.
+
+        Py_ssize_t cbName = cchName;
+        switch (enc.optenc)
+        {
+        case OPTENC_UTF32:
+        case OPTENC_UTF32LE:
+        case OPTENC_UTF32BE:
+            cbName *= 4;
+            break;
+        default:
+            if (enc.ctype == SQL_C_WCHAR)
+                cbName *= 2;
+            break;
+        }
+
         TRACE("Col %d: type=%s (%d) colsize=%d\n", (i+1), SqlTypeName(nDataType), (int)nDataType, (int)nColSize);
 
-        const TextEnc& enc = cur->cnxn->metadata_enc;
-        Object name(TextBufferToObject(enc, szName, (Py_ssize_t)(cchName * sizeof(ODBCCHAR))));
+        Object name(TextBufferToObject(enc, szName, cbName));
 
         if (!name)
             goto done;

@@ -1146,6 +1146,21 @@ static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype, bool
         enc.optenc = OPTENC_UTF16LE;
         enc.ctype  = (SQLSMALLINT)(ctype ? ctype : SQL_C_WCHAR);
     }
+    else if (strstr("|utf-32|utf32|", lower))
+    {
+        enc.optenc = OPTENC_UTF32;
+        enc.ctype  = (SQLSMALLINT)(ctype ? ctype : SQL_C_WCHAR);
+    }
+    else if (strstr("|utf-32-be|utf-32be|utf32be|", lower))
+    {
+        enc.optenc = OPTENC_UTF32BE;
+        enc.ctype  = (SQLSMALLINT)(ctype ? ctype : SQL_C_WCHAR);
+    }
+    else if (strstr("|utf-32-le|utf-32le|utf32le|", lower))
+    {
+        enc.optenc = OPTENC_UTF32LE;
+        enc.ctype  = (SQLSMALLINT)(ctype ? ctype : SQL_C_WCHAR);
+    }
     else if (strstr("|latin-1|latin1|iso-8859-1|iso8859-1|", lower))
     {
         enc.optenc = OPTENC_LATIN1;

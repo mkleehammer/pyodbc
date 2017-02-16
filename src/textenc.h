@@ -14,6 +14,9 @@ enum {
     OPTENC_UTF16BE = 4,
     OPTENC_UTF16LE = 5,
     OPTENC_LATIN1  = 6,
+    OPTENC_UTF32   = 7,
+    OPTENC_UTF32LE = 8,
+    OPTENC_UTF32BE = 9,
 
 #if PY_MAJOR_VERSION < 3
     TO_UNICODE = 1,
