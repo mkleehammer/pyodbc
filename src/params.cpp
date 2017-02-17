@@ -72,10 +72,12 @@ static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
     info.ColumnSize = (SQLUINTEGER)max(cb, 1);
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
+
     if (maxlength == 0 || cb <= maxlength)
     {
         info.ParameterType     = SQL_VARBINARY;
         info.StrLen_or_Ind     = cb;
+        info.BufferLength      = (SQLLEN)info.ColumnSize;
         info.ParameterValuePtr = PyBytes_AS_STRING(param);
     }
     else
@@ -169,7 +171,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     if (!encoded)
         return false;
 
-    if (!PyBytes_CheckExact(encoded))
+    if (enc.optenc == OPTENC_NONE && !PyBytes_CheckExact(encoded))
     {
         PyErr_Format(PyExc_TypeError, "Unicode write encoding '%s' returned unexpected data type: %s",
                      enc.name, encoded.Get()->ob_type->tp_name);
@@ -179,7 +181,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     Py_ssize_t cb = PyBytes_GET_SIZE(encoded);
     info.pObject = encoded.Detach();
 
-    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
+    SQLLEN maxlength = cur->cnxn->GetMaxLength(enc.ctype);
 
     if (maxlength == 0 || cb <= maxlength)
     {
@@ -297,13 +299,38 @@ static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
 
 static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
 {
-    // TODO: Overflow?
-    info.Data.i64 = (INT64)PyLong_AsLongLong(param);
+    // Try to use integer when possible.  BIGINT is not always supported and is a "special
+    // case" for some drivers.
 
-    info.ValueType         = SQL_C_SBIGINT;
-    info.ParameterType     = SQL_BIGINT;
-    info.ParameterValuePtr = &info.Data.i64;
-    return true;
+    // REVIEW: C & C++ now have constants for max sizes, but I'm not sure if they will be
+    // available on all platforms Python supports right now.  It would be more performant when
+    // a lot of 64-bit values are used since we could avoid the AsLong call.
+
+    // It's not clear what the maximum SQL_INTEGER should be.  The Microsoft documentation says
+    // it is a 'long int', but some drivers run into trouble at high values.  We'll use
+    // SQL_INTEGER as an optimization for smaller values and rely on BIGINT
+
+    int overflow = 0;
+    info.Data.l = PyLong_AsLongAndOverflow(param, &overflow);
+    if (overflow == 0 && !PyErr_Occurred() && (info.Data.l <= 0x7FFFFFFF))
+    {
+        info.ValueType         = SQL_C_LONG;
+        info.ParameterType     = SQL_INTEGER;
+        info.ParameterValuePtr = &info.Data.l;
+    }
+    else
+    {
+        PyErr_Clear();
+        info.Data.i64 = (INT64)PyLong_AsLongLong(param);
+        if (!PyErr_Occurred())
+        {
+            info.ValueType         = SQL_C_SBIGINT;
+            info.ParameterType     = SQL_BIGINT;
+            info.ParameterValuePtr = &info.Data.i64;
+        }
+    }
+
+    return !PyErr_Occurred();
 }
 
 static bool GetFloatInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
@@ -582,7 +609,7 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
 
 bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 {
-    TRACE("BIND: param=%d ValueType=%d (%s) ParameterType=%d (%s) ColumnSize=%d DecimalDigits=%d BufferLength=%d *pcb=%d\n",
+    TRACE("BIND: param=%ld ValueType=%d (%s) ParameterType=%d (%s) ColumnSize=%ld DecimalDigits=%d BufferLength=%ld *pcb=%ld\n",
           (index+1), info.ValueType, CTypeName(info.ValueType), info.ParameterType, SqlTypeName(info.ParameterType), info.ColumnSize,
           info.DecimalDigits, info.BufferLength, info.StrLen_or_Ind);
 

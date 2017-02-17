@@ -30,6 +30,9 @@ def _generate_test_string(length):
 
 class PGTestCase(unittest.TestCase):
 
+    INTEGERS = [ -1, 0, 1, 0x7FFFFFFF ]
+    BIGINTS  = INTEGERS + [ 0xFFFFFFFF, 0x123456789 ]
+
     SMALL_READ = 100
     LARGE_READ = 4000
 
@@ -188,6 +191,28 @@ class PGTestCase(unittest.TestCase):
     def test_large_bytea_array(self):
         self._test_strtype('bytea', bytearray(self.LARGE_BYTES), resulttype=bytes)
 
+    def _test_inttype(self, datatype, n):
+        self.cursor.execute('create table t1(n %s)' % datatype)
+        self.cursor.execute('insert into t1 values (?)', n)
+        result = self.cursor.execute("select n from t1").fetchone()[0]
+        self.assertEqual(result, n)
+
+    def _maketest(datatype, value):
+        def t(self):
+            self._test_inttype(datatype, value)
+        return t
+
+    for value in INTEGERS:
+        name = str(abs(value))
+        if value < 0:
+            name = 'neg_' + name
+        locals()['test_int_%s' % name] = _maketest('int', value)
+
+    for value in BIGINTS:
+        name = str(abs(value))
+        if value < 0:
+            name = 'neg_' + name
+        locals()['test_bigint_%s' % name] = _maketest('bigint', value)
 
     def test_small_decimal(self):
         # value = Decimal('1234567890987654321')

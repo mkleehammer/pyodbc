@@ -42,6 +42,9 @@ def _generate_test_string(length):
 
 class MySqlTestCase(unittest.TestCase):
 
+    INTEGERS = [ -1, 0, 1, 0x7FFFFFFF ]
+    BIGINTS  = INTEGERS + [ 0xFFFFFFFF, 0x123456789 ]
+
     SMALL_FENCEPOST_SIZES = [ 0, 1, 255, 256, 510, 511, 512, 1023, 1024, 2047, 2048, 4000 ]
     LARGE_FENCEPOST_SIZES = [ 4095, 4096, 4097, 10 * 1024, 20 * 1024 ]
 
@@ -324,6 +327,29 @@ class MySqlTestCase(unittest.TestCase):
         v = self.cursor.execute("select * from t1").fetchone()[0]
         self.assertEqual(type(v), Decimal)
         self.assertEqual(v, value)
+
+    def _test_inttype(self, datatype, n):
+        self.cursor.execute('create table t1(n %s)' % datatype)
+        self.cursor.execute('insert into t1 values (?)', n)
+        result = self.cursor.execute("select n from t1").fetchone()[0]
+        self.assertEqual(result, n)
+
+    def _maketest(datatype, value):
+        def t(self):
+            self._test_inttype(datatype, value)
+        return t
+
+    for value in INTEGERS:
+        name = str(abs(value))
+        if value < 0:
+            name = 'neg_' + name
+        locals()['test_int_%s' % name] = _maketest('int', value)
+
+    for value in BIGINTS:
+        name = str(abs(value))
+        if value < 0:
+            name = 'neg_' + name
+        locals()['test_bigint_%s' % name] = _maketest('bigint', value)
 
     def test_subquery_params(self):
         """Ensure parameter markers work in a subquery"""

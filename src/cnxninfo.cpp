@@ -56,6 +56,26 @@ static PyObject* GetHash(PyObject* p)
     return PyObject_CallMethod(hash, "hexdigest", 0);
 }
 
+inline void GetColumnSize(Connection* cnxn, SQLSMALLINT sqltype, int* psize)
+{
+    // For some reason I can't seem to reuse the HSTMT multiple times in a row here.  Until I
+    // figure it out I'll simply allocate a new one each time.
+    HSTMT hstmt;
+    if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, cnxn->hdbc, &hstmt)))
+        return;
+
+    SQLINTEGER columnsize;
+
+    if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, sqltype)) &&
+        SQL_SUCCEEDED(SQLFetch(hstmt)) &&
+        SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
+    {
+        *psize = (int)columnsize;
+    }
+
+    SQLFreeStmt(hstmt, SQL_CLOSE);
+    SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
+}
 
 static PyObject* CnxnInfo_New(Connection* cnxn)
 {
@@ -107,45 +127,12 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
     if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_NEED_LONG_DATA_LEN, szYN, _countof(szYN), &cch)))
         p->need_long_data_len = (szYN[0] == 'Y');
 
-    HSTMT hstmt = 0;
-    if (SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, cnxn->hdbc, &hstmt)))
-    {
-        SQLINTEGER columnsize;
-
-        if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_VARCHAR)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
-        {
-            if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
-                p->varchar_maxlength = (int)columnsize;
-            SQLFreeStmt(hstmt, SQL_CLOSE);
-        }
-
-        if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_WVARCHAR)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
-        {
-            if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
-                p->wvarchar_maxlength = (int)columnsize;
-            SQLFreeStmt(hstmt, SQL_CLOSE);
-        }
-
-        if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_BINARY)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
-        {
-            if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
-                p->binary_maxlength = (int)columnsize;
-            SQLFreeStmt(hstmt, SQL_CLOSE);
-        }
-
-        if (SQL_SUCCEEDED(SQLGetTypeInfo(hstmt, SQL_TYPE_TIMESTAMP)) && SQL_SUCCEEDED(SQLFetch(hstmt)))
-        {
-            if (SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
-                p->datetime_precision = (int)columnsize;
-            SQLFreeStmt(hstmt, SQL_CLOSE);
-        }
-
-        SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-    }
+    GetColumnSize(cnxn, SQL_VARCHAR, &p->varchar_maxlength);
+    GetColumnSize(cnxn, SQL_WVARCHAR, &p->wvarchar_maxlength);
+    GetColumnSize(cnxn, SQL_VARBINARY, &p->binary_maxlength);
+    GetColumnSize(cnxn, SQL_TYPE_TIMESTAMP, &p->datetime_precision);
 
     Py_END_ALLOW_THREADS
-
-    // WARNING: Released the lock now.
 
     return info.Detach();
 }

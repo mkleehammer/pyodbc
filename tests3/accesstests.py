@@ -56,7 +56,7 @@ def _generate_test_string(length):
     if length <= len(_TESTSTR):
         return _TESTSTR[:length]
 
-    c = (length + len(_TESTSTR)-1) / len(_TESTSTR)
+    c = (length + len(_TESTSTR)-1) // len(_TESTSTR)
     v = _TESTSTR * c
     return v[:length]
 
@@ -66,9 +66,8 @@ class AccessTestCase(unittest.TestCase):
     SMALL_FENCEPOST_SIZES = [ 0, 1, 254, 255 ] # text fields <= 255
     LARGE_FENCEPOST_SIZES = [ 256, 270, 304, 508, 510, 511, 512, 1023, 1024, 2047, 2048, 4000, 4095, 4096, 4097, 10 * 1024, 20 * 1024 ]
 
-    ANSI_FENCEPOSTS    = [ _generate_test_string(size) for size in SMALL_FENCEPOST_SIZES ]
-    UNICODE_FENCEPOSTS = [ unicode(s) for s in ANSI_FENCEPOSTS ]
-    IMAGE_FENCEPOSTS   = ANSI_FENCEPOSTS + [ _generate_test_string(size) for size in LARGE_FENCEPOST_SIZES ]
+    CHAR_FENCEPOSTS    = [ _generate_test_string(size) for size in SMALL_FENCEPOST_SIZES ]
+    IMAGE_FENCEPOSTS   = CHAR_FENCEPOSTS + [ _generate_test_string(size) for size in LARGE_FENCEPOST_SIZES ]
 
     def __init__(self, method_name):
         unittest.TestCase.__init__(self, method_name)
@@ -125,7 +124,7 @@ class AccessTestCase(unittest.TestCase):
 
     def test_getinfo_int(self):
         value = self.cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
-        self.assert_(isinstance(value, (int, long)))
+        self.assert_(isinstance(value, int))
 
     def test_getinfo_smallint(self):
         value = self.cnxn.getinfo(pyodbc.SQL_CONCAT_NULL_BEHAVIOR)
@@ -146,11 +145,6 @@ class AccessTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values(1, ?, ?)", (value, value))
         row = self.cursor.execute("select s1, s2 from t1").fetchone()
 
-        # Access only uses Unicode, but strings might have been passed in to see if they can be written.  When we read
-        # them back, they'll be unicode, so compare our results to a Unicode version of `value`.
-        if type(value) is str:
-            value = unicode(value)
-
         for i in range(2):
             v = row[i]
 
@@ -161,66 +155,52 @@ class AccessTestCase(unittest.TestCase):
 
             self.assertEqual(v, value)
 
-    #
-    # unicode
-    #
 
-    def test_unicode_null(self):
+    def test_varchar_null(self):
         self._test_strtype('varchar', None, 255)
 
     # Generate a test for each fencepost size: test_varchar_0, etc.
     def _maketest(value):
         def t(self):
             self._test_strtype('varchar', value, len(value))
-        t.__doc__ = 'unicode %s' % len(value)
+        t.__doc__ = 'varchar %s' % len(value)
         return t
-    for value in UNICODE_FENCEPOSTS:
-        locals()['test_unicode_%s' % len(value)] = _maketest(value)
-
-    #
-    # ansi -> varchar
-    #
-
-    # Access only stores Unicode text but it should accept ASCII text.
-
-    # Generate a test for each fencepost size: test_varchar_0, etc.
-    def _maketest(value):
-        def t(self):
-            self._test_strtype('varchar', value, len(value))
-        t.__doc__ = 'ansi %s' % len(value)
-        return t
-    for value in ANSI_FENCEPOSTS:
-        locals()['test_ansivarchar_%s' % len(value)] = _maketest(value)
+    for value in CHAR_FENCEPOSTS:
+        locals()['test_varchar_%s' % len(value)] = _maketest(value)
 
     #
     # binary
     #
 
+    def test_null_binary(self):
+        self._test_strtype('binary', None)
+
     # Generate a test for each fencepost size: test_varchar_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('varbinary', buffer(value), len(value))
+            # Convert to UTF-8 to create a byte array
+            self._test_strtype('varbinary', value.encode('utf-8'), len(value))
         t.__doc__ = 'binary %s' % len(value)
         return t
-    for value in ANSI_FENCEPOSTS:
+    for value in CHAR_FENCEPOSTS:
         locals()['test_binary_%s' % len(value)] = _maketest(value)
 
 
-    #
-    # image
-    #
+    # #
+    # # image
+    # #
 
-    def test_null_image(self):
-        self._test_strtype('image', None)
+    # def test_null_image(self):
+    #     self._test_strtype('image', None)
 
-    # Generate a test for each fencepost size: test_varchar_0, etc.
-    def _maketest(value):
-        def t(self):
-            self._test_strtype('image', buffer(value))
-        t.__doc__ = 'image %s' % len(value)
-        return t
-    for value in IMAGE_FENCEPOSTS:
-        locals()['test_image_%s' % len(value)] = _maketest(value)
+    # # Generate a test for each fencepost size: test_varchar_0, etc.
+    # def _maketest(value):
+    #     def t(self):
+    #         self._test_strtype('image', value.encode('utf-8'))
+    #     t.__doc__ = 'image %s' % len(value)
+    #     return t
+    # for value in IMAGE_FENCEPOSTS:
+    #     locals()['test_image_%s' % len(value)] = _maketest(value)
 
     #
     # memo
@@ -232,20 +212,11 @@ class AccessTestCase(unittest.TestCase):
     # Generate a test for each fencepost size: test_varchar_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('memo', unicode(value))
+            self._test_strtype('memo', value)
         t.__doc__ = 'Unicode to memo %s' % len(value)
         return t
     for value in IMAGE_FENCEPOSTS:
         locals()['test_memo_%s' % len(value)] = _maketest(value)
-
-    # ansi -> memo
-    def _maketest(value):
-        def t(self):
-            self._test_strtype('memo', value)
-        t.__doc__ = 'ANSI to memo %s' % len(value)
-        return t
-    for value in IMAGE_FENCEPOSTS:
-        locals()['test_ansimemo_%s' % len(value)] = _maketest(value)
 
     def test_subquery_params(self):
         """Ensure parameter markers work in a subquery"""
@@ -625,10 +596,13 @@ def main():
     if args[0].endswith('.accdb'):
         driver = 'Microsoft Access Driver (*.mdb, *.accdb)'
     else:
-        driver = 'Microsoft Access Driver (*.mdb)'
+        driver = 'Microsoft Access Driver (*.mdb, *.accdb)'
+        # driver = 'Microsoft Access Driver (*.mdb)'
 
     global CNXNSTRING
     CNXNSTRING = 'DRIVER={%s};DBQ=%s;ExtendedAnsiSQL=1' % (driver, abspath(args[0]))
+
+    print(CNXNSTRING)
 
     cnxn = pyodbc.connect(CNXNSTRING)
     print_library_info(cnxn)
