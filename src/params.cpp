@@ -185,7 +185,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
 
     if (maxlength == 0 || cb <= maxlength)
     {
-        info.ParameterType     = SQL_WVARCHAR;
+        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
         info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
         info.BufferLength      = (SQLINTEGER)cb;
         info.StrLen_or_Ind     = (SQLINTEGER)cb;
@@ -193,7 +193,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     else
     {
         // Too long to pass all at once, so we'll provide the data at execute.
-        info.ParameterType     = SQL_WLONGVARCHAR;
+        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_LONGVARCHAR : SQL_WLONGVARCHAR;
         info.ParameterValuePtr = &info;
         info.BufferLength      = sizeof(ParamInfo*);
         info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLINTEGER)cb) : SQL_DATA_AT_EXEC;
