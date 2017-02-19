@@ -251,7 +251,7 @@ def _get_version_pkginfo():
 
 
 def _get_version_git():
-    n, result = getoutput("git describe --tags --match '[0-9]*'")
+    n, result = getoutput("git describe --tags --match [0-9]*")
     if n:
         _print('WARNING: git describe failed with: %s %s' % (n, result))
         return None, None
