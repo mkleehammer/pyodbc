@@ -59,6 +59,7 @@ inline bool IsWideType(SQLSMALLINT sqltype)
     case SQL_WVARCHAR:
     case SQL_WLONGVARCHAR:
     case SQL_SS_XML:
+    case SQL_DB2_XML:
         return true;
     }
     return false;
@@ -701,6 +702,7 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
     case SQL_WVARCHAR:
     case SQL_WLONGVARCHAR:
     case SQL_SS_XML:
+    case SQL_DB2_XML:
         pytype = (PyObject*)&PyUnicode_Type;
         break;
 
@@ -783,6 +785,7 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_VARCHAR:
     case SQL_LONGVARCHAR:
     case SQL_SS_XML:
+    case SQL_DB2_XML:
         return GetText(cur, iCol);
 
     case SQL_GUID:

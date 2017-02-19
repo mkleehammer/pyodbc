@@ -11,14 +11,9 @@
 // SQL Server
 
 
-// SQL Server 2005 xml type
-
-#define SQL_SS_XML -152
-
-
-// SQL Server 2008 time type
-
-#define SQL_SS_TIME2 -154
+#define SQL_SS_XML -152         // SQL Server 2005 XML type
+#define SQL_DB2_XML -370        // IBM DB/2 XML type
+#define SQL_SS_TIME2 -154       // SQL Server 2008 time type
 
 struct SQL_SS_TIME2_STRUCT
 {
