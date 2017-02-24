@@ -595,7 +595,7 @@ static PyObject* GetUUID(Cursor* cur, Py_ssize_t iCol)
 #else
     const char* szFmt = "(sss#)";
 #endif
-    Object args = Py_BuildValue(szFmt, NULL, NULL, &guid, (int)sizeof(guid));
+    Object args(Py_BuildValue(szFmt, NULL, NULL, &guid, (int)sizeof(guid)));
     if (!args)
         return 0;
     return PyObject_CallObject(uuid_type, args.Get());

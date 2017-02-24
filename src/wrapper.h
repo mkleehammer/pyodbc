@@ -1,15 +1,20 @@
-
 #ifndef _WRAPPER_H_
 #define _WRAPPER_H_
 
 class Object
 {
+    // This is a simple wrapper around PyObject pointers to release them when this object goes
+    // out of scope.  Note that it does *not* increment the reference count on acquisition but
+    // it *does* decrement the count if you don't use Detach.
+    //
+    // It also does not have a copy constructor and doesn't try to manage passing pointers
+    // around.  This is simply used to simplify functions by allowing early exits.
+
+    Object(const Object& illegal) { }
+    void operator=(const Object& illegal) { }
+
 protected:
     PyObject* p;
-
-    // GCC freaks out if these are private, but it doesn't use them (?)
-    // Object(const Object& illegal);
-    // void operator=(const Object& illegal);
 
 public:
     Object(PyObject* _p = 0)
@@ -47,7 +52,7 @@ public:
         return pT;
     }
 
-    operator PyObject*() 
+    operator PyObject*()
     {
         return p;
     }
@@ -67,7 +72,7 @@ class Tuple
     : public Object
 {
 public:
-    
+
     Tuple(PyObject* _p = 0)
         : Object(_p)
     {
@@ -78,7 +83,7 @@ public:
         return (PyTupleObject*)p;
     }
 
-    PyObject*& operator[](int i) 
+    PyObject*& operator[](int i)
     {
         I(p != 0);
         return PyTuple_GET_ITEM(p, i);
