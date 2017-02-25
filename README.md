@@ -1,5 +1,7 @@
 # pyodbc
 
+[![Build Status](https://travis-ci.org/mkleehammer/pyodbc.svg?branch=master)](https://travis-ci.org/mkleehammer/pyodbc)
+
 pyodbc is an open source Python module that makes accessing ODBC databases simple.  It
 implements the [DB API 2.0](https://www.python.org/dev/peps/pep-0249) specification but is
 packed with even more Pythonic convenience.

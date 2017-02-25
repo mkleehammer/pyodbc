@@ -1,0 +1,24 @@
+language: python
+python:
+  - "2.7"
+  - "3.4"
+  - "3.5"
+  - "3.6"
+
+addons:
+  apt:
+    sources:
+    - ubuntu-toolchain-r-test
+    packages:
+    - gcc-4.8
+    - g++-4.8
+    - unixodbc-dev
+
+install:
+  - python setup.py install
+
+# I don't yet have a test that runs without a database server but we have to put something.
+# We'll start with something useless but later I'll make a cross-version test for sqlite which
+# ships with Python.
+
+script: true
