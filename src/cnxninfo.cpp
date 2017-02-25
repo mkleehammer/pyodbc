@@ -70,7 +70,10 @@ inline void GetColumnSize(Connection* cnxn, SQLSMALLINT sqltype, int* psize)
         SQL_SUCCEEDED(SQLFetch(hstmt)) &&
         SQL_SUCCEEDED(SQLGetData(hstmt, 3, SQL_INTEGER, &columnsize, sizeof(columnsize), 0)))
     {
-        *psize = (int)columnsize;
+        // I believe some drivers are returning negative numbers for "unlimited" text fields,
+        // such as FileMaker.  Ignore anything that seems too small.
+        if (columnsize >= 255)
+            *psize = (int)columnsize;
     }
 
     SQLFreeStmt(hstmt, SQL_CLOSE);
