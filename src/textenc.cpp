@@ -29,7 +29,7 @@ PyObject* EncodeStr(PyObject* str, const TextEnc& enc)
     else
     {
         // Encode the text with the user's encoding.
-        Object encoded = PyCodec_Encode(str, enc.name, "errors");
+        Object encoded(PyCodec_Encode(str, enc.name, "strict"));
         if (!encoded)
             return 0;
 
