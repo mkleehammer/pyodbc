@@ -1,0 +1,24 @@
+
+# https://packaging.python.org/appveyor/
+
+# This can't build 3.3 or 3.4 versions without a special build.cmd script,
+# defined in the article above. I don't feel like messing with it and am just
+# using this for build testing right now, so I'm not going to test every
+# version.
+
+environment:
+
+  matrix:
+    - PYTHON: "C:\\Python27"
+      PYTHON_ARCH: "32"
+    - PYTHON: "C:\\Python27"
+      PYTHON_ARCH: "64"
+    - PYTHON: "C:\\Python36"
+      PYTHON_ARCH: "32"
+    - PYTHON: "C:\\Python36"
+      PYTHON_ARCH: "64"
+
+build: off
+
+test_script:
+  - "%PYTHON%\\python.exe setup.py build"
