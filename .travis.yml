@@ -1,4 +1,5 @@
 language: python
+sudo: false
 python:
   - "2.7"
   - "3.4"
@@ -16,9 +17,5 @@ addons:
 
 install:
   - python setup.py install
-
-# I don't yet have a test that runs without a database server but we have to put something.
-# We'll start with something useless but later I'll make a cross-version test for sqlite which
-# ships with Python.
 
 script: true
