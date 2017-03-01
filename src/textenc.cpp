@@ -13,7 +13,23 @@ PyObject* TextEnc::Encode(PyObject* obj) const
     }
 #endif
 
-    return PyCodec_Encode(obj, name, "strict");
+    PyObject* bytes = PyCodec_Encode(obj, name, "strict");
+
+    if (bytes && PyErr_Occurred())
+    {
+        // REVIEW: Issue #206.  I am not sure what is going on here, but PyCodec_Encode
+        // sometimes returns bytes but *also* sets an exception saying "'ascii' codec can't
+        // encode characters...".  I assume the ascii is from my sys encoding, but it seems to
+        // be a superflous error.  Since Cursor.fetchall() looks for exceptions this extraneous
+        // error causes us to throw an exception.
+        //
+        // I'm putting in a work around but we should track down the root cause and report it
+        // to the Python project if it is not ours.
+
+        PyErr_Clear();
+    }
+
+    return bytes;
 }
 
 

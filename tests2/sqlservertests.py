@@ -627,6 +627,23 @@ class SqlServerTestCase(unittest.TestCase):
     def test_unicode_query(self):
         self.cursor.execute(u"select 1")
 
+    # From issue #206
+    def _maketest(value):
+        def t(self):
+            self._test_strtype('nvarchar', value, colsize=len(value))
+        return t
+    locals()['test_chinese_param'] = _maketest(u'我的')
+
+    def test_chinese(self):
+        v = u'我的'
+        self.cursor.execute(u"SELECT N'我的' AS [Name]")
+        row = self.cursor.fetchone()
+        self.assertEqual(row[0], v)
+
+        self.cursor.execute(u"SELECT N'我的' AS [Name]")
+        rows = self.cursor.fetchall()
+        self.assertEqual(rows[0][0], v)
+
     def test_negative_row_index(self):
         self.cursor.execute("create table t1(s varchar(20))")
         self.cursor.execute("insert into t1 values(?)", "1")

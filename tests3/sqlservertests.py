@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# -*- coding: latin-1 -*-
+# -*- coding: utf-8 -*-
 
 x = 1 # Getting an error if starting with usage for some reason.
 
@@ -82,7 +82,6 @@ class SqlServerTestCase(unittest.TestCase):
         # different collation, you'll need to update this.  If someone knows of
         # a good way for this to be dynamic, please update.  (I suppose we
         # could maintain a map from collation to encoding?)
-        self.cnxn.setencoding('latin1')
         self.cnxn.setdecoding(pyodbc.SQL_CHAR, 'latin1')
 
         for i in range(3):
@@ -317,7 +316,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(v3, row.c3)
 
     #
-    # unicode
+    # nvarchar
     #
 
     def test_unicode_null(self):
@@ -338,6 +337,24 @@ class SqlServerTestCase(unittest.TestCase):
         if ver < 9:            # 2005+
             return              # so pass / ignore
         self.cursor.execute("select cast(replicate(N'x', 512) as nvarchar(max))")
+
+    # From issue #206
+    def _maketest(value):
+        def t(self):
+            self._test_strtype('nvarchar', value, colsize=len(value))
+        return t
+    locals()['test_chinese_param'] = _maketest('我的')
+
+    def test_chinese(self):
+        v = '我的'
+        self.cursor.execute(u"SELECT N'我的' AS [Name]")
+        row = self.cursor.fetchone()
+        self.assertEqual(row[0], v)
+
+        self.cursor.execute(u"SELECT N'我的' AS [Name]")
+        rows = self.cursor.fetchall()
+        self.assertEqual(rows[0][0], v)
+
 
     #
     # binary
@@ -1337,8 +1354,8 @@ class SqlServerTestCase(unittest.TestCase):
         # This is from GitHub issue #190
         self.cursor.execute("create table t1(a int)")
         self.cursor.execute("insert into t1 values (1)")
-        self.cursor.execute('select a as "Tipolog�a" from t1')
-        self.assertEqual(self.cursor.description[0][0], "Tipolog�a")
+        self.cursor.execute('select a as "Tipología" from t1')
+        self.assertEqual(self.cursor.description[0][0], "Tipología")
 
 
 def main():
