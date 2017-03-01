@@ -71,6 +71,10 @@ public:
 class Tuple
     : public Object
 {
+private:
+    Tuple(const Tuple& other) {}
+    void operator=(const Tuple& other) {}
+
 public:
 
     Tuple(PyObject* _p = 0)

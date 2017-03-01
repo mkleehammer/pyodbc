@@ -15,6 +15,9 @@ enum {
 class SQLWChar
 {
 private:
+    SQLWChar(const SQLWChar& other) {}
+    void operator=(const SQLWChar& other) {}
+
     Object tmp;
     // If the passed in string/unicode object needed to be encoded, this holds
     // the bytes object it was encoded into.  If set, sz points into this

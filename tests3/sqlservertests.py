@@ -115,6 +115,16 @@ class SqlServerTestCase(unittest.TestCase):
             # If we've already closed the cursor or connection, exceptions are thrown.
             pass
 
+    def _simpletest(datatype, value):
+        # A simple test that can be used for any data type where the Python
+        # type we write is also what we expect to receive.
+        def _t(self):
+            self.cursor.execute('create table t1(value %s)' % datatype)
+            self.cursor.execute('insert into t1 values (?)', value)
+            result = self.cursor.execute("select value from t1").fetchone()[0]
+            self.assertEqual(result, value)
+        return _t
+
     def test_multiple_bindings(self):
         "More than one bind and select on a cursor"
         self.cursor.execute("create table t1(n int)")
@@ -913,14 +923,13 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(type(v), str)
         self.assertEqual(v, "testing")
 
+    # Money
+    #
+    # The inputs are strings so we don't have to deal with floating point rounding.
 
-    def test_money(self):
-        d = Decimal('123456.78')
-        self.cursor.execute("create table t1(i int identity(1,1), m money)")
-        self.cursor.execute("insert into t1(m) values (?)", d)
-        v = self.cursor.execute("select m from t1").fetchone()[0]
-        self.assertEqual(v, d)
-
+    for value in "-1234.56  -1  0  1  1234.56  123456789.21".split():
+        name = str(value).replace('.', '_').replace('-', 'neg_')
+        locals()['test_money_%s' % name] = _simpletest('money', Decimal(str(value)))
 
     def test_executemany(self):
         self.cursor.execute("create table t1(a int, b varchar(10))")
