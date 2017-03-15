@@ -798,10 +798,7 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 
     for (Py_ssize_t i = 0; i < cParams; i++)
     {
-        // PySequence_GetItem returns a *new* reference, which GetParameterInfo will take ownership of.  It is stored
-        // in paramInfos and will be released in FreeInfos (which is always eventually called).
-
-        PyObject* param = PySequence_GetItem(original_params, i + params_offset);
+        Object param(PySequence_GetItem(original_params, i + params_offset));
         if (!GetParameterInfo(cur, i, param, cur->paramInfos[i]))
         {
             FreeInfos(cur->paramInfos, cParams);
