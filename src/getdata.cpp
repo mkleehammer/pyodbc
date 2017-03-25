@@ -455,9 +455,13 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
     Object str(PyString_FromStringAndSize(ascii, (Py_ssize_t)asciilen));
     if (!str)
         return 0;
-    return PyObject_CallFunction(decimal_type, "O", str.Get());
+    PyObject* decimal_type = GetClassForThread("decimal", "Decimal");
+    if (!decimal_type)
+        return 0;
+    PyObject* decimal = PyObject_CallFunction(decimal_type, "O", str.Get());
+    Py_DECREF(decimal_type);
+    return decimal;
 }
-
 
 static PyObject* GetDataBit(Cursor* cur, Py_ssize_t iCol)
 {
@@ -598,7 +602,13 @@ static PyObject* GetUUID(Cursor* cur, Py_ssize_t iCol)
     Object args(Py_BuildValue(szFmt, NULL, NULL, &guid, (int)sizeof(guid)));
     if (!args)
         return 0;
-    return PyObject_CallObject(uuid_type, args.Get());
+
+    PyObject* uuid_type = GetClassForThread("uuid", "UUID");
+    if (!uuid_type)
+        return 0;
+    PyObject* uuid = PyObject_CallObject(uuid_type, args.Get());
+    Py_DECREF(uuid_type);
+    return uuid;
 }
 
 static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
@@ -664,6 +674,7 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
         return (PyObject*)&PyString_Type;
 
     PyObject* pytype = 0;
+    bool incref = true;
 
     switch (type)
     {
@@ -683,7 +694,8 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
     case SQL_GUID:
         if (UseNativeUUID())
         {
-            pytype = uuid_type;
+            pytype = GetClassForThread("uuid", "UUID");
+            incref = false;
         }
         else
         {
@@ -708,7 +720,8 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
 
     case SQL_DECIMAL:
     case SQL_NUMERIC:
-        pytype = (PyObject*)decimal_type;
+        pytype = GetClassForThread("decimal", "Decimal");
+        incref = false;
         break;
 
     case SQL_REAL:
@@ -756,7 +769,8 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
         break;
     }
 
-    Py_INCREF(pytype);
+    if (pytype && incref)
+        Py_INCREF(pytype);
     return pytype;
 }
 
@@ -801,12 +815,7 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
 
     case SQL_DECIMAL:
     case SQL_NUMERIC:
-    {
-        if (decimal_type == 0)
-            break;
-
         return GetDataDecimal(cur, iCol);
-    }
 
     case SQL_BIT:
         return GetDataBit(cur, iCol);

@@ -126,9 +126,6 @@ static ExcInfo aExcInfos[] = {
 };
 
 
-PyObject* decimal_type;
-PyObject* uuid_type;
-
 bool UseNativeUUID()
 {
     PyObject* o = PyObject_GetAttrString(pModule, "native_uuid");
@@ -141,6 +138,100 @@ bool UseNativeUUID()
 HENV henv = SQL_NULL_HANDLE;
 
 Py_UNICODE chDecimal = '.';
+
+
+PyObject* GetClassForThread(const char* szModule, const char* szClass)
+{
+    // Returns the given class, specific to the current thread's interpreter.  For performance
+    // these are cached for each thread.
+    //
+    // This is for internal use only, so we'll cache using only the class name.  Make sure they
+    // are unique.  (That is, don't try to import classes with the same name from two different
+    // modules.)
+
+    PyObject* dict = PyThreadState_GetDict();
+    I(dict);
+    if (dict == 0)
+    {
+        // I don't know why there wouldn't be thread state so I'm going to raise an exception
+        // unless I find more info.
+        return PyErr_Format(PyExc_Exception, "pyodbc: PyThreadState_GetDict returned NULL");
+    }
+
+    // Check the cache.  GetItemString returns a borrowed reference.
+    PyObject* cls = PyDict_GetItemString(dict, szClass);
+    if (cls)
+    {
+        Py_INCREF(cls);
+        return cls;
+    }
+
+    // Import the class and cache it.  GetAttrString returns a new reference.
+    PyObject* mod = PyImport_ImportModule(szModule);
+    if (!mod)
+        return 0;
+
+    cls = PyObject_GetAttrString(mod, szClass);
+    Py_DECREF(mod);
+    if (!cls)
+        return 0;
+
+    // SetItemString increments the refcount (not documented)
+    PyDict_SetItemString(dict, szClass, cls);
+
+    return cls;
+}
+
+bool IsInstanceForThread(PyObject* param, const char* szModule, const char* szClass, PyObject** pcls)
+{
+    // Like PyObject_IsInstance but compares against a class specific to the current thread's
+    // interpreter, for proper subinterpreter support.  Uses GetClassForThread.
+    //
+    // If `param` is an instance of the given class, true is returned and a new reference to
+    // the class, specific to the current thread, is returned via pcls.  The caller is
+    // responsible for decrementing the class.
+    //
+    // If `param` is not an instance, true is still returned (!) but *pcls will be zero.
+    //
+    // False is only returned when an exception has been raised.  (That is, the return value is
+    // not used to indicate whether the instance check matched or not.)
+
+    if (param == 0)
+    {
+        *pcls = 0;
+        return true;
+    }
+
+    PyObject* cls = GetClassForThread(szModule, szClass);
+    if (!cls)
+    {
+        *pcls = 0;
+        return false;
+    }
+
+    int n = PyObject_IsInstance(param, cls);
+    // (The checks below can be compressed into just a few lines, but I was concerned it
+    //  wouldn't be clear.)
+
+    if (n == 1)
+    {
+        // We have a match.
+        *pcls = cls;
+        return true;
+    }
+
+    Py_DECREF(cls);
+    *pcls = 0;
+
+    if (n == 0)
+    {
+        // No exception, but not a match.
+        return true;
+    }
+
+    // n == -1; an exception occurred
+    return false;
+}
 
 
 // Initialize the global decimal character and thousands separator character, used when parsing decimal
@@ -175,6 +266,9 @@ static void init_locale_info()
 
 static bool import_types()
 {
+    // Note: We can only import types from C extensions since they are shared among all
+    // interpreters.  Other classes are imported per-thread via GetClassForThread.
+
     // In Python 2.5 final, PyDateTime_IMPORT no longer works unless the datetime module was previously
     // imported (among other problems).
 
@@ -191,36 +285,6 @@ static bool import_types()
     GetData_init();
     if (!Params_init())
         return false;
-
-    Object mod(PyImport_ImportModule("cdecimal"));
-    if (!mod)
-    {
-        PyErr_Clear();
-        mod.Attach(PyImport_ImportModule("decimal"));
-        if (!mod)
-        {
-            PyErr_SetString(PyExc_RuntimeError, "Unable to import cdecimal or decimal");
-            return false;
-        }
-    }
-
-    Object dec(PyObject_GetAttrString(mod, "Decimal"));
-    if (!dec)
-    {
-        PyErr_SetString(PyExc_RuntimeError, "Unable to import decimal.Decimal.");
-        return false;
-    }
-
-    mod.Attach(PyImport_ImportModule("uuid"));
-    if (!mod)
-        return false;
-
-    Object uuid(PyObject_GetAttrString(mod, "UUID"));
-    if (!uuid)
-        return false;
-
-    decimal_type = dec.Detach();
-    uuid_type    = uuid.Detach();
 
     return true;
 }
@@ -737,7 +801,6 @@ static void ErrorInit()
     IntegrityError = 0;
     DataError = 0;
     NotSupportedError = 0;
-    decimal_type = 0;
 }
 
 
@@ -756,7 +819,6 @@ static void ErrorCleanup()
     Py_XDECREF(IntegrityError);
     Py_XDECREF(DataError);
     Py_XDECREF(NotSupportedError);
-    Py_XDECREF(decimal_type);
 }
 
 struct ConstantDef

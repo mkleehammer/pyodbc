@@ -421,8 +421,11 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
     return pch;
 }
 
-static bool GetUUIDInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetUUIDInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, PyObject* uuid_type)
 {
+    // uuid_type: This is a new reference that we are responsible for freeing.
+    Object tmp(uuid_type);
+
     info.ValueType = SQL_C_GUID;
     info.ParameterType = SQL_GUID;
     info.ColumnSize = 16;
@@ -443,8 +446,12 @@ static bool GetUUIDInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     return true;
 }
 
-static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+
+static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, PyObject* decimal_type)
 {
+    // decimal_type: This is a new reference that we are responsible for freeing.
+    Object tmp(decimal_type);
+
     // The NUMERIC structure never works right with SQL Server and probably a lot of other drivers.  We'll bind as a
     // string.  Unfortunately, the Decimal class doesn't seem to have a way to force it to return a string without
     // exponents, so we'll have to build it ourselves.
@@ -609,12 +616,6 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     if (PyFloat_Check(param))
         return GetFloatInfo(cur, index, param, info);
 
-    if (PyDecimal_Check(param))
-        return GetDecimalInfo(cur, index, param, info);
-
-    if (uuid_type && PyObject_IsInstance(param, uuid_type))
-        return GetUUIDInfo(cur, index, param, info);
-
 #if PY_VERSION_HEX >= 0x02060000
     if (PyByteArray_Check(param))
         return GetByteArrayInfo(cur, index, param, info);
@@ -627,6 +628,23 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     if (PyBuffer_Check(param))
         return GetBufferInfo(cur, index, param, info);
 #endif
+
+    // Decimal
+
+    PyObject* cls = 0;
+    if (!IsInstanceForThread(param, "decimal", "Decimal", &cls))
+        return false;
+
+    if (cls != 0)
+        return GetDecimalInfo(cur, index, param, info, cls);
+
+    // UUID
+
+    if (!IsInstanceForThread(param, "uuid", "UUID", &cls))
+        return false;
+
+    if (cls != 0)
+        return GetUUIDInfo(cur, index, param, info, cls);
 
     RaiseErrorV("HY105", ProgrammingError, "Invalid parameter type.  param-index=%zd param-type=%s", index, Py_TYPE(param)->tp_name);
     return false;

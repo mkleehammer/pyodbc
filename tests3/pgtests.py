@@ -4,7 +4,7 @@
 
 from __future__ import print_function
 
-import sys, os, re
+import sys, os, re, uuid
 import unittest
 from decimal import Decimal
 from testutils import *
@@ -254,6 +254,28 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(type(v), Decimal)
         self.assertEqual(v, value)
 
+    def test_nonnative_uuid(self):
+        # The default is False meaning we should return a string.  Note that
+        # SQL Server seems to always return uppercase.
+        value = uuid.uuid4()
+        self.cursor.execute("create table t1(n uuid)")
+        self.cursor.execute("insert into t1 values (?)", value)
+
+        pyodbc.native_uuid = False
+        result = self.cursor.execute("select n from t1").fetchval()
+        self.assertEqual(type(result), str)
+        self.assertEqual(result, str(value).upper())
+
+    def test_native_uuid(self):
+        # When true, we should return a uuid.UUID object.
+        value = uuid.uuid4()
+        self.cursor.execute("create table t1(n uuid)")
+        self.cursor.execute("insert into t1 values (?)", value)
+
+        pyodbc.native_uuid = True
+        result = self.cursor.execute("select n from t1").fetchval()
+        self.assertIsInstance(result, uuid.UUID)
+        self.assertEqual(value, result)
 
     def _exec(self):
         self.cursor.execute(self.sql)
