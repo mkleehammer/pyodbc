@@ -52,7 +52,10 @@ static PyObject* GetHash(PyObject* p)
     if (!hash.IsValid())
         return 0;
 
-    PyObject_CallMethodObjArgs(hash, update, p, 0);
+    Object result(PyObject_CallMethodObjArgs(hash, update, p, 0));
+    if (!result.IsValid())
+        return 0;
+
     return PyObject_CallMethod(hash, "hexdigest", 0);
 }
 
