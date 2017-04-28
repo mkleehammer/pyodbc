@@ -111,7 +111,7 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
         // cbUsed.
 
         Py_ssize_t cbAvailable = cbAllocated - cbUsed;
-        SQLLEN cbData;
+        SQLLEN cbData = 0;
 
         Py_BEGIN_ALLOW_THREADS
         ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), ctype, &pb[cbUsed], (SQLLEN)cbAvailable, &cbData);
@@ -125,7 +125,7 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
             return false;
         }
 
-        if (ret == SQL_SUCCESS && cbData < 0)
+        if (ret == SQL_SUCCESS && (int)cbData < 0)
         {
             // HACK: FreeTDS 0.91 on OS/X returns -4 for NULL data instead of SQL_NULL_DATA
             // (-1).  I've traced into the code and it appears to be the result of assigning -1
