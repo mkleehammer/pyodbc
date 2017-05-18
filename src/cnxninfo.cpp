@@ -75,7 +75,7 @@ inline void GetColumnSize(Connection* cnxn, SQLSMALLINT sqltype, int* psize)
     {
         // I believe some drivers are returning negative numbers for "unlimited" text fields,
         // such as FileMaker.  Ignore anything that seems too small.
-        if (columnsize >= 255)
+        if (columnsize >= 1)
             *psize = (int)columnsize;
     }
 
