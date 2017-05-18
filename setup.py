@@ -186,6 +186,9 @@ def get_compiler_settings(version_str):
             # Thanks to Marc-Antoine Parent
             settings['define_macros'].append(('SQL_WCHART_CONVERT', '1'))
 
+        # This makes UnixODBC use UCS-4 instead of UCS-2, which works better with sizeof(wchar_t)==4
+        settings['extra_compile_args'].append('-DSQL_WCHART_CONVERT=1')
+
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
         settings['libraries'].append('odbc')
 
