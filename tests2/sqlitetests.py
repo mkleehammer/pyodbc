@@ -212,7 +212,7 @@ class SqliteTestCase(unittest.TestCase):
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strtype('varchar', u'แ')
+        self._test_strtype('varchar', u'รก')
 
     #
     # blob
@@ -729,7 +729,7 @@ def main():
 
     if not args:
         connection_string = load_setup_connection_string('sqlitetests')
-        print 'connection_string:', connection_string
+        print ('connection_string:', connection_string)
 
         if not connection_string:
             parser.print_help()
