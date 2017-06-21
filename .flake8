@@ -1,0 +1,7 @@
+[flake8]
+max_line_length: 95
+ignore =
+  E221,
+  # multi spaces before op - I line up assignments often
+  E401,
+  # multiple imports on one line
