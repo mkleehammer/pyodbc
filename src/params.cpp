@@ -876,22 +876,8 @@ static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     // it is a 'long int', but some drivers run into trouble at high values.  We'll use
     // SQL_INTEGER as an optimization for smaller values and rely on BIGINT
 
-<<<<<<< HEAD
-//    int overflow = 0;
-//    info.Data.l = PyLong_AsLongAndOverflow(param, &overflow);
-//    if (overflow == 0 && !PyErr_Occurred() && (info.Data.l <= 0x7FFFFFFF))
     info.Data.l = PyLong_AsLong(param);
     if (!PyErr_Occurred() && (info.Data.l <= 0x7FFFFFFF))
-=======
-#if PY_VERSION_HEX >= 0x02070000
-    int overflow = 0;
-    info.Data.l = PyLong_AsLongAndOverflow(param, &overflow);
-#else
-    int overflow = 0;
-    info.Data.l = PyLong_AsLong(param);
-#endif
-    if (overflow == 0 && !PyErr_Occurred() && (info.Data.l <= 0x7FFFFFFF))
->>>>>>> Initial setinputsizes() implementation.
     {
         info.ValueType         = SQL_C_LONG;
         info.ParameterType     = SQL_INTEGER;
