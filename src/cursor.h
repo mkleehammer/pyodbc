@@ -112,6 +112,9 @@ struct Cursor
     // bind into the Python objects directly.
     ParamInfo* paramInfos;
 
+    // Parameter set array (used with executemany)
+    unsigned char *paramArray;
+    
     //
     // Result Information
     //

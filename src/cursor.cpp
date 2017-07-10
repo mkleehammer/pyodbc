@@ -904,7 +904,7 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
             PyErr_SetString(ProgrammingError, "The second parameter to executemany must not be empty.");
             return 0;
         }
-
+#if 0
         for (Py_ssize_t i = 0; i < c; i++)
         {
             PyObject* params = PySequence_GetItem(param_seq, i);
@@ -918,6 +918,10 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
                 return 0;
             }
         }
+#else
+        if (!ExecuteMulti(cursor, pSql, param_seq))
+            return 0;
+#endif
     }
     else if (PyGen_Check(param_seq) || PyIter_Check(param_seq))
     {
