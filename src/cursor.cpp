@@ -904,24 +904,27 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
             PyErr_SetString(ProgrammingError, "The second parameter to executemany must not be empty.");
             return 0;
         }
-#if 0
-        for (Py_ssize_t i = 0; i < c; i++)
+        if (cursor->fastexecmany)
         {
-            PyObject* params = PySequence_GetItem(param_seq, i);
-            PyObject* result = execute(cursor, pSql, params, false);
-            bool success = result != 0;
-            Py_XDECREF(result);
-            Py_DECREF(params);
-            if (!success)
-            {
-                cursor->rowcount = -1;
+            if (!ExecuteMulti(cursor, pSql, param_seq))
                 return 0;
+        }
+        else
+        {
+            for (Py_ssize_t i = 0; i < c; i++)
+            {
+                PyObject* params = PySequence_GetItem(param_seq, i);
+                PyObject* result = execute(cursor, pSql, params, false);
+                bool success = result != 0;
+                Py_XDECREF(result);
+                Py_DECREF(params);
+                if (!success)
+                {
+                    cursor->rowcount = -1;
+                    return 0;
+                }
             }
         }
-#else
-        if (!ExecuteMulti(cursor, pSql, param_seq))
-            return 0;
-#endif
     }
     else if (PyGen_Check(param_seq) || PyIter_Check(param_seq))
     {
@@ -1961,12 +1964,17 @@ static char connection_doc[] =
     "The attribute simplifies writing polymorph code in multi-connection\n" \
     "environments.";
 
+static char fastexecmany_doc[] =
+    "This read/write attribute specifies whether to use a faster executemany() which\n" \
+    "uses parameter arrays. Not all drivers may work with this implementation.";
+
 static PyMemberDef Cursor_members[] =
 {
     {"rowcount",    T_INT,       offsetof(Cursor, rowcount),        READONLY, rowcount_doc },
     {"description", T_OBJECT_EX, offsetof(Cursor, description),     READONLY, description_doc },
     {"arraysize",   T_INT,       offsetof(Cursor, arraysize),       0,        arraysize_doc },
     {"connection",  T_OBJECT_EX, offsetof(Cursor, cnxn),            READONLY, connection_doc },
+    {"fast_executemany",T_BOOL,  offsetof(Cursor, fastexecmany),    0,        fastexecmany_doc },
     { 0 }
 };
 
@@ -2241,6 +2249,7 @@ Cursor_New(Connection* cnxn)
         cur->arraysize         = 1;
         cur->rowcount          = -1;
         cur->map_name_to_index = 0;
+        cur->fastexecmany      = 0;
 
         Py_INCREF(cnxn);
         Py_INCREF(cur->description);

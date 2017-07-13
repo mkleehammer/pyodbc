@@ -115,6 +115,9 @@ struct Cursor
     // Parameter set array (used with executemany)
     unsigned char *paramArray;
     
+    // Whether to use fast executemany with parameter arrays and other optimisations
+    char fastexecmany;
+    
     //
     // Result Information
     //
