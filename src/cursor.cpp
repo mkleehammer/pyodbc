@@ -437,7 +437,7 @@ static void Cursor_dealloc(Cursor* cursor)
     {
         closeimpl(cursor);
     }
-
+    Py_XDECREF(cursor->inputsizes);
     PyObject_Del(cursor);
 }
 
@@ -968,6 +968,35 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
     Py_RETURN_NONE;
 }
 
+static PyObject* Cursor_setinputsizes(PyObject* self, PyObject* sizes)
+{
+    if (!Cursor_Check(self))
+    {
+        PyErr_SetString(ProgrammingError, "Invalid cursor object.");
+        return 0;
+    }
+    
+    Cursor *cur = (Cursor*)self;
+    if (Py_None == sizes)
+    {
+        Py_XDECREF(cur->inputsizes);
+        cur->inputsizes = 0;
+    }
+    else
+    {
+        if (!IsSequence(sizes))
+        {
+            PyErr_SetString(ProgrammingError, "A non-None parameter to setinputsizes must be a sequence, iterator, or generator.");
+            return 0;
+        }
+
+        Py_XDECREF(cur->inputsizes);
+        Py_INCREF(sizes);
+        cur->inputsizes = sizes;
+    }
+
+    Py_RETURN_NONE;
+}
 
 static PyObject* Cursor_fetch(Cursor* cur)
 {
@@ -2093,6 +2122,17 @@ static char fetchmany_doc[] =
     "A ProgrammingError exception is raised if the previous call to execute() did\n" \
     "not produce any result set or no call was issued yet.";
 
+static char setinputsizes_doc[] =
+    "setinputsizes(sizes) -> None\n" \
+    "\n" \
+    "Sets the type information to be used when binding parameters.\n" \
+    "sizes must be a sequence of values, one for each input parameter.\n" \
+    "Each value may be an integer to override the column size when binding character\n" \
+    "data, a Type Object to override the SQL type, or a sequence of integers to specify\n" \
+    "(SQL type, column size, decimal digits) where any may be none to use the default.\n" \ 
+    "\n" \
+    "Parameters beyond the length of the sequence will be bound with the defaults.\n" \
+    "Setting sizes to None reverts all parameters to the defaults.";
 
 static char enter_doc[] = "__enter__() -> self.";
 static PyObject* Cursor_enter(PyObject* self, PyObject* args)
@@ -2132,7 +2172,7 @@ static PyMethodDef Cursor_methods[] =
     { "close",            (PyCFunction)Cursor_close,            METH_NOARGS,                close_doc            },
     { "execute",          (PyCFunction)Cursor_execute,          METH_VARARGS,               execute_doc          },
     { "executemany",      (PyCFunction)Cursor_executemany,      METH_VARARGS,               executemany_doc      },
-    { "setinputsizes",    (PyCFunction)Cursor_ignored,          METH_VARARGS,               ignored_doc          },
+    { "setinputsizes",    (PyCFunction)Cursor_setinputsizes,    METH_O,                     setinputsizes_doc    },
     { "setoutputsize",    (PyCFunction)Cursor_ignored,          METH_VARARGS,               ignored_doc          },
     { "fetchval",         (PyCFunction)Cursor_fetchval,         METH_NOARGS,                fetchval_doc         },
     { "fetchone",         (PyCFunction)Cursor_fetchone,         METH_NOARGS,                fetchone_doc         },
@@ -2245,6 +2285,7 @@ Cursor_New(Connection* cnxn)
         cur->paramcount        = 0;
         cur->paramtypes        = 0;
         cur->paramInfos        = 0;
+        cur->inputsizes        = 0;
         cur->colinfos          = 0;
         cur->arraysize         = 1;
         cur->rowcount          = -1;

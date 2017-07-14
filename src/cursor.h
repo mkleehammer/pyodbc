@@ -118,6 +118,9 @@ struct Cursor
     // Whether to use fast executemany with parameter arrays and other optimisations
     char fastexecmany;
     
+    // The list of information for setinputsizes().
+    PyObject *inputsizes;
+
     //
     // Result Information
     //
