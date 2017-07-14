@@ -310,8 +310,13 @@ static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     // it is a 'long int', but some drivers run into trouble at high values.  We'll use
     // SQL_INTEGER as an optimization for smaller values and rely on BIGINT
 
+#if PY_VERSION_HEX >= 0x02070000
     int overflow = 0;
     info.Data.l = PyLong_AsLongAndOverflow(param, &overflow);
+#else
+    int overflow = 0;
+    info.Data.l = PyLong_AsLong(param);
+#endif
     if (overflow == 0 && !PyErr_Occurred() && (info.Data.l <= 0x7FFFFFFF))
     {
         info.ValueType         = SQL_C_LONG;
@@ -652,13 +657,41 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
 
 bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 {
+    SQLSMALLINT sqltype = info.ParameterType;
+    SQLULEN colsize = info.ColumnSize;
+    SQLSMALLINT scale = info.DecimalDigits;
+
+    if (cur->inputsizes && index < PySequence_Length(cur->inputsizes))
+    {
+        PyObject *desc = PySequence_GetItem(cur->inputsizes, index);
+        if (desc)
+        {
+            // integer - sets colsize
+            // type object - sets sqltype (not implemented yet; mapping between Python
+            //               and SQL types  is not 1:1 so doesn't seem to offer much)
+            // Consider: sequence of (colsize, sqltype, scale) ?
+#if PY_MAJOR_VERSION < 3
+            if (PyInt_Check(desc))
+            {
+                colsize = (SQLULEN)PyInt_AS_LONG(desc);
+            }
+            else
+#endif
+            if (PyLong_Check(desc))
+            {
+                colsize = (SQLULEN)PyLong_AsLong(desc);
+            }
+        }
+        Py_XDECREF(desc);
+    }
     TRACE("BIND: param=%ld ValueType=%d (%s) ParameterType=%d (%s) ColumnSize=%ld DecimalDigits=%d BufferLength=%ld *pcb=%ld\n",
-          (index+1), info.ValueType, CTypeName(info.ValueType), info.ParameterType, SqlTypeName(info.ParameterType), info.ColumnSize,
-          info.DecimalDigits, info.BufferLength, info.StrLen_or_Ind);
+          (index+1), info.ValueType, CTypeName(info.ValueType), sqltype, SqlTypeName(sqltype), colsize,
+          scale, info.BufferLength, info.StrLen_or_Ind);
 
     SQLRETURN ret = -1;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLBindParameter(cur->hstmt, (SQLUSMALLINT)(index + 1), SQL_PARAM_INPUT, info.ValueType, info.ParameterType, info.ColumnSize, info.DecimalDigits, info.ParameterValuePtr, info.BufferLength, &info.StrLen_or_Ind);
+    ret = SQLBindParameter(cur->hstmt, (SQLUSMALLINT)(index + 1), SQL_PARAM_INPUT,
+        info.ValueType, sqltype, colsize, scale, info.ParameterValuePtr, info.BufferLength, &info.StrLen_or_Ind);
     Py_END_ALLOW_THREADS;
 
     if (GetConnection(cur)->hdbc == SQL_NULL_HANDLE)

@@ -112,6 +112,9 @@ struct Cursor
     // bind into the Python objects directly.
     ParamInfo* paramInfos;
 
+    // The list of information for setinputsizes().
+    PyObject *inputsizes;
+
     //
     // Result Information
     //
