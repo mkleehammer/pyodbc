@@ -2129,7 +2129,7 @@ static char setinputsizes_doc[] =
     "sizes must be a sequence of values, one for each input parameter.\n" \
     "Each value may be an integer to override the column size when binding character\n" \
     "data, a Type Object to override the SQL type, or a sequence of integers to specify\n" \
-    "(SQL type, column size, decimal digits) where any may be none to use the default.\n" \ 
+    "(SQL type, column size, decimal digits) where any may be none to use the default.\n" \
     "\n" \
     "Parameters beyond the length of the sequence will be bound with the defaults.\n" \
     "Setting sizes to None reverts all parameters to the defaults.";
