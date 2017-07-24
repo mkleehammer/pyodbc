@@ -5,11 +5,14 @@
 // Sets an exception based on the ODBC SQLSTATE and error message and returns zero.  If either handle is not available,
 // pass SQL_NULL_HANDLE.
 //
+// conn
+//   The connection object, from which it will use the Unicode encoding. May be null if not available.
+//
 // szFunction
 //   The name of the function that failed.  Python generates a useful stack trace, but we often don't know where in the
 //   C++ code we failed.
 //
-PyObject* RaiseErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt);
+PyObject* RaiseErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc, HSTMT hstmt);
 
 // Sets an exception using a printf-like error message.
 //
@@ -30,11 +33,14 @@ PyObject* RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* for
 // used to examine the SQLSTATE using HasSqlState).  If you want to use the error, call PyErr_SetObject(ex->ob_type,
 // ex).  Otherwise, dispose of the error using Py_DECREF(ex).
 //
+// conn
+//   The connection object, from which it will use the Unicode encoding. May be null if not available.
+//
 // szFunction
 //   The name of the function that failed.  Python generates a useful stack trace, but we often don't know where in the
 //   C++ code we failed.
 //
-PyObject* GetErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt);
+PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc, HSTMT hstmt);
 
 
 // Returns true if `ex` is a database exception with SQLSTATE `szSqlState`.  Returns false otherwise.

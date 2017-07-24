@@ -1,7 +1,11 @@
 
 #include "pyodbc.h"
+#include "wrapper.h"
+#include "textenc.h"
+#include "connection.h"
 #include "errors.h"
 #include "pyodbcmodule.h"
+#include "sqlwchar.h"
 
 // Exceptions
 
@@ -163,11 +167,11 @@ static PyObject* GetError(const char* sqlstate, PyObject* exc_class, PyObject* p
 
 static const char* DEFAULT_ERROR = "The driver did not supply an error!";
 
-PyObject* RaiseErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt)
+PyObject* RaiseErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc, HSTMT hstmt)
 {
     // The exception is "set" in the interpreter.  This function returns 0 so this can be used in a return statement.
 
-    PyObject* pError = GetErrorFromHandle(szFunction, hdbc, hstmt);
+    PyObject* pError = GetErrorFromHandle(conn, szFunction, hdbc, hstmt);
 
     if (pError)
     {
@@ -179,7 +183,7 @@ PyObject* RaiseErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt)
 }
 
 
-PyObject* GetErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt)
+PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc, HSTMT hstmt)
 {
     TRACE("In RaiseError(%s)!\n", szFunction);
 
@@ -201,8 +205,8 @@ PyObject* GetErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt)
     SQLINTEGER nNativeError;
     SQLSMALLINT cchMsg;
 
-    char sqlstateT[6];
-    char szMsg[1024];
+    ODBCCHAR sqlstateT[6];
+    ODBCCHAR szMsg[1024];
 
     PyObject* pMsg = 0;
     PyObject* pMsgPart = 0;
@@ -237,13 +241,19 @@ PyObject* GetErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt)
 
         SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetDiagRec(nHandleType, h, iRecord, (SQLCHAR*)sqlstateT, &nNativeError, (SQLCHAR*)szMsg, (short)(_countof(szMsg)-1), &cchMsg);
+        ret = SQLGetDiagRecW(nHandleType, h, iRecord, (SQLWCHAR*)sqlstateT, &nNativeError, (SQLWCHAR*)szMsg, (short)(_countof(szMsg)-1), &cchMsg);
         Py_END_ALLOW_THREADS
         if (!SQL_SUCCEEDED(ret))
             break;
 
         // Not always NULL terminated (MS Access)
         sqlstateT[5] = 0;
+
+        // For now, default to UTF-16LE if this is not in the context of a connection.
+        // Note that this will not work if the DM is using a different wide encoding (e.g. UTF-32).
+        const char *unicode_enc = conn ? conn->unicode_enc.name : "utf-16-le";
+        Object msgStr(PyUnicode_Decode((char*)szMsg, cchMsg * sizeof(ODBCCHAR), unicode_enc, "strict"));
+        Object stateStr(PyUnicode_Decode((char*)sqlstateT, 5 * sizeof(ODBCCHAR), unicode_enc, "strict"));
 
         if (cchMsg != 0)
         {
@@ -254,14 +264,14 @@ PyObject* GetErrorFromHandle(const char* szFunction, HDBC hdbc, HSTMT hstmt)
 
                 memcpy(sqlstate, sqlstateT, sizeof(sqlstate[0]) * _countof(sqlstate));
 
-                pMsg = PyString_FromFormat("[%s] %s (%ld) (%s)", sqlstateT, szMsg, (long)nNativeError, szFunction);
+                pMsg = PyUnicode_FromFormat("[%V] %V (%ld) (%s)", stateStr.Get(), "00000", msgStr.Get(), "(null)", (long)nNativeError, szFunction);
                 if (pMsg == 0)
                     return 0;
             }
             else
             {
                 // This is not the first error message, so append to the existing one.
-                pMsgPart = PyString_FromFormat("; [%s] %s (%ld)", sqlstateT, szMsg, (long)nNativeError);
+                pMsgPart = PyString_FromFormat("; [%V] %V (%ld)", stateStr.Get(), "00000", msgStr.Get(), "(null)", (long)nNativeError);
                 if (pMsgPart == 0)
                 {
                     Py_XDECREF(pMsg);

@@ -121,7 +121,7 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
 
         if (!SQL_SUCCEEDED(ret) && ret != SQL_NO_DATA)
         {
-            RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+            RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
             return false;
         }
 
@@ -474,7 +474,7 @@ static PyObject* GetDataBit(Cursor* cur, Py_ssize_t iCol)
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -500,7 +500,7 @@ static PyObject* GetDataLong(Cursor* cur, Py_ssize_t iCol)
     ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), nCType, &value, sizeof(value), &cbFetched);
     Py_END_ALLOW_THREADS
     if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -526,7 +526,7 @@ static PyObject* GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -548,7 +548,7 @@ static PyObject* GetDataDouble(Cursor* cur, Py_ssize_t iCol)
     ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_DOUBLE, &value, sizeof(value), &cbFetched);
     Py_END_ALLOW_THREADS
     if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -568,7 +568,7 @@ static PyObject* GetSqlServerTime(Cursor* cur, Py_ssize_t iCol)
     ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_BINARY, &value, sizeof(value), &cbFetched);
     Py_END_ALLOW_THREADS
     if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -589,7 +589,7 @@ static PyObject* GetUUID(Cursor* cur, Py_ssize_t iCol)
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -622,7 +622,7 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
     ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_TYPE_TIMESTAMP, &value, sizeof(value), &cbFetched);
     Py_END_ALLOW_THREADS
     if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle("SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;

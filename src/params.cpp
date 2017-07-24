@@ -1263,7 +1263,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 
     if (!SQL_SUCCEEDED(ret))
     {
-        RaiseErrorFromHandle("SQLBindParameter", GetConnection(cur)->hdbc, cur->hstmt);
+        RaiseErrorFromHandle(cur->cnxn, "SQLBindParameter", GetConnection(cur)->hdbc, cur->hstmt);
         return false;
     }
 
@@ -1368,7 +1368,7 @@ bool Prepare(Cursor* cur, PyObject* pSql)
 
         if (!SQL_SUCCEEDED(ret))
         {
-            RaiseErrorFromHandle(szErrorFunc, GetConnection(cur)->hdbc, cur->hstmt);
+            RaiseErrorFromHandle(cur->cnxn, szErrorFunc, GetConnection(cur)->hdbc, cur->hstmt);
             return false;
         }
 
@@ -1519,7 +1519,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                 cur->paramInfos[i].ParameterType, cur->paramInfos[i].ColumnSize, cur->paramInfos[i].DecimalDigits,
                 bindptr, cur->paramInfos[i].BufferLength, (SQLLEN*)(bindptr + cur->paramInfos[i].BufferLength))))
             {
-                RaiseErrorFromHandle("SQLBindParameter", GetConnection(cur)->hdbc, cur->hstmt);
+                RaiseErrorFromHandle(cur->cnxn, "SQLBindParameter", GetConnection(cur)->hdbc, cur->hstmt);
             ErrorRet4:
                 SQLFreeStmt(cur->hstmt, SQL_RESET_PARAMS);
                 goto ErrorRet3;
@@ -1600,19 +1600,19 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         SQLULEN bop = (SQLULEN)(cur->paramArray) - 16;
         if (!SQL_SUCCEEDED(SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAM_BIND_TYPE, (SQLPOINTER)rowlen, SQL_IS_UINTEGER)))
         {
-            RaiseErrorFromHandle("SQLSetStmtAttr", GetConnection(cur)->hdbc, cur->hstmt);
+            RaiseErrorFromHandle(cur->cnxn, "SQLSetStmtAttr", GetConnection(cur)->hdbc, cur->hstmt);
         ErrorRet6:
             SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAM_BIND_TYPE, SQL_BIND_BY_COLUMN, SQL_IS_UINTEGER);
             goto ErrorRet5;
         }
         if (!SQL_SUCCEEDED(SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAMSET_SIZE, (SQLPOINTER)rows_converted, SQL_IS_UINTEGER)))
         {
-            RaiseErrorFromHandle("SQLSetStmtAttr", GetConnection(cur)->hdbc, cur->hstmt);
+            RaiseErrorFromHandle(cur->cnxn, "SQLSetStmtAttr", GetConnection(cur)->hdbc, cur->hstmt);
             goto ErrorRet6;
         }
         if (!SQL_SUCCEEDED(SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAM_BIND_OFFSET_PTR, (SQLPOINTER)&bop, SQL_IS_POINTER)))
         {
-            RaiseErrorFromHandle("SQLSetStmtAttr", GetConnection(cur)->hdbc, cur->hstmt);
+            RaiseErrorFromHandle(cur->cnxn, "SQLSetStmtAttr", GetConnection(cur)->hdbc, cur->hstmt);
         ErrorRet7:
             SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAMSET_SIZE, (SQLPOINTER)1, SQL_IS_UINTEGER);
             goto ErrorRet6;
@@ -1638,7 +1638,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         {
             // We could try dropping through the while and if below, but if there is an error, we need to raise it before
             // FreeParameterData calls more ODBC functions.
-            RaiseErrorFromHandle("SQLExecute", cur->cnxn->hdbc, cur->hstmt);
+            RaiseErrorFromHandle(cur->cnxn, "SQLExecute", cur->cnxn->hdbc, cur->hstmt);
             goto ErrorRet8;
         }
 
@@ -1660,7 +1660,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             Py_END_ALLOW_THREADS
 
             if (rc != SQL_NEED_DATA && rc != SQL_NO_DATA && !SQL_SUCCEEDED(rc))
-                return RaiseErrorFromHandle("SQLParamData", cur->cnxn->hdbc, cur->hstmt);
+                return RaiseErrorFromHandle(cur->cnxn, "SQLParamData", cur->cnxn->hdbc, cur->hstmt);
 
             TRACE("SQLParamData() --> %d\n", rc);
 
@@ -1680,7 +1680,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         rc = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
                         Py_END_ALLOW_THREADS
                         if (!SQL_SUCCEEDED(rc))
-                            return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
                         offset += remaining;
                     }
                 }
@@ -1698,7 +1698,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         rc = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
                         Py_END_ALLOW_THREADS
                         if (!SQL_SUCCEEDED(rc))
-                            return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
                         offset += remaining;
                     }
                 }
@@ -1728,7 +1728,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         }
 
         if (!SQL_SUCCEEDED(rc) && rc != SQL_NO_DATA)
-            return RaiseErrorFromHandle(szLastFunction, cur->cnxn->hdbc, cur->hstmt);
+            return RaiseErrorFromHandle(cur->cnxn, szLastFunction, cur->cnxn->hdbc, cur->hstmt);
         
         SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAMSET_SIZE, (SQLPOINTER)1, SQL_IS_UINTEGER);
         SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAM_BIND_OFFSET_PTR, 0, SQL_IS_POINTER);
