@@ -670,7 +670,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 
     if (!SQL_SUCCEEDED(ret))
     {
-        RaiseErrorFromHandle("SQLBindParameter", GetConnection(cur)->hdbc, cur->hstmt);
+        RaiseErrorFromHandle(cur->cnxn, "SQLBindParameter", GetConnection(cur)->hdbc, cur->hstmt);
         return false;
     }
 
@@ -786,7 +786,7 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 
         if (!SQL_SUCCEEDED(ret))
         {
-            RaiseErrorFromHandle(szErrorFunc, GetConnection(cur)->hdbc, cur->hstmt);
+            RaiseErrorFromHandle(cur->cnxn, szErrorFunc, GetConnection(cur)->hdbc, cur->hstmt);
             return false;
         }
 
