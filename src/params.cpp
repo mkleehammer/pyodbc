@@ -1718,7 +1718,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         rc = SQLPutData(cur->hstmt, pb, cb);
                         Py_END_ALLOW_THREADS
                         if (!SQL_SUCCEEDED(rc))
-                            return RaiseErrorFromHandle("SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
                     }
                 }
     #endif
