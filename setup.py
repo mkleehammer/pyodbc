@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, os, re
+import sys, os, re, platform
 from os.path import exists, abspath, dirname, join, isdir, relpath
 
 try:
@@ -12,13 +12,16 @@ except ImportError:
 from distutils.extension import Extension
 from distutils.errors import *
 
-OFFICIAL_BUILD = 9999
+if sys.hexversion >= 0x03000000:
+    from configparser import ConfigParser
+else:
+    from ConfigParser import ConfigParser
 
+OFFICIAL_BUILD = 9999
 
 def _print(s):
     # Python 2/3 compatibility
     sys.stdout.write(s + '\n')
-
 
 class VersionCommand(Command):
 
@@ -50,19 +53,21 @@ class TagsCommand(Command):
         pass
 
     def run(self):
-        # Windows versions of etag do not seem to expand wildcards (which Unix shells normally
-        # do for Unix utilities), so find all of the files ourselves.
-        files = [join('src', f) for f in os.listdir('src') if f.endswith(('.h', '.cpp'))]
+        # Windows versions of etag do not seem to expand wildcards (which Unix shells normally do for Unix utilities),
+        # so find all of the files ourselves.
+        files = [ join('src', f) for f in os.listdir('src') if f.endswith(('.h', '.cpp')) ]
         cmd = 'etags %s' % ' '.join(files)
         return os.system(cmd)
 
 
+
 def main():
+
     version_str, version = get_version()
 
     settings = get_compiler_settings(version_str)
 
-    files = [relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp')]
+    files = [ relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
@@ -73,9 +78,9 @@ def main():
         'description': "DB API Module for ODBC",
 
         'long_description': ('A Python DB API 2 module for ODBC. This project provides an up-to-date, '
-                             'convenient interface to ODBC using native data types like datetime and decimal.'),
+                            'convenient interface to ODBC using native data types like datetime and decimal.'),
 
-        'maintainer': "Michael Kleehammer",
+        'maintainer':       "Michael Kleehammer",
         'maintainer_email': "michael@kleehammer.com",
 
         'ext_modules': [Extension('pyodbc', files, **settings)],
@@ -83,25 +88,26 @@ def main():
         'license': 'MIT',
 
         'classifiers': ['Development Status :: 5 - Production/Stable',
-                        'Intended Audience :: Developers',
-                        'Intended Audience :: System Administrators',
-                        'License :: OSI Approved :: MIT License',
-                        'Operating System :: Microsoft :: Windows',
-                        'Operating System :: POSIX',
-                        'Programming Language :: Python',
-                        'Programming Language :: Python :: 2',
-                        'Programming Language :: Python :: 3',
-                        'Topic :: Database'],
+                       'Intended Audience :: Developers',
+                       'Intended Audience :: System Administrators',
+                       'License :: OSI Approved :: MIT License',
+                       'Operating System :: Microsoft :: Windows',
+                       'Operating System :: POSIX',
+                       'Programming Language :: Python',
+                       'Programming Language :: Python :: 2',
+                       'Programming Language :: Python :: 3',
+                       'Topic :: Database',
+                       ],
 
         'url': 'https://github.com/mkleehammer/pyodbc',
-        'cmdclass': {'version': VersionCommand,
-                     'tags': TagsCommand}
-    }
+        'cmdclass': { 'version' : VersionCommand,
+                     'tags'    : TagsCommand }
+        }
 
     if sys.hexversion >= 0x02060000:
         kwargs['options'] = {
-            'bdist_wininst': {'user_access_control': 'auto'}
-        }
+            'bdist_wininst': {'user_access_control' : 'auto'}
+            }
 
     setup(**kwargs)
 
@@ -109,15 +115,14 @@ def main():
 def get_compiler_settings(version_str):
 
     settings = {
-        'extra_compile_args': [],
+        'extra_compile_args' : [],
         'libraries': [],
         'include_dirs': [],
-        'library_dirs': [],
-        'define_macros': [('PYODBC_VERSION', version_str)]
+        'define_macros' : [ ('PYODBC_VERSION', version_str) ]
     }
 
-    # This isn't the best or right way to do this, but I don't see how someone is supposed to
-    # sanely subclass the build command.
+    # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
+    # command.
     for option in ['assert', 'trace', 'leak-check']:
         try:
             sys.argv.remove('--%s' % option)
@@ -128,13 +133,13 @@ def get_compiler_settings(version_str):
     if os.name == 'nt':
         settings['extra_compile_args'].extend([
             '/Wall',
-            '/wd4514',  # unreference inline function removed
-            '/wd4820',  # padding after struct member
-            '/wd4668',  # is not defined as a preprocessor macro
-            '/wd4711',  # function selected for automatic inline expansion
-            '/wd4100',  # unreferenced formal parameter
-            '/wd4127',  # "conditional expression is constant" testing compilation constants
-            '/wd4191',  # casts to PYCFunction which doesn't have the keywords parameter
+            '/wd4514',          # unreference inline function removed
+            '/wd4820',          # padding after struct member
+            '/wd4668',          # is not defined as a preprocessor macro
+            '/wd4711', # function selected for automatic inline expansion
+            '/wd4100', # unreferenced formal parameter
+            '/wd4127', # "conditional expression is constant" testing compilation constants
+            '/wd4191', # casts to PYCFunction which doesn't have the keywords parameter
         ])
 
         if '--debug' in sys.argv:
@@ -154,43 +159,32 @@ def get_compiler_settings(version_str):
         # unixODBC for now.
         settings['libraries'].append('odbc')
 
-        # Python functions take a lot of 'char *' that really should be const.  gcc complains
-        # about this *a lot*
+        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].extend([
             '-Wno-write-strings',
             '-Wno-deprecated-declarations'
         ])
 
-        # Apple has decided they won't maintain the iODBC system in OS/X and has added
-        # deprecation warnings in 10.8.  For now target 10.7 to eliminate the warnings.
-        settings['define_macros'].append(('MAC_OS_X_VERSION_10_7',))
+        # Apple has decided they won't maintain the iODBC system in OS/X and has added deprecation warnings in 10.8.
+        # For now target 10.7 to eliminate the warnings.
+        settings['define_macros'].append( ('MAC_OS_X_VERSION_10_7',) )
 
         # Add directories for MacPorts and Homebrew.
-        dirs = ['/usr/local/include', '/opt/local/include', '~/homebrew/include']
+        dirs = ['/usr/local/include', '/opt/local/include','~/homebrew/include']
         settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
-
-        # macOS High Sierra removed these directories.  It is not clear if that is going to be
-        # permanent or not.  Since I unwisely installed the beta on my only macOS test box,
-        # I'll add these manually.  If they are already supplied by previous versions, I don't
-        # think it would cause problems.
-        #
-        # https://github.com/Homebrew/homebrew-core/issues/14418
-
-        settings['library_dirs'] += ['/usr/lib', '/usr/local/lib']
 
     else:
         # Other posix-like: Linux, Solaris, etc.
 
-        # Python functions take a lot of 'char *' that really should be const.  gcc complains
-        # about this *a lot*
+        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].append('-Wno-write-strings')
 
         from array import array
         UNICODE_WIDTH = array('u').itemsize
-        if UNICODE_WIDTH == 4:
-            # This makes UnixODBC use UCS-4 instead of UCS-2, which works better with
-            # sizeof(wchar_t)==4.  Thanks to Marc-Antoine Parent
-            settings['define_macros'].append(('SQL_WCHART_CONVERT', '1'))
+#        if UNICODE_WIDTH == 4:
+#            # This makes UnixODBC use UCS-4 instead of UCS-2, which works better with sizeof(wchar_t)==4.
+#            # Thanks to Marc-Antoine Parent
+#            settings['define_macros'].append(('SQL_WCHART_CONVERT', '1'))
 
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
         settings['libraries'].append('odbc')
@@ -209,26 +203,23 @@ def get_version():
          read the version from the PKG-INFO file.
       3. Use 4.0.0.0 and complain a lot.
     """
-    # My goal is to (1) provide accurate tags for official releases but (2) not have to manage
-    # tags for every test release.
+    # My goal is to (1) provide accurate tags for official releases but (2) not have to manage tags for every test
+    # release.
     #
-    # Official versions are tagged using 3 numbers: major, minor, micro.  A build of a tagged
-    # version should produce the version using just these pieces, such as 2.1.4.
+    # Official versions are tagged using 3 numbers: major, minor, micro.  A build of a tagged version should produce
+    # the version using just these pieces, such as 2.1.4.
     #
-    # Unofficial versions are "working towards" the next version.  So the next unofficial build
-    # after 2.1.4 would be a beta for 2.1.5.  Using 'git describe' we can find out how many
-    # changes have been made after 2.1.4 and we'll use this count as the beta id (beta1, beta2,
-    # etc.)
+    # Unofficial versions are "working towards" the next version.  So the next unofficial build after 2.1.4 would be a
+    # beta for 2.1.5.  Using 'git describe' we can find out how many changes have been made after 2.1.4 and we'll use
+    # this count as the beta id (beta1, beta2, etc.)
     #
-    # Since the 4 numbers are put into the Windows DLL, we want to make sure the beta versions
-    # sort *before* the official, so we set the official build number to 9999, but we don't
-    # show it.
+    # Since the 4 numbers are put into the Windows DLL, we want to make sure the beta versions sort *before* the
+    # official, so we set the official build number to 9999, but we don't show it.
 
     name    = None              # branch/feature name.  Should be None for official builds.
     numbers = None              # The 4 integers that make up the version.
 
-    # If this is a source release the version will have already been assigned and be in the
-    # PKG-INFO file.
+    # If this is a source release the version will have already been assigned and be in the PKG-INFO file.
 
     name, numbers = _get_version_pkginfo()
 
@@ -239,7 +230,7 @@ def get_version():
 
     if not numbers:
         _print('WARNING: Unable to determine version.  Using 4.0.0.0')
-        name, numbers = '4.0.0-unsupported', [4, 0, 0, 0]
+        name, numbers = '4.0.0-unsupported', [4,0,0,0]
 
     return name, numbers
 
@@ -253,8 +244,7 @@ def _get_version_pkginfo():
             if match:
                 name    = line.split(':', 1)[1].strip()
                 numbers = [int(n or 0) for n in match.groups()[:3]]
-                # don't use 0 as a default for build
-                numbers.append(int(match.group(4) or OFFICIAL_BUILD))
+                numbers.append(int(match.group(4) or OFFICIAL_BUILD)) # don't use 0 as a default for build
                 return name, numbers
 
     return None, None
@@ -274,8 +264,7 @@ def _get_version_git():
     if numbers[-1] == OFFICIAL_BUILD:
         name = '%s.%s.%s' % tuple(numbers[:3])
     if numbers[-1] != OFFICIAL_BUILD:
-        # This is a beta of the next micro release, so increment the micro number to reflect
-        # this.
+        # This is a beta of the next micro release, so increment the micro number to reflect this.
         numbers[-2] += 1
         name = '%s.%s.%sb%d' % tuple(numbers)
 
@@ -292,12 +281,12 @@ def _get_version_git():
     return name, numbers
 
 
+
 def getoutput(cmd):
     pipe = os.popen(cmd, 'r')
     text   = pipe.read().rstrip('\n')
     status = pipe.close() or 0
     return status, text
-
 
 if __name__ == '__main__':
     main()

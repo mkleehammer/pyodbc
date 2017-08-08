@@ -554,7 +554,7 @@ static PyObject* mod_drivers(PyObject* self)
     if (ret != SQL_NO_DATA)
     {
         Py_DECREF(result);
-        return RaiseErrorFromHandle("SQLDrivers", SQL_NULL_HANDLE, SQL_NULL_HANDLE);
+        return RaiseErrorFromHandle(0, "SQLDrivers", SQL_NULL_HANDLE, SQL_NULL_HANDLE);
     }
 
     return result.Detach();
@@ -596,7 +596,7 @@ static PyObject* mod_datasources(PyObject* self)
     if (ret != SQL_NO_DATA)
     {
         Py_DECREF(result);
-        return RaiseErrorFromHandle("SQLDataSources", SQL_NULL_HANDLE, SQL_NULL_HANDLE);
+        return RaiseErrorFromHandle(0, "SQLDataSources", SQL_NULL_HANDLE, SQL_NULL_HANDLE);
     }
 
     return result;
