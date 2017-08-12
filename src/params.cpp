@@ -1530,7 +1530,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                 SQLGetStmtAttr(cur->hstmt, SQL_ATTR_APP_PARAM_DESC, &desc, 0, 0);
                 SQLSetDescField(desc, i + 1, SQL_DESC_TYPE, (SQLPOINTER)SQL_C_NUMERIC, 0);
                 SQLSetDescField(desc, i + 1, SQL_DESC_PRECISION, (SQLPOINTER)cur->paramInfos[i].ColumnSize, 0);
-                SQLSetDescField(desc, i + 1, SQL_DESC_SCALE, (SQLPOINTER)cur->paramInfos[i].DecimalDigits, 0);
+                SQLSetDescField(desc, i + 1, SQL_DESC_SCALE, (SQLPOINTER)(uintptr_t)cur->paramInfos[i].DecimalDigits, 0);
                 SQLSetDescField(desc, i + 1, SQL_DESC_DATA_PTR, bindptr, 0);
             }
             bindptr += cur->paramInfos[i].BufferLength + sizeof(SQLLEN);
