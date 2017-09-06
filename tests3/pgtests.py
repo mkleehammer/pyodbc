@@ -4,29 +4,31 @@
 
 from __future__ import print_function
 
-import sys, os, re, uuid
+import uuid
 import unittest
 from decimal import Decimal
 from testutils import *
 
 _TESTSTR = '0123456789-abcdefghijklmnopqrstuvwxyz-'
 
+
 def _generate_test_string(length):
     """
     Returns a string of composed of `seed` to make a string `length` characters long.
 
-    To enhance performance, there are 3 ways data is read, based on the length of the value, so most data types are
-    tested with 3 lengths.  This function helps us generate the test data.
+    To enhance performance, there are 3 ways data is read, based on the length of the value, so
+    most data types are tested with 3 lengths.  This function helps us generate the test data.
 
-    We use a recognizable data set instead of a single character to make it less likely that "overlap" errors will
-    be hidden and to help us manually identify where a break occurs.
+    We use a recognizable data set instead of a single character to make it less likely that
+    "overlap" errors will be hidden and to help us manually identify where a break occurs.
     """
     if length <= len(_TESTSTR):
         return _TESTSTR[:length]
 
-    c = int((length + len(_TESTSTR)-1) / len(_TESTSTR))
+    c = int((length + len(_TESTSTR) - 1) / len(_TESTSTR))
     v = _TESTSTR * c
     return v[:length]
+
 
 class PGTestCase(unittest.TestCase):
 
@@ -189,6 +191,16 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(v1, row.c1)
         self.assertEqual(v2, row.c2)
         self.assertEqual(v3, row.c3)
+
+    def test_chinese(self):
+        v = '我的'
+        self.cursor.execute("SELECT N'我的' AS name")
+        row = self.cursor.fetchone()
+        self.assertEqual(row[0], v)
+
+        self.cursor.execute("SELECT N'我的' AS name")
+        rows = self.cursor.fetchall()
+        self.assertEqual(rows[0][0], v)
 
     #
     # bytea
@@ -481,6 +493,14 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(othercnxn.autocommit, True)
         othercnxn.autocommit = False
         self.assertEqual(othercnxn.autocommit, False)
+
+    def test_exc_integrity(self):
+        "Make sure an IntegretyError is raised"
+        # This is really making sure we are properly encoding and comparing the SQLSTATEs.
+        self.cursor.execute("create table t1(s1 varchar(10) primary key)")
+        self.cursor.execute("insert into t1 values ('one')")
+        self.failUnlessRaises(pyodbc.IntegrityError, self.cursor.execute, "insert into t1 values ('one')")
+
 
     def test_cnxn_set_attr_before(self):
         # I don't have a getattr right now since I don't have a table telling me what kind of
