@@ -1278,7 +1278,6 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
                 {
                     scale = (SQLSMALLINT)tmp;
                 }
-                printf("Adjusted type: %d %d %d\n", sqltype, colsize, scale);
             }
         }
         Py_XDECREF(desc);
