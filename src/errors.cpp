@@ -182,6 +182,34 @@ PyObject* RaiseErrorFromHandle(Connection *conn, const char* szFunction, HDBC hd
     return 0;
 }
 
+inline void CopySqlState(const ODBCCHAR* src, char* dest)
+{
+    // Copies a SQLSTATE read as SQLWCHAR into a character buffer.  We know that SQLSTATEs are
+    // composed of ASCII characters and we need one standard to compare when choosing
+    // exceptions.
+    //
+    // Strangely, even when the error messages are UTF-8, PostgreSQL and MySQL encode the
+    // sqlstate as UTF-16LE.  We'll simply copy all non-zero bytes, with some checks for
+    // running off the end of the buffers which will work for ASCII, UTF8, and UTF16 LE & BE.
+    // It would work for UTF32 if I increase the size of the ODBCCHAR buffer to handle it.
+    //
+    // (In the worst case, if a driver does something totally weird, we'll have an incomplete
+    // SQLSTATE.)
+    //
+
+    const char* pchSrc = (const char*)src;
+    const char* pchSrcMax = pchSrc + sizeof(ODBCCHAR) * 5;
+    char* pchDest = dest;         // Where we are copying into dest
+    char* pchDestMax = dest + 5;  // We know a SQLSTATE is 5 characters long
+
+    while (pchDest < pchDestMax && pchSrc < pchSrcMax)
+    {
+        if (*pchSrc)
+            *pchDest++ = *pchSrc;
+        pchSrc++;
+    }
+    *pchDest = 0;
+}
 
 PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc, HSTMT hstmt)
 {
@@ -208,9 +236,6 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
     ODBCCHAR sqlstateT[6];
     ODBCCHAR szMsg[1024];
 
-    PyObject* pMsg = 0;
-    PyObject* pMsgPart = 0;
-
     if (hstmt != SQL_NULL_HANDLE)
     {
         nHandleType = SQL_HANDLE_STMT;
@@ -232,6 +257,8 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 
     SQLSMALLINT iRecord = 1;
 
+    Object msg;
+
     for (;;)
     {
         szMsg[0]     = 0;
@@ -251,33 +278,32 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 
         // For now, default to UTF-16LE if this is not in the context of a connection.
         // Note that this will not work if the DM is using a different wide encoding (e.g. UTF-32).
-        const char *unicode_enc = conn ? conn->unicode_enc.name : "utf-16-le";
+        const char *unicode_enc = conn ? conn->metadata_enc.name : "utf-16-le";
         Object msgStr(PyUnicode_Decode((char*)szMsg, cchMsg * sizeof(ODBCCHAR), unicode_enc, "strict"));
-        Object stateStr(PyUnicode_Decode((char*)sqlstateT, 5 * sizeof(ODBCCHAR), unicode_enc, "strict"));
 
-        if (cchMsg != 0)
+        if (cchMsg != 0 && msgStr.Get())
         {
             if (iRecord == 1)
             {
-                // This is the first error message, so save the SQLSTATE for determining the exception class and append
-                // the calling function name.
-
-                memcpy(sqlstate, sqlstateT, sizeof(sqlstate[0]) * _countof(sqlstate));
-
-                pMsg = PyUnicode_FromFormat("[%V] %V (%ld) (%s)", stateStr.Get(), "00000", msgStr.Get(), "(null)", (long)nNativeError, szFunction);
-                if (pMsg == 0)
+                // This is the first error message, so save the SQLSTATE for determining the
+                // exception class and append the calling function name.
+                CopySqlState(sqlstateT, sqlstate);
+                msg = PyUnicode_FromFormat("[%s] %V (%ld) (%s)", sqlstate, msgStr.Get(), "(null)", (long)nNativeError, szFunction);
+                if (!msg)
                     return 0;
             }
             else
             {
                 // This is not the first error message, so append to the existing one.
-                pMsgPart = PyString_FromFormat("; [%V] %V (%ld)", stateStr.Get(), "00000", msgStr.Get(), "(null)", (long)nNativeError);
-                if (pMsgPart == 0)
-                {
-                    Py_XDECREF(pMsg);
-                    return 0;
-                }
-                PyString_ConcatAndDel(&pMsg, pMsgPart);
+                Object more(PyUnicode_FromFormat("; [%s] %V (%ld)", sqlstate, msgStr.Get(), "(null)", (long)nNativeError));
+                if (!more)
+                    break;  // Something went wrong, but we'll return the msg we have so far
+
+                Object both(PyUnicode_Concat(msg, more));
+                if (!both)
+                    break;
+
+                msg = both.Detach();
             }
         }
 
@@ -289,20 +315,20 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 #endif
     }
 
-    if (pMsg == 0)
+    if (!msg || PyUnicode_GetSize(msg.Get()) == 0)
     {
         // This only happens using unixODBC.  (Haven't tried iODBC yet.)  Either the driver or the driver manager is
         // buggy and has signaled a fault without recording error information.
         sqlstate[0] = '\0';
-        pMsg = PyString_FromString(DEFAULT_ERROR);
-        if (pMsg == 0)
+        msg = PyString_FromString(DEFAULT_ERROR);
+        if (!msg)
         {
             PyErr_NoMemory();
             return 0;
         }
     }
 
-    return GetError(sqlstate, 0, pMsg);
+    return GetError(sqlstate, 0, msg.Detach());
 }
 
 

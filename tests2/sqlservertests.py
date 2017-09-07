@@ -1531,6 +1531,12 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("select top 1 name from sysobjects where name = ?", "bogus")
         self.cursor.fetchone()
 
+    def test_exc_integrity(self):
+        "Make sure an IntegretyError is raised"
+        # This is really making sure we are properly encoding and comparing the SQLSTATEs.
+        self.cursor.execute("create table t1(s1 varchar(10) primary key)")
+        self.cursor.execute("insert into t1 values ('one')")
+        self.failUnlessRaises(pyodbc.IntegrityError, self.cursor.execute, "insert into t1 values ('one')")
 
 
 def main():
