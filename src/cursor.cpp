@@ -1215,7 +1215,7 @@ static PyObject* Cursor_tables(PyObject* self, PyObject* args, PyObject* kwargs)
     const char* szTableName = 0;
     const char* szTableType = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|ssss", Cursor_tables_kwnames, &szTableName, &szCatalog, &szSchema, &szTableType))
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zzzz", Cursor_tables_kwnames, &szTableName, &szCatalog, &szSchema, &szTableType))
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
@@ -1284,7 +1284,7 @@ static PyObject* Cursor_columns(PyObject* self, PyObject* args, PyObject* kwargs
     const char* szTable   = 0;
     const char* szColumn  = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|ssss", Cursor_column_kwnames, &szTable, &szCatalog, &szSchema, &szColumn))
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zzzz", Cursor_column_kwnames, &szTable, &szCatalog, &szSchema, &szColumn))
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
@@ -1355,7 +1355,7 @@ static PyObject* Cursor_statistics(PyObject* self, PyObject* args, PyObject* kwa
     PyObject* pUnique = Py_False;
     PyObject* pQuick  = Py_True;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|ssOO", Cursor_statistics_kwnames, &szTable, &szCatalog, &szSchema,
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|zzOO", Cursor_statistics_kwnames, &szTable, &szCatalog, &szSchema,
                                      &pUnique, &pQuick))
         return 0;
 
@@ -1433,7 +1433,7 @@ static PyObject* _specialColumns(PyObject* self, PyObject* args, PyObject* kwarg
     const char* szSchema  = 0;
     PyObject* pNullable = Py_True;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|ssO", Cursor_specialColumn_kwnames, &szTable, &szCatalog, &szSchema, &pNullable))
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|zzO", Cursor_specialColumn_kwnames, &szTable, &szCatalog, &szSchema, &pNullable))
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
@@ -1504,7 +1504,9 @@ static PyObject* Cursor_primaryKeys(PyObject* self, PyObject* args, PyObject* kw
     const char* szCatalog = 0;
     const char* szSchema  = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|ss", Cursor_primaryKeys_kwnames, &szTable, &szCatalog, &szSchema))
+    printf("ARGS: c=%d\n", (int)PyTuple_Size(args));
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|zz", Cursor_primaryKeys_kwnames, &szTable, &szCatalog, &szSchema))
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
@@ -1574,7 +1576,7 @@ static PyObject* Cursor_foreignKeys(PyObject* self, PyObject* args, PyObject* kw
     const char* szForeignCatalog = 0;
     const char* szForeignSchema  = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|ssssss", Cursor_foreignKeys_kwnames, &szTable, &szCatalog, &szSchema,
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zzzzzz", Cursor_foreignKeys_kwnames, &szTable, &szCatalog, &szSchema,
         &szForeignTable, &szForeignCatalog, &szForeignSchema))
         return 0;
 
@@ -1802,7 +1804,7 @@ static PyObject* Cursor_procedureColumns(PyObject* self, PyObject* args, PyObjec
     const char* szCatalog   = 0;
     const char* szSchema    = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|sss", Cursor_procedureColumns_kwnames, &szProcedure, &szCatalog, &szSchema))
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zzz", Cursor_procedureColumns_kwnames, &szProcedure, &szCatalog, &szSchema))
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
@@ -1861,7 +1863,7 @@ static PyObject* Cursor_procedures(PyObject* self, PyObject* args, PyObject* kwa
     const char* szCatalog   = 0;
     const char* szSchema    = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|sss", Cursor_procedures_kwnames, &szProcedure, &szCatalog, &szSchema))
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zzz", Cursor_procedures_kwnames, &szProcedure, &szCatalog, &szSchema))
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
