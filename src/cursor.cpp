@@ -1504,8 +1504,6 @@ static PyObject* Cursor_primaryKeys(PyObject* self, PyObject* args, PyObject* kw
     const char* szCatalog = 0;
     const char* szSchema  = 0;
 
-    printf("ARGS: c=%d\n", (int)PyTuple_Size(args));
-
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|zz", Cursor_primaryKeys_kwnames, &szTable, &szCatalog, &szSchema))
         return 0;
 
