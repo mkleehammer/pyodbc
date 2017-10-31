@@ -451,7 +451,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
             if (Text_EqualsI(key, "encoding"))
             {
 #if PY_MAJOR_VERSION < 3
-                if (!PyString_Check(value) || !PyUnicode_Check(value))
+                if (!PyString_Check(value) && !PyUnicode_Check(value))
                     return PyErr_Format(PyExc_TypeError, "encoding must be a string or unicode object");
 #else
                 if (!PyUnicode_Check(value))
