@@ -1956,6 +1956,33 @@ static PyObject* Cursor_rollback(PyObject* self, PyObject* args)
 }
 
 
+static char cancel_doc[] =
+    "Cursor.cancel() -> None\n"
+    "Cancels the processing of the current statement.\n"
+    "\n"
+    "Cancels the processing of the current statement.\n"
+    "\n"
+    "This calls SQLCancel and is designed to be called from another thread to"
+    "stop processing of an ongoing query.";
+
+static PyObject* Cursor_cancel(PyObject* self, PyObject* args)
+{
+    UNUSED(args);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLCancel(cur->hstmt);
+    Py_END_ALLOW_THREADS
+
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLCancel", cur->cnxn->hdbc, cur->hstmt);
+
+    Py_RETURN_NONE;
+}
+
+
 static PyObject* Cursor_ignored(PyObject* self, PyObject* args)
 {
     UNUSED(self, args);
@@ -2192,9 +2219,10 @@ static PyMethodDef Cursor_methods[] =
     { "skip",             (PyCFunction)Cursor_skip,             METH_VARARGS,               skip_doc             },
     { "commit",           (PyCFunction)Cursor_commit,           METH_NOARGS,                commit_doc           },
     { "rollback",         (PyCFunction)Cursor_rollback,         METH_NOARGS,                rollback_doc         },
-    { "__enter__",        Cursor_enter,                         METH_NOARGS,                enter_doc            },
-    { "__exit__",         Cursor_exit,                          METH_VARARGS,               exit_doc             },
-    { 0, 0, 0, 0 }
+    {"cancel",           (PyCFunction)Cursor_cancel,           METH_NOARGS,                cancel_doc},
+    {"__enter__",        Cursor_enter,                         METH_NOARGS,                enter_doc            },
+    {"__exit__",         Cursor_exit,                          METH_VARARGS,               exit_doc             },
+    {0, 0, 0, 0}
 };
 
 static char cursor_doc[] =

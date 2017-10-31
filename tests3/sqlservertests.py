@@ -1394,6 +1394,12 @@ class SqlServerTestCase(unittest.TestCase):
         assert row.type_name == 'varchar'
         assert row.column_size == 3
 
+    def test_cancel(self):
+        # I'm not sure how to reliably cause a hang to cancel, so for now we'll settle with
+        # making sure SQLCancel is called correctly.
+        self.cursor.execute("select 1")
+        self.cursor.cancel()
+
 
 def main():
     from optparse import OptionParser
