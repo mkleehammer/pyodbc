@@ -120,6 +120,7 @@ def get_compiler_settings(version_str):
 
     settings = {
         'extra_compile_args' : [],
+        'extra_link_args': [],
         'libraries': [],
         'include_dirs': [],
         'define_macros' : [ ('PYODBC_VERSION', version_str) ]
@@ -186,6 +187,13 @@ def get_compiler_settings(version_str):
 
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].append('-Wno-write-strings')
+
+        cflags = os.popen('odbc_config --cflags 2>/dev/null').read().strip()
+        if cflags:
+            settings['extra_compile_args'].extend(cflags.split())
+        ldflags = os.popen('odbc_config --libs 2>/dev/null').read().strip()
+        if ldflags:
+            settings['extra_link_args'].extend(ldflags.split())
 
         from array import array
         UNICODE_WIDTH = array('u').itemsize
