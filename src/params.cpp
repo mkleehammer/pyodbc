@@ -729,10 +729,6 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
 
     info.ValueType = enc.ctype;
 
-    Py_ssize_t cch = PyUnicode_GET_SIZE(param);
-
-    info.ColumnSize = (SQLUINTEGER)max(cch, 1);
-
     Object encoded(PyCodec_Encode(param, enc.name, "strict"));
     if (!encoded)
         return false;
@@ -746,6 +742,9 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
 
     Py_ssize_t cb = PyBytes_GET_SIZE(encoded);
     info.pObject = encoded.Detach();
+
+    Py_ssize_t cch = cb / (enc.ctype == SQL_C_CHAR ? sizeof(SQLCHAR) : sizeof(SQLWCHAR));
+    info.ColumnSize = (SQLUINTEGER)max(cch, 1);
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(enc.ctype);
 
