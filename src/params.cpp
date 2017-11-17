@@ -1215,6 +1215,24 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     return false;
 }
 
+static bool GetIntVal(PyObject *obj, SQLULEN *pOut)
+{
+    bool ret = false;
+#if PY_MAJOR_VERSION < 3
+    if (ret = PyInt_Check(obj))
+    {
+        *pOut = (SQLULEN)PyInt_AS_LONG(obj);
+    }
+    else
+#endif
+    if (ret = PyLong_Check(obj))
+    {
+        *pOut = (SQLULEN)PyLong_AsLong(obj);
+    }
+    Py_XDECREF(obj);
+    return ret;
+}
+
 bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 {
     SQLSMALLINT sqltype = info.ParameterType;
@@ -1229,7 +1247,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
             // integer - sets colsize
             // type object - sets sqltype (not implemented yet; mapping between Python
             //               and SQL types  is not 1:1 so doesn't seem to offer much)
-            // Consider: sequence of (colsize, sqltype, scale) ?
+            // sequence (sqltype, colsize, decimaldigits)
 #if PY_MAJOR_VERSION < 3
             if (PyInt_Check(desc))
             {
@@ -1240,6 +1258,26 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
             if (PyLong_Check(desc))
             {
                 colsize = (SQLULEN)PyLong_AsLong(desc);
+            }
+            else if (PySequence_Check(desc))
+            {
+                SQLULEN tmp;
+                Py_ssize_t len = PySequence_Size(desc);
+
+                if (len > 0 && GetIntVal(PySequence_ITEM(desc, 0), &tmp))
+                {
+                    sqltype = (SQLSMALLINT)tmp;
+                }
+                
+                if (len > 1 && GetIntVal(PySequence_ITEM(desc, 1), &tmp))
+                {
+                    colsize = tmp;
+                }
+                
+                if (len > 2 && GetIntVal(PySequence_ITEM(desc, 2), &tmp))
+                {
+                    scale = (SQLSMALLINT)tmp;
+                }
             }
         }
         Py_XDECREF(desc);
