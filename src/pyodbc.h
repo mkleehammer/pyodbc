@@ -56,6 +56,24 @@ typedef unsigned long long UINT64;
 #include <sql.h>
 #include <sqlext.h>
 
+#ifndef SQL_SS_TIMESTAMPOFFSET
+
+#define SQL_SS_TIMESTAMPOFFSET (-155)
+
+typedef struct tagSS_TIMESTAMPOFFSET_STRUCT {  
+    SQLSMALLINT year;  
+    SQLUSMALLINT month;  
+    SQLUSMALLINT day;  
+    SQLUSMALLINT hour;  
+    SQLUSMALLINT minute;  
+    SQLUSMALLINT second;  
+    SQLUINTEGER fraction;  
+    SQLSMALLINT timezone_hour;  
+    SQLSMALLINT timezone_minute;  
+} SQL_SS_TIMESTAMPOFFSET_STRUCT;
+
+#endif
+
 #if PY_VERSION_HEX < 0x02050000 && !defined(PY_SSIZE_T_MIN)
 typedef int Py_ssize_t;
 #define PY_SSIZE_T_MAX INT_MAX
