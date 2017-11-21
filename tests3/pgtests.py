@@ -185,7 +185,7 @@ class PGTestCase(unittest.TestCase):
         v2 = '0123456789' * 30
         v3 = '9876543210' * 30
 
-        self.cursor.execute("insert into t1(c1, c2, c3) values (?,?,?)", v1, v2, v3);
+        self.cursor.execute("insert into t1(c1, c2, c3) values (?,?,?)", v1, v2, v3)
         row = self.cursor.execute("select c1, c2, c3 from t1").fetchone()
 
         self.assertEqual(v1, row.c1)
@@ -472,7 +472,7 @@ class PGTestCase(unittest.TestCase):
         self.failUnlessRaises(pyodbc.Error, self.cnxn.execute, "insert into t1 values (1)")
 
     def test_row_repr(self):
-        self.cursor.execute("create table t1(a int, b int, c int, d int)");
+        self.cursor.execute("create table t1(a int, b int, c int, d int)")
         self.cursor.execute("insert into t1 values(1,2,3,4)")
 
         row = self.cursor.execute("select * from t1").fetchone()
@@ -517,6 +517,42 @@ class PGTestCase(unittest.TestCase):
         SQL_MODE_READ_ONLY   = 1
         self.cnxn.set_attr(SQL_ATTR_ACCESS_MODE, SQL_MODE_READ_ONLY)
 
+    def test_columns(self):
+        # When using aiohttp, `await cursor.primaryKeys('t1')` was raising the error
+        #
+        #   Error: TypeError: argument 2 must be str, not None
+        #
+        # I'm not sure why, but PyArg_ParseTupleAndKeywords fails if you use "|s" for an
+        # optional string keyword when calling indirectly.
+
+        self.cursor.execute("create table t1(a int, b varchar(3))")
+
+        self.cursor.columns('t1')
+        results = {row.column_name: row for row in self.cursor}
+        row = results['a']
+        assert row.type_name == 'int4', row.type_name
+        row = results['b']
+        assert row.type_name == 'varchar'
+        assert row.precision == 3, row.precision
+
+        # Now do the same, but specifically pass in None to one of the keywords.  Old versions
+        # were parsing arguments incorrectly and would raise an error.  (This crops up when
+        # calling indirectly like columns(*args, **kwargs) which aiodbc does.)
+
+        self.cursor.columns('t1', schema=None, catalog=None)
+        results = {row.column_name: row for row in self.cursor}
+        row = results['a']
+        assert row.type_name == 'int4', row.type_name
+        row = results['b']
+        assert row.type_name == 'varchar'
+        assert row.precision == 3
+
+    def test_cancel(self):
+        # I'm not sure how to reliably cause a hang to cancel, so for now we'll settle with
+        # making sure SQLCancel is called correctly.
+        self.cursor.execute("select 1")
+        self.cursor.cancel()
+
 
 def main():
     from optparse import OptionParser
@@ -559,7 +595,7 @@ def main():
         s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, m) for m in methods ])
 
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
-    result = testRunner.run(s)
+    testRunner.run(s)
 
 if __name__ == '__main__':
 
