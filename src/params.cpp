@@ -1736,6 +1736,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         cur->paramArray = 0;
     }
 
+    Py_XDECREF(rowseq);
     FreeParameterData(cur);
     return ret;
 }
