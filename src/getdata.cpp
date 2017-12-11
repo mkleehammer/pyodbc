@@ -402,7 +402,7 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 #if PY_MAJOR_VERSION >= 3
     if (PyUnicode_Check(result))
     {
-        pch = PyUnicode_AsUTF8AndSize(result, &cch);
+        pch = (char*)PyUnicode_AsUTF8AndSize(result, &cch);
     }
     else
     {
