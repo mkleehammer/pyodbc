@@ -17,7 +17,6 @@
 #include "buffer.h"
 #include "errors.h"
 #include "dbspecific.h"
-#include "sqlwchar.h"
 #include "row.h"
 #include <datetime.h>
 
@@ -605,7 +604,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             char *pstr;
             Py_ssize_t len;
             PyBytes_AsStringAndSize(longstr.Get(), &pstr, &len);
-            if (len > pi->ColumnSize)
+            if ((SQLULEN)len > pi->ColumnSize)
             {
                 RaiseErrorV(0, ProgrammingError, "Numeric overflow");
                 return false;
@@ -1297,7 +1296,7 @@ static bool GetIntVal(PyObject *obj, SQLULEN *pOut)
     }
     else
 #endif
-    if (ret = PyLong_Check(obj))
+    if ((ret = PyLong_Check(obj)))
     {
         *pOut = (SQLULEN)PyLong_AsLong(obj);
     }

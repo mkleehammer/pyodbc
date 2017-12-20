@@ -24,7 +24,6 @@
 #include "errors.h"
 #include "getdata.h"
 #include "dbspecific.h"
-#include "sqlwchar.h"
 #include <datetime.h>
 
 bool ParamSetup(Cursor *cur, PyObject *sql, PyObject* original_params, bool skip_first);
@@ -1315,12 +1314,12 @@ char* Cursor_column_kwnames[] = { "table", "catalog", "schema", "column", 0 };
 
 static PyObject* Cursor_columns(PyObject* self, PyObject* args, PyObject* kwargs)
 {
-    const char* szCatalog = 0;
-    const char* szSchema  = 0;
-    const char* szTable   = 0;
-    const char* szColumn  = 0;
+    PyObject* pCatalog = 0;
+    PyObject* pSchema  = 0;
+    PyObject* pTable   = 0;
+    PyObject* pColumn  = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zzzz", Cursor_column_kwnames, &szTable, &szCatalog, &szSchema, &szColumn))
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|OOOO", Cursor_column_kwnames, &pTable, &pCatalog, &pSchema, &pColumn))
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
@@ -1330,8 +1329,21 @@ static PyObject* Cursor_columns(PyObject* self, PyObject* args, PyObject* kwargs
 
     SQLRETURN ret = 0;
 
+    const TextEnc& enc = cur->cnxn->metadata_enc;
+    SQLWChar catalog(pCatalog, enc);
+    SQLWChar schema(pSchema, enc);
+    SQLWChar table(pTable, enc);
+    SQLWChar column(pColumn, enc);
+
+    if (!catalog.isValidOrNone() || !schema.isValidOrNone() || !table.isValidOrNone() || !column.isValidOrNone())
+        return 0;
+
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLColumns(cur->hstmt, (SQLCHAR*)szCatalog, SQL_NTS, (SQLCHAR*)szSchema, SQL_NTS, (SQLCHAR*)szTable, SQL_NTS, (SQLCHAR*)szColumn, SQL_NTS);
+    ret = SQLColumnsW(cur->hstmt,
+                      catalog.psz, SQL_NTS,
+                      schema.psz, SQL_NTS,
+                      table.psz, SQL_NTS,
+                      column.psz, SQL_NTS);
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))
