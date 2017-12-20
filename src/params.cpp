@@ -21,25 +21,274 @@
 #include "row.h"
 #include <datetime.h>
 
-
-
 inline Connection* GetConnection(Cursor* cursor)
 {
     return (Connection*)cursor->cnxn;
 }
 
-struct DAEParam
+inline bool IsStrType(SQLSMALLINT type)
 {
-    PyObject *cell;
-    SQLLEN maxlen;
-};
+    return type == SQL_WLONGVARCHAR || type == SQL_WVARCHAR ||
+           type == SQL_WCHAR || type == SQL_LONGVARCHAR ||
+           type == SQL_CHAR || type == SQL_VARCHAR;
+}
+
+int PyNone_Check(PyObject *o) { return o == Py_None; };
+int PyNullBinary_Check(PyObject *o) { return o == null_binary; };
+
+int PyDecimal_Check(PyObject *o)
+{
+    PyObject *cls;
+    int res = IsInstanceForThread(o, "decimal", "Decimal", &cls) && cls;
+    Py_XDECREF(cls);
+    return res;
+}
+
+int PyUUID_Check(PyObject *o) {
+    PyObject *cls;
+    int res = IsInstanceForThread(o, "uuid", "UUID", &cls) && cls;
+    Py_XDECREF(cls);
+    return res;
+}
+
+static Py_ssize_t GetDecimalSize(PyObject *cell)
+{
+    // default precision 28 + 1 decimal point character + 1 sign
+    if (Py_None == cell)
+        return 30;
+
+    Object t(PyObject_CallMethod(cell, "as_tuple", 0));
+    if (!t)
+        return 30;
+
+    return PyTuple_GET_SIZE(PyTuple_GET_ITEM(t.Get(), 1)) + 2;
+}
+
+static PyObject* CreateDecimalString(long sign, PyObject* digits, long exp)
+{
+    // Allocate an ASCII string containing the given decimal.
+
+    long count = (long)PyTuple_GET_SIZE(digits);
+
+    char* pch;
+    long len;
+
+    if (exp >= 0)
+    {
+        // (1 2 3) exp = 2 --> '12300'
+
+        len = sign + count + exp + 1; // 1: NULL
+        pch = (char*)pyodbc_malloc((size_t)len);
+        if (pch)
+        {
+            char* p = pch;
+            if (sign)
+                *p++ = '-';
+            for (long i = 0; i < count; i++)
+                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
+            for (long i = 0; i < exp; i++)
+                *p++ = '0';
+            *p = 0;
+        }
+    }
+    else if (-exp < count)
+    {
+        // (1 2 3) exp = -2 --> 1.23 : prec = 3, scale = 2
+
+        len = sign + count + 2; // 2: decimal + NULL
+        pch = (char*)pyodbc_malloc((size_t)len);
+        if (pch)
+        {
+            char* p = pch;
+            if (sign)
+                *p++ = '-';
+            int i = 0;
+            for (; i < (count + exp); i++)
+                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
+            *p++ = '.';
+            for (; i < count; i++)
+                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
+            *p++ = 0;
+        }
+    }
+    else
+    {
+        // (1 2 3) exp = -5 --> 0.00123 : prec = 5, scale = 5
+
+        len = sign + -exp + 3; // 3: leading zero + decimal + NULL
+
+        pch = (char*)pyodbc_malloc((size_t)len);
+        if (pch)
+        {
+            char* p = pch;
+            if (sign)
+                *p++ = '-';
+            *p++ = '0';
+            *p++ = '.';
+
+            for (int i = 0; i < -(exp + count); i++)
+                *p++ = '0';
+
+            for (int i = 0; i < count; i++)
+                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
+            *p++ = 0;
+        }
+    }
+
+    I(pch == 0 || (int)(strlen(pch) + 1) == len);
+    PyObject *strobj = PyString_FromString(pch);
+    free(pch);
+    return strobj;
+}
+
+static int DetectSQLType(Cursor *cur, PyObject *cell, ParamInfo *pi)
+{
+    if (PyBool_Check(cell))
+    {
+        pi->ParameterType = SQL_BIT;
+        pi->ColumnSize = 1;
+    }
+    else if (
+#if PY_MAJOR_VERSION < 3    
+    PyInt_Check(cell) ||
+#endif   
+    PyLong_Check(cell))
+    {
+        // Try to see if the value is INTEGER or BIGINT
+        unsigned long val = PyLong_AsLong(cell);
+        if(!PyErr_Occurred())
+        {
+            pi->ParameterType = (val > 0x7FFFFFFF)? SQL_BIGINT : SQL_INTEGER;
+        }
+        else
+        {
+            // Fallback to default
+            pi->ParameterType = SQL_INTEGER;
+        }
+
+        pi->ColumnSize = 12;
+    }
+    else if (PyFloat_Check(cell))
+    {
+        pi->ParameterType = SQL_DOUBLE;
+        pi->ColumnSize = 15;
+    }
+    else if (PyBytes_Check(cell))
+    {
+        // Assume the SQL type is also character (2.x) or binary (3.x).
+        // In 2.x, also check the SQL type and adjust appropriately.
+        // If it is a max-type (ColumnSize == 0), use DAE.
+#if PY_MAJOR_VERSION < 3
+        pi->ParameterType = cur->cnxn->str_enc.ctype == SQL_C_CHAR ? SQL_VARCHAR: SQL_WVARCHAR;
+        Py_ssize_t cch = PyString_GET_SIZE(cell);
+        pi->ColumnSize = (SQLUINTEGER)max(cch, 1);
+#else
+        pi->ParameterType = SQL_VARBINARY;
+        Py_ssize_t cb = PyBytes_GET_SIZE(cell);
+        pi->ColumnSize = (SQLUINTEGER)max(cb, 1);
+#endif
+    }
+    else if (PyUnicode_Check(cell))
+    {
+        // Assume the SQL type should also be wide character.
+        pi->ParameterType = cur->cnxn->unicode_enc.ctype == SQL_C_CHAR ? SQL_VARCHAR: SQL_WVARCHAR;
+        pi->ColumnSize = (SQLUINTEGER)max(PyUnicode_GET_SIZE(cell), 1);
+    }
+    else if (PyDateTime_Check(cell))
+    {
+        pi->ParameterType = SQL_TIMESTAMP;
+        pi->ColumnSize = (SQLUINTEGER)(cur->cnxn->datetime_precision);
+        int precision = cur->cnxn->datetime_precision - 20;
+        pi->DecimalDigits = precision < 0 ? 0 : precision;
+    }
+    else if (PyDate_Check(cell))
+    {
+        pi->ParameterType = SQL_TYPE_DATE;
+        pi->ColumnSize = 10;
+    }
+    else if (PyTime_Check(cell))
+    {
+        pi->ParameterType = SQL_TYPE_TIME;
+        pi->ColumnSize = 8;
+    }
+#if PY_VERSION_HEX >= 0x02060000
+    else if (PyByteArray_Check(cell))
+    {
+        pi->ParameterType = SQL_VARBINARY;
+        pi->ColumnSize = (SQLUINTEGER)max(PyByteArray_Size(cell), 1);
+    }
+#endif
+#if PY_MAJOR_VERSION < 3
+    else if (PyBuffer_Check(cell))
+    {
+        const char *pb;
+        pi->ParameterType = SQL_VARBINARY;
+        pi->ColumnSize = (SQLUINTEGER)max(PyBuffer_GetMemory(cell, &pb), 1);
+    }
+#endif
+    else if (cell == Py_None)
+    {
+        pi->ParameterType = SQL_VARCHAR;
+        pi->ColumnSize = 255;
+    }
+    else if (cell == null_binary)
+    {
+        pi->ParameterType = SQL_VARBINARY;
+        pi->ColumnSize = 1;
+    }
+    else if (PyUUID_Check(cell))
+    {
+        // UUID
+        pi->ParameterType = SQL_GUID;
+        pi->ColumnSize = 16;
+    }
+    else if (PyDecimal_Check(cell))
+    {
+        pi->ParameterType = SQL_NUMERIC;
+        Object t(PyObject_CallMethod(cell, "as_tuple", 0));
+        if (!t)
+            return false;
+
+        PyObject*  digits = PyTuple_GET_ITEM(t.Get(), 1);
+        long       exp    = PyInt_AsLong(PyTuple_GET_ITEM(t.Get(), 2));
+
+        Py_ssize_t count = PyTuple_GET_SIZE(digits);
+
+        if (exp >= 0)
+        {
+            // (1 2 3) exp = 2 --> '12300'
+
+            pi->ColumnSize    = (SQLUINTEGER)count + exp;
+            pi->DecimalDigits = 0;
+
+        }
+        else if (-exp <= count)
+        {
+            // (1 2 3) exp = -2 --> 1.23 : prec = 3, scale = 2
+            pi->ColumnSize    = (SQLUINTEGER)count;
+            pi->DecimalDigits = (SQLSMALLINT)-exp;
+        }
+        else
+        {
+            // (1 2 3) exp = -5 --> 0.00123 : prec = 5, scale = 5
+            pi->ColumnSize    = (SQLUINTEGER)(count + (-exp));
+            pi->DecimalDigits = (SQLSMALLINT)pi->ColumnSize;
+        }
+    }
+    else
+    {
+        RaiseErrorV(0, ProgrammingError, "Unknown object type %s during describe", cell->ob_type->tp_name);
+        return false;
+    }
+    return true;
+}
 
 // Detects and sets the appropriate C type to use for binding the specified Python object.
+// Assumes the SQL type has already been detected.
 // Also sets the buffer length to use.
 // Returns false if unsuccessful.
-static int DetectCType(PyObject *cell, ParamInfo *pi)
+static int DetectCType(Cursor *cur, PyObject *cell, ParamInfo *pi)
 {
-    PyObject* cls = 0;
     if (PyBool_Check(cell))
     {
     Type_Bool:
@@ -50,23 +299,39 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
     else if (PyInt_Check(cell))
     {
     Type_Int:
-        pi->ValueType = sizeof(long) == 8 ? SQL_C_SBIGINT : SQL_C_LONG;
+        pi->ValueType = sizeof(long) == sizeof(SQLBIGINT) ? SQL_C_SBIGINT : SQL_C_LONG;
         pi->BufferLength = sizeof(long);
     }
 #endif
     else if (PyLong_Check(cell))
     {
     Type_Long:
-        if (pi->ParameterType == SQL_NUMERIC ||
+        if (IsStrType(pi->ParameterType))
+        {
+            pi->ValueType = SQL_C_CHAR;
+            pi->BufferLength = pi->ColumnSize;
+        }
+        else if (pi->ParameterType == SQL_REAL || pi->ParameterType == SQL_FLOAT || pi->ParameterType == SQL_DOUBLE)
+        {
+            pi->ValueType = SQL_C_DOUBLE;
+            pi->BufferLength = sizeof(double);
+        }
+        else if (pi->ParameterType == SQL_NUMERIC ||
             pi->ParameterType == SQL_DECIMAL)
         {
             pi->ValueType = SQL_C_NUMERIC;
             pi->BufferLength = sizeof(SQL_NUMERIC_STRUCT);
         }
+        else if (pi->ParameterType == SQL_BIT || pi->ParameterType == SQL_TINYINT ||
+                 pi->ParameterType == SQL_INTEGER || pi->ParameterType == SQL_SMALLINT)
+        {
+            pi->ValueType = SQL_C_LONG;
+            pi->BufferLength = sizeof(SQLINTEGER);
+        }
         else
         {
             pi->ValueType = SQL_C_SBIGINT;
-            pi->BufferLength = sizeof(long long);
+            pi->BufferLength = sizeof(SQLBIGINT);
         }
     }
     else if (PyFloat_Check(cell))
@@ -79,9 +344,12 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
     {
     Type_Bytes:
         // Assume the SQL type is also character (2.x) or binary (3.x).
+        // In 2.x, also check the SQL type and adjust appropriately.
         // If it is a max-type (ColumnSize == 0), use DAE.
 #if PY_MAJOR_VERSION < 3
-        pi->ValueType = SQL_C_CHAR;
+        pi->ValueType = pi->ParameterType == SQL_LONGVARBINARY ||
+                        pi->ParameterType == SQL_VARBINARY ||
+                        pi->ParameterType == SQL_BINARY ? SQL_C_BINARY : SQL_C_CHAR;
 #else
         pi->ValueType = SQL_C_BINARY;
 #endif
@@ -90,16 +358,26 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
     else if (PyUnicode_Check(cell))
     {
     Type_Unicode:
-        // Assume the SQL type is also wide character.
+        // Assume the SQL type should also be wide character.
         // If it is a max-type (ColumnSize == 0), use DAE.
-        pi->ValueType = SQL_C_WCHAR;
+        pi->ValueType = cur->cnxn->unicode_enc.ctype; // defaults to SQL_C_WCHAR;
         pi->BufferLength = pi->ColumnSize ? pi->ColumnSize * sizeof(SQLWCHAR) : sizeof(DAEParam);
     }
     else if (PyDateTime_Check(cell))
     {
     Type_DateTime:
-        pi->ValueType = SQL_C_TYPE_TIMESTAMP;
-        pi->BufferLength = sizeof(SQL_TIMESTAMP_STRUCT);
+        if (pi->ParameterType == SQL_SS_TIMESTAMPOFFSET || pi->ParameterType == SQL_SS_TIME2)
+        {
+            pi->ValueType = SQL_C_BINARY;
+            pi->BufferLength =
+                pi->ParameterType == SQL_SS_TIMESTAMPOFFSET ? sizeof(SQL_SS_TIMESTAMPOFFSET_STRUCT)
+                                                            : sizeof(SQL_SS_TIME2_STRUCT);
+        }
+        else
+        {
+            pi->ValueType = SQL_C_TYPE_TIMESTAMP;
+            pi->BufferLength = sizeof(SQL_TIMESTAMP_STRUCT);
+        }
     }
     else if (PyDate_Check(cell))
     {
@@ -114,6 +392,11 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
         {
             pi->ValueType = SQL_C_BINARY;
             pi->BufferLength = sizeof(SQL_SS_TIME2_STRUCT);
+        }
+        else if (pi->ParameterType == SQL_SS_TIMESTAMPOFFSET)
+        {
+            pi->ValueType = SQL_C_BINARY;
+            pi->BufferLength = sizeof(SQL_SS_TIMESTAMPOFFSET_STRUCT);
         }
         else
         {
@@ -189,18 +472,40 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
             goto Type_Bytes;
         }
     }
-    else if (IsInstanceForThread(cell, "uuid", "UUID", &cls) && cls)
+    else if (cell == null_binary)
+    {
+        pi->ValueType = SQL_C_BINARY;
+        pi->BufferLength = pi->ColumnSize ? pi->ColumnSize : sizeof(DAEParam);
+    }
+    else if (PyUUID_Check(cell))
     {
     Type_UUID:
         // UUID
         pi->ValueType = SQL_C_GUID;
         pi->BufferLength = 16;
     }
-    else if (IsInstanceForThread(cell, "decimal", "Decimal", &cls) && cls)
+    else if (PyDecimal_Check(cell))
     {
+        bool isStrType;
     Type_Decimal:
-        pi->ValueType = SQL_C_NUMERIC;
-        pi->BufferLength = sizeof(SQL_NUMERIC_STRUCT);
+        if ((isStrType = IsStrType(pi->ParameterType)) || cur->decimal_as_string)
+        {
+            pi->ValueType = SQL_C_CHAR;
+            // Use the column size for the buffer length if available; otherwise, use the
+            // precision of the decimal if it is not null, and fall back to the default
+            // precision of the Decimal class (28).
+            pi->BufferLength = isStrType ? pi->ColumnSize : GetDecimalSize(cell);
+        }
+        else if(pi->ParameterType == SQL_FLOAT || pi->ParameterType == SQL_REAL || pi->ParameterType == SQL_DOUBLE)
+        {
+            pi->ValueType = SQL_C_DOUBLE;
+            pi->BufferLength = sizeof(double);
+        }
+        else
+        {
+            pi->ValueType = SQL_C_NUMERIC;
+            pi->BufferLength = sizeof(SQL_NUMERIC_STRUCT);
+        }
     }
     else
     {
@@ -213,10 +518,19 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
 #define WRITEOUT(type, ptr, val, indv) { *(type*)(*ptr) = (val); *ptr += sizeof(type); indv = sizeof(type); }
 // Convert Python object into C data for binding.
 // Output pointer is written to with data, indicator, and updated.
+// If !outbuf || !*outbuf, binds into the ParamInfo directly.
 // Returns false if object could not be converted.
 static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamInfo *pi)
 {
-    PyObject *cls = 0;
+    unsigned char *tmpptr = 0;
+    TRACE("PyToCType %p %p %p (%s) %p\n", cur, outbuf, cell, cell->ob_type->tp_name, pi);
+    if (!outbuf || !*outbuf)
+    {
+        tmpptr = (unsigned char*)&pi->Data;
+        pi->ParameterValuePtr = tmpptr;
+        outbuf = &tmpptr;
+    }
+
     // TODO: Any way to make this a switch (O(1)) or similar instead of if-else chain?
     // TODO: Otherwise, rearrange these cases in order of frequency...
     SQLLEN ind;
@@ -236,9 +550,13 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
 #endif
     else if (PyLong_Check(cell))
     {
-        if (pi->ValueType == SQL_C_SBIGINT)
+        if (pi->ValueType == SQL_C_LONG)
         {
-            WRITEOUT(long long, outbuf, PyLong_AsLongLong(cell), ind);
+            WRITEOUT(SQLINTEGER, outbuf, PyLong_AsLong(cell), ind);
+        }
+        else if (pi->ValueType == SQL_C_SBIGINT)
+        {
+            WRITEOUT(SQLBIGINT, outbuf, PyLong_AsLongLong(cell), ind);
         }
         else if (pi->ValueType == SQL_C_NUMERIC)
         {
@@ -281,6 +599,34 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             *outbuf += pi->BufferLength;
             ind = sizeof(SQL_NUMERIC_STRUCT);
         }
+        else if (pi->ValueType == SQL_C_CHAR)
+        {
+            Object longstr(PyObject_Str(cell));
+            char *pstr;
+            Py_ssize_t len;
+            PyBytes_AsStringAndSize(longstr.Get(), &pstr, &len);
+            if (len > pi->ColumnSize)
+            {
+                RaiseErrorV(0, ProgrammingError, "Numeric overflow");
+                return false;
+            }
+            if (tmpptr)
+            {
+                pi->ParameterValuePtr = pstr;
+                pi->pObject = longstr.Detach();
+                Py_INCREF(pi->pObject);
+            }
+            else
+            {
+                memcpy(*outbuf, pstr, len);
+                *outbuf += pi->BufferLength;
+            }
+            ind = len;
+        }
+        else if (pi->ValueType == SQL_C_DOUBLE)
+        {
+            WRITEOUT(double, outbuf, PyLong_AsDouble(cell), ind);
+        }
         else
             return false;
     }
@@ -298,11 +644,35 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         if (pi->ValueType != SQL_C_BINARY)
 #endif
             return false;
+
+#if PY_MAJOR_VERSION < 3
+        Object encoded;
+        const TextEnc& enc = cur->cnxn->str_enc;
+        if (enc.optenc != OPTENC_RAW)
+        {
+            // Need to reencode the data using the specified encoding.
+            encoded = PyCodec_Encode(cell, enc.name, "strict");
+            if (!encoded)
+                return false;
+            if (!PyBytes_CheckExact(encoded))
+            {
+                // Not all encodings return bytes.
+                PyErr_Format(PyExc_TypeError, "Unicode read encoding '%s' returned unexpected data type: %s",
+                             enc.name, encoded.Get()->ob_type->tp_name);
+                return false;
+            }
+            cell = encoded.Get();
+        }
+#endif
+
         Py_ssize_t len = PyBytes_GET_SIZE(cell);
         if (!pi->ColumnSize) // DAE
         {
             DAEParam *pParam = (DAEParam*)*outbuf;
             Py_INCREF(cell);
+#if PY_MAJOR_VERSION < 3
+            encoded.Detach();
+#endif
             pParam->cell = cell;
             pParam->maxlen = cur->cnxn->GetMaxLength(pi->ValueType);
             *outbuf += sizeof(DAEParam);
@@ -312,26 +682,32 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         {
             if (len > pi->BufferLength)
             {
-                RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                len = pi->BufferLength;
+                RaiseErrorV("22001", 0, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
+                return false;
             }
-            memcpy(*outbuf, PyBytes_AS_STRING(cell), len);
-            *outbuf += pi->BufferLength;
+            if (tmpptr)
+            {
+                pi->ParameterValuePtr = PyBytes_AS_STRING((PyObject*)cell);
+                Py_INCREF(cell);
+                pi->pObject = cell;
+            }
+            else
+            {
+                memcpy(*outbuf, PyBytes_AS_STRING(cell), len);
+                *outbuf += pi->BufferLength;
+            }
             ind = len;
         }
     }
     else if (PyUnicode_Check(cell))
     {
-        if (pi->ValueType != SQL_C_WCHAR)
-            return false;
-
+        const TextEnc& enc = cur->cnxn->unicode_enc;
         Py_ssize_t len = PyUnicode_GET_SIZE(cell);
         //         Same size      Different size
         // DAE     DAE only       Convert + DAE
         // non-DAE Copy           Convert + Copy
-        if (sizeof(Py_UNICODE) != sizeof(SQLWCHAR))
+        if (sizeof(Py_UNICODE) != sizeof(SQLWCHAR) || strcmp(enc.name, "utf-16le"))
         {
-            const TextEnc& enc = cur->cnxn->unicode_enc;
             Object encoded(PyCodec_Encode(cell, enc.name, "strict"));
             if (!encoded)
                 return false;
@@ -358,11 +734,20 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             {
                 if (len > pi->BufferLength)
                 {
-                    RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                    len = pi->BufferLength;
+                    RaiseErrorV("22001", 0, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
+                    return false;
                 }
-                memcpy(*outbuf, PyBytes_AS_STRING((PyObject*)encoded), len);
-                *outbuf += pi->BufferLength;
+                if (tmpptr)
+                {
+                    pi->ParameterValuePtr = PyBytes_AS_STRING(encoded.Get());
+                    pi->pObject = encoded.Detach();
+                    Py_INCREF(pi->pObject);
+                }
+                else
+                {
+                    memcpy(*outbuf, PyBytes_AS_STRING((PyObject*)encoded), len);
+                    *outbuf += pi->BufferLength;
+                }
                 ind = len;
             }
         }
@@ -383,29 +768,85 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             {
                 if (len > pi->BufferLength)
                 {
-                    RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                    len = pi->BufferLength;
+                    RaiseErrorV("22001", 0, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
+                    return false;
                 }
-                memcpy(*outbuf, PyUnicode_AS_DATA(cell), len);
-                *outbuf += pi->BufferLength;
+                if(tmpptr)
+                {
+                    pi->ParameterValuePtr = (SQLPOINTER)PyUnicode_AS_DATA(cell);
+                    pi->pObject = cell;
+                    Py_INCREF(cell);
+                }
+                else
+                {
+                    memcpy(*outbuf, PyUnicode_AS_DATA(cell), len);
+                    *outbuf += pi->BufferLength;
+                }
                 ind = len;
             }
         }
     }
     else if (PyDateTime_Check(cell))
     {
-        if (pi->ValueType != SQL_C_TYPE_TIMESTAMP)
+        if (pi->ValueType == SQL_C_TYPE_TIMESTAMP)
+        {
+            static int scaler_table[] = { 1000000, 100000, 10000, 1000, 100, 10 };
+            SQL_TIMESTAMP_STRUCT *pts = (SQL_TIMESTAMP_STRUCT*)*outbuf;
+            pts->year = PyDateTime_GET_YEAR(cell);
+            pts->month = PyDateTime_GET_MONTH(cell);
+            pts->day = PyDateTime_GET_DAY(cell);
+            pts->hour = PyDateTime_DATE_GET_HOUR(cell);
+            pts->minute = PyDateTime_DATE_GET_MINUTE(cell);
+            pts->second = PyDateTime_DATE_GET_SECOND(cell);
+            pts->fraction = 1000 * (pi->DecimalDigits < 6 ? 
+                PyDateTime_DATE_GET_MICROSECOND(cell) / scaler_table[pi->DecimalDigits]
+                                                      * scaler_table[pi->DecimalDigits]
+                : PyDateTime_DATE_GET_MICROSECOND(cell));
+            *outbuf += sizeof(SQL_TIMESTAMP_STRUCT);
+            ind = sizeof(SQL_TIMESTAMP_STRUCT);
+        }
+        else if (pi->ValueType == SQL_C_BINARY)
+        {
+            if (pi->ParameterType == SQL_SS_TIMESTAMPOFFSET)
+            {
+                SQL_SS_TIMESTAMPOFFSET_STRUCT *pts = (SQL_SS_TIMESTAMPOFFSET_STRUCT*)*outbuf;
+                pts->year = PyDateTime_GET_YEAR(cell);
+                pts->month = PyDateTime_GET_MONTH(cell);
+                pts->day = PyDateTime_GET_DAY(cell);
+                pts->hour = PyDateTime_DATE_GET_HOUR(cell);
+                pts->minute = PyDateTime_DATE_GET_MINUTE(cell);
+                pts->second = PyDateTime_DATE_GET_SECOND(cell);
+                pts->fraction = PyDateTime_DATE_GET_MICROSECOND(cell) * 1000;
+                PyObject *ptz = PyObject_CallMethod(cell, "utcoffset", 0);
+                if (ptz && ptz != Py_None)
+                {
+                    Object tzo(PyObject_GetAttrString(ptz, "seconds"));
+                    Py_ssize_t tzseconds = PyNumber_AsSsize_t(tzo.Get(), 0);
+                    pts->timezone_hour = tzseconds / 3600;
+                    pts->timezone_minute = tzseconds % 3600 / 60;
+                }
+                else
+                {
+                    pts->timezone_hour = 0;
+                    pts->timezone_minute = 0;
+                }
+                Py_XDECREF(ptz);
+                *outbuf += sizeof(SQL_SS_TIMESTAMPOFFSET_STRUCT);
+                ind = sizeof(SQL_SS_TIMESTAMPOFFSET_STRUCT);
+            }
+            else // SQL_SS_TIME2
+            {
+                SQL_SS_TIME2_STRUCT *pts = (SQL_SS_TIME2_STRUCT*)*outbuf;
+                pts->hour = PyDateTime_DATE_GET_HOUR(cell);
+                pts->minute = PyDateTime_DATE_GET_MINUTE(cell);
+                pts->second = PyDateTime_DATE_GET_SECOND(cell);
+                pts->fraction = PyDateTime_DATE_GET_MICROSECOND(cell) * 1000;
+                *outbuf += sizeof(SQL_SS_TIME2_STRUCT);
+                ind = sizeof(SQL_SS_TIME2_STRUCT);
+            }
+        }
+        else
             return false;
-        SQL_TIMESTAMP_STRUCT *pts = (SQL_TIMESTAMP_STRUCT*)*outbuf;
-        pts->year = PyDateTime_GET_YEAR(cell);
-        pts->month = PyDateTime_GET_MONTH(cell);
-        pts->day = PyDateTime_GET_DAY(cell);
-        pts->hour = PyDateTime_DATE_GET_HOUR(cell);
-        pts->minute = PyDateTime_DATE_GET_MINUTE(cell);
-        pts->second = PyDateTime_DATE_GET_SECOND(cell);
-        pts->fraction = PyDateTime_DATE_GET_MICROSECOND(cell) * 1000;
-        *outbuf += sizeof(SQL_TIMESTAMP_STRUCT);
-        ind = sizeof(SQL_TIMESTAMP_STRUCT);
     }
     else if (PyDate_Check(cell))
     {
@@ -432,6 +873,35 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             pt2s->fraction = PyDateTime_TIME_GET_MICROSECOND(cell)*1000;
             *outbuf += sizeof(SQL_SS_TIME2_STRUCT);
             ind = sizeof(SQL_SS_TIME2_STRUCT);
+        }
+        else if (pi->ParameterType == SQL_SS_TIMESTAMPOFFSET)
+        {
+            if (pi->ValueType != SQL_C_BINARY)
+                return false;
+            SQL_SS_TIMESTAMPOFFSET_STRUCT *pts = (SQL_SS_TIMESTAMPOFFSET_STRUCT*)*outbuf;
+            pts->year = 1;
+            pts->month = 1;
+            pts->day = 1;
+            pts->hour = PyDateTime_TIME_GET_HOUR(cell);
+            pts->minute = PyDateTime_TIME_GET_MINUTE(cell);
+            pts->second = PyDateTime_TIME_GET_SECOND(cell);
+            pts->fraction = PyDateTime_TIME_GET_MICROSECOND(cell) * 1000;
+            PyObject *ptz = PyObject_CallMethod(cell, "utcoffset", 0);
+            if (ptz && ptz != Py_None)
+            {
+                Object tzo(PyObject_GetAttrString(ptz, "seconds"));
+                Py_ssize_t tzseconds = PyNumber_AsSsize_t(tzo.Get(), 0);
+                pts->timezone_hour = tzseconds / 3600;
+                pts->timezone_minute = tzseconds % 3600 / 60;
+            }
+            else
+            {
+                pts->timezone_hour = 0;
+                pts->timezone_minute = 0;
+            }
+            Py_XDECREF(ptz);
+            *outbuf += sizeof(SQL_SS_TIMESTAMPOFFSET_STRUCT);
+            ind = sizeof(SQL_SS_TIMESTAMPOFFSET_STRUCT);
         }
         else
         {
@@ -464,11 +934,20 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         {
             if (len > pi->BufferLength)
             {
-                RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                len = pi->BufferLength;
+                RaiseErrorV("22001", 0, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
+                return false;
             }
-            memcpy(*outbuf, PyByteArray_AS_STRING(cell), len);
-            *outbuf += pi->BufferLength;
+            if (tmpptr)
+            {
+                pi->ParameterValuePtr = PyByteArray_AS_STRING((PyObject*)cell);
+                Py_INCREF(cell);
+                pi->pObject = cell;
+            }
+            else
+            {
+                memcpy(*outbuf, PyByteArray_AS_STRING(cell), len);
+                *outbuf += pi->BufferLength;
+            }
             ind = len;
         }
     }
@@ -480,7 +959,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             return false;
         const char* pb;
         Py_ssize_t  len = PyBuffer_GetMemory(cell, &pb);
-        if (len < 0)
+        if (!pi->ColumnSize || len < 0)
         {
             // DAE
             DAEParam *pParam = (DAEParam*)*outbuf;
@@ -495,16 +974,25 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         {
             if (len > pi->BufferLength)
             {
-                RaiseErrorV(0, ProgrammingError, "String data, right truncation: row %u column %u", 0 /* TODO */, 0 /* TODO */);
-                len = pi->BufferLength;
+                RaiseErrorV("22001", 0, "String data, right truncation: row %u column %u", 0 /* TODO */, 0 /* TODO */);
+                return false;
             }
-            memcpy(*outbuf, pb, len);
-            *outbuf += pi->BufferLength;
+            if (tmpptr)
+            {
+                pi->ParameterValuePtr = (SQLPOINTER)pb;
+                pi->pObject = cell;
+                Py_INCREF(cell);
+            }
+            else
+            {
+                memcpy(*outbuf, pb, len);
+                *outbuf += pi->BufferLength;
+            }
             ind = len;
         }
     }
 #endif
-    else if (IsInstanceForThread(cell, "uuid", "UUID", &cls) && cls)
+    else if (PyUUID_Check(cell))
     {
         if (pi->ValueType != SQL_C_GUID)
             return false;
@@ -517,68 +1005,105 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         *outbuf += pi->BufferLength;
         ind = 16;
     }
-    else if (IsInstanceForThread(cell, "decimal", "Decimal", &cls) && cls)
+    else if (PyDecimal_Check(cell))
     {
-        if (pi->ValueType != SQL_C_NUMERIC)
-            return false;
-        // Normalise, then get sign, exponent, and digits.
-        PyObject *normCell = PyObject_CallMethod(cell, "normalize", 0);
-        if (!normCell)
-            return false;
-        PyObject *cellParts = PyObject_CallMethod(normCell, "as_tuple", 0);
-        if (!cellParts)
-            return false;
-
-        Py_XDECREF(normCell);
-        
-        SQL_NUMERIC_STRUCT *pNum = (SQL_NUMERIC_STRUCT*)*outbuf;
-        pNum->sign = !PyInt_AsLong(PyTuple_GET_ITEM(cellParts, 0));
-        PyObject*  digits = PyTuple_GET_ITEM(cellParts, 1);
-        long       exp    = PyInt_AsLong(PyTuple_GET_ITEM(cellParts, 2));
-        Py_ssize_t numDigits = PyTuple_GET_SIZE(digits);
-
-        // PyDecimal is digits * 10**exp = digits / 10**-exp
-        // SQL_NUMERIC_STRUCT is val / 10**scale
-        Py_ssize_t scaleDiff = pi->DecimalDigits + exp;
-        if (scaleDiff < 0)
+        if (pi->ValueType == SQL_C_NUMERIC)
         {
-            RaiseErrorV(0, ProgrammingError, "Converting decimal loses precision");
+            // Get sign, exponent, and digits.
+            PyObject *cellParts = PyObject_CallMethod(cell, "as_tuple", 0);
+            if (!cellParts)
+                return false;
+
+            SQL_NUMERIC_STRUCT *pNum = (SQL_NUMERIC_STRUCT*)*outbuf;
+            pNum->sign = !PyInt_AsLong(PyTuple_GET_ITEM(cellParts, 0));
+            PyObject*  digits = PyTuple_GET_ITEM(cellParts, 1);
+            long       exp    = PyInt_AsLong(PyTuple_GET_ITEM(cellParts, 2));
+            Py_ssize_t numDigits = PyTuple_GET_SIZE(digits);
+
+            // PyDecimal is digits * 10**exp = digits / 10**-exp
+            // SQL_NUMERIC_STRUCT is val / 10**scale
+            Py_ssize_t scaleDiff = pi->DecimalDigits + exp;
+            if (scaleDiff < 0)
+            {
+                RaiseErrorV(0, ProgrammingError, "Converting decimal loses precision");
+                return false;
+            }
+            
+            // Append '0's to the end of the digits to effect the scaling.
+            PyObject *newDigits = PyTuple_New(numDigits + scaleDiff);
+            for (Py_ssize_t i = 0; i < numDigits; i++)
+            {
+                PyTuple_SET_ITEM(newDigits, i, PyInt_FromLong(PyNumber_AsSsize_t(PyTuple_GET_ITEM(digits, i), 0)));
+            }
+            for (Py_ssize_t i = numDigits; i < scaleDiff + numDigits; i++)
+            {
+                PyTuple_SET_ITEM(newDigits, i, PyInt_FromLong(0));
+            }
+            PyObject *args = Py_BuildValue("((iOi))", 0, newDigits, 0);
+            PyObject *scaledDecimal = PyObject_CallObject((PyObject*)cell->ob_type, args);
+            PyObject *digitLong = PyNumber_Long(scaledDecimal);
+
+            Py_XDECREF(args);
+            Py_XDECREF(scaledDecimal);
+            Py_XDECREF(cellParts);
+
+            pNum->precision = pi->ColumnSize;
+            pNum->scale = pi->DecimalDigits;
+
+            int ret = _PyLong_AsByteArray((PyLongObject*)digitLong, pNum->val, sizeof(pNum->val), 1, 0);
+
+            Py_XDECREF(digitLong);
+            if (ret)
+            {
+                PyErr_Clear();
+                RaiseErrorV(0, ProgrammingError, "Numeric overflow");
+                return false;
+            }
+            *outbuf += pi->BufferLength;
+            ind = sizeof(SQL_NUMERIC_STRUCT);
+        }
+        else if (pi->ValueType == SQL_C_DOUBLE)
+        {
+            Object floatobj(PyNumber_Float(cell));
+            if(!floatobj)
+                return false;
+            WRITEOUT(double, outbuf, PyFloat_AS_DOUBLE(floatobj.Get()), ind);
+        }
+        else if (pi->ValueType == SQL_C_CHAR)
+        {
+            Object t(PyObject_CallMethod(cell, "as_tuple", 0));
+            if (!t)
+                return false;
+
+            long       sign   = PyInt_AsLong(PyTuple_GET_ITEM(t.Get(), 0));
+            PyObject*  digits = PyTuple_GET_ITEM(t.Get(), 1);
+            long       exp    = PyInt_AsLong(PyTuple_GET_ITEM(t.Get(), 2));
+
+            Object decstr(CreateDecimalString(sign, digits, exp));
+            Py_ssize_t len = PyBytes_Size(decstr.Get());
+            char *pb = PyBytes_AsString(decstr.Get());
+            if (len > pi->BufferLength)
+            {
+                RaiseErrorV(0, ProgrammingError, "Numeric overflow");
+                len = pi->BufferLength;
+            }
+            if (tmpptr)
+            {
+                pi->ParameterValuePtr = pb;
+                pi->pObject = decstr.Detach();
+                Py_INCREF(pi->pObject);
+            }
+            else
+            {
+                memcpy(*outbuf, pb, len);
+                *outbuf += pi->BufferLength;
+            }
+            ind = len;
+        }
+        else
             return false;
-        }
-        
-        // Append '0's to the end of the digits to effect the scaling.
-        PyObject *newDigits = PyTuple_New(numDigits + scaleDiff);
-        for (Py_ssize_t i = 0; i < numDigits; i++)
-        {
-            PyTuple_SET_ITEM(newDigits, i, PyInt_FromLong(PyNumber_AsSsize_t(PyTuple_GET_ITEM(digits, i), 0)));
-        }
-        for (Py_ssize_t i = numDigits; i < scaleDiff + numDigits; i++)
-        {
-            PyTuple_SET_ITEM(newDigits, i, PyInt_FromLong(0));
-        }
-        PyObject *args = Py_BuildValue("((iOi))", 0, newDigits, 0);
-        PyObject *scaledDecimal = PyObject_CallObject((PyObject*)cell->ob_type, args);
-        PyObject *digitLong = PyNumber_Long(scaledDecimal);
-
-        Py_XDECREF(args);
-        Py_XDECREF(scaledDecimal);
-        Py_XDECREF(cellParts);
-
-        pNum->precision = pi->ColumnSize;
-        pNum->scale = pi->DecimalDigits;
-
-        int ret = _PyLong_AsByteArray((PyLongObject*)digitLong, pNum->val, sizeof(pNum->val), 1, 0);
-        Py_XDECREF(digitLong);
-        if (ret)
-        {
-            PyErr_Clear();
-            RaiseErrorV(0, ProgrammingError, "Numeric overflow");
-            return false;
-        }
-        *outbuf += pi->BufferLength;
-        ind = sizeof(SQL_NUMERIC_STRUCT);
     }
-    else if (cell == Py_None)
+    else if (cell == Py_None || cell == null_binary)
     {
         *outbuf += pi->BufferLength;
         ind = SQL_NULL_DATA;
@@ -588,672 +1113,34 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         RaiseErrorV(0, ProgrammingError, "Unknown object type: %s",cell->ob_type->tp_name);
         return false;
     }
-    *(SQLLEN*)(*outbuf) = ind;
-    *outbuf += sizeof(SQLLEN);
+    pi->StrLen_or_Ind = ind;
+    if (!tmpptr)
+    {
+        *(SQLLEN*)(*outbuf) = ind;
+        *outbuf += sizeof(SQLLEN);
+    }
     return true;
 }
 
-static bool GetParamType(Cursor* cur, Py_ssize_t iParam, SQLSMALLINT& type);
-
-static void FreeInfos(ParamInfo* a, Py_ssize_t count)
+int BindAndConvert(Cursor *cur, Py_ssize_t i, PyObject *cell, ParamInfo *ppi)
 {
-    for (Py_ssize_t i = 0; i < count; i++)
-    {
-        if (a[i].allocated)
-            pyodbc_free(a[i].ParameterValuePtr);
-        Py_XDECREF(a[i].pObject);
-    }
-    pyodbc_free(a);
-}
-
-static bool GetNullInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
-{
-    if (!GetParamType(cur, index, info.ParameterType))
+    // For non-fastexecutemany case.
+    // Scatter-bind using the ParamInfo, and convert the data into the bound buffer.
+    // Variable-length types (char, wchar, binary) are bound using an extra buffer;
+    // fixed-length types are bound directly into the ParamInfo.
+    if (!PyToCType(cur, 0, cell, ppi))
         return false;
 
-    info.ValueType     = SQL_C_DEFAULT;
-    info.ColumnSize    = 1;
-    info.StrLen_or_Ind = SQL_NULL_DATA;
-    return true;
-}
-
-static bool GetNullBinaryInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
-{
-    info.ValueType         = SQL_C_BINARY;
-    info.ParameterType     = SQL_BINARY;
-    info.ColumnSize        = 1;
-    info.ParameterValuePtr = 0;
-    info.StrLen_or_Ind     = SQL_NULL_DATA;
-    return true;
-}
-
-
-#if PY_MAJOR_VERSION >= 3
-static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    // The Python 3 version that writes bytes as binary data.
-    Py_ssize_t cb = PyBytes_GET_SIZE(param);
-
-    info.ValueType  = SQL_C_BINARY;
-    info.ColumnSize = (SQLUINTEGER)max(cb, 1);
-
-    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-
-    if (maxlength == 0 || cb <= maxlength)
-    {
-        info.ParameterType     = SQL_VARBINARY;
-        info.StrLen_or_Ind     = cb;
-        info.BufferLength      = (SQLLEN)info.ColumnSize;
-        info.ParameterValuePtr = PyBytes_AS_STRING(param);
-    }
-    else
-    {
-        // Too long to pass all at once, so we'll provide the data at execute.
-        info.ParameterType     = SQL_LONGVARBINARY;
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)cb) : SQL_DATA_AT_EXEC;
-        info.ParameterValuePtr = &info;
-        info.BufferLength      = sizeof(ParamInfo*);
-        info.pObject           = param;
-        Py_INCREF(info.pObject);
-        info.maxlength = maxlength;
-    }
-
-    return true;
-}
-#endif
-
-#if PY_MAJOR_VERSION < 3
-static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    const TextEnc& enc = cur->cnxn->str_enc;
-
-    info.ValueType = enc.ctype;
-
-    Py_ssize_t cch = PyString_GET_SIZE(param);
-
-    info.ColumnSize = (SQLUINTEGER)max(cch, 1);
-
-    Object encoded;
-
-    if (enc.optenc == OPTENC_RAW)
-    {
-        // Take the text as-is.  This is not really a good idea since users will need to make
-        // sure the encoding over the wire matches their system encoding, but it will be wanted
-        // and it is fast when you get it to work.
-        encoded = param;
-    }
-    else
-    {
-        // Encode the text with the user's encoding.
-        encoded = PyCodec_Encode(param, enc.name, "strict");
-        if (!encoded)
-            return false;
-
-        if (!PyBytes_CheckExact(encoded))
-        {
-            // Not all encodings return bytes.
-            PyErr_Format(PyExc_TypeError, "Unicode read encoding '%s' returned unexpected data type: %s",
-                         enc.name, encoded.Get()->ob_type->tp_name);
-            return false;
-        }
-    }
-
-    Py_ssize_t cb = PyBytes_GET_SIZE(encoded);
-    info.pObject = encoded.Detach();
-
-    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-    if (maxlength == 0 || cb <= maxlength)
-    {
-        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
-        info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
-        info.StrLen_or_Ind     = (SQLINTEGER)cb;
-    }
-    else
-    {
-        // Too long to pass all at once, so we'll provide the data at execute.
-        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_LONGVARCHAR : SQL_WLONGVARCHAR;
-        info.ParameterValuePtr = &info;
-        info.BufferLength      = sizeof(ParamInfo*);
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLINTEGER)cb) : SQL_DATA_AT_EXEC;
-        info.maxlength = maxlength;
-    }
-
-    return true;
-}
-#endif
-
-
-static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    const TextEnc& enc = cur->cnxn->unicode_enc;
-
-    info.ValueType = enc.ctype;
-
-    Py_ssize_t cch = PyUnicode_GET_SIZE(param);
-
-    info.ColumnSize = (SQLUINTEGER)max(cch, 1);
-
-    Object encoded(PyCodec_Encode(param, enc.name, "strict"));
-    if (!encoded)
-        return false;
-
-    if (enc.optenc == OPTENC_NONE && !PyBytes_CheckExact(encoded))
-    {
-        PyErr_Format(PyExc_TypeError, "Unicode write encoding '%s' returned unexpected data type: %s",
-                     enc.name, encoded.Get()->ob_type->tp_name);
-        return false;
-    }
-
-    Py_ssize_t cb = PyBytes_GET_SIZE(encoded);
-    info.pObject = encoded.Detach();
-
-    SQLLEN maxlength = cur->cnxn->GetMaxLength(enc.ctype);
-
-    if (maxlength == 0 || cb <= maxlength)
-    {
-        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
-        info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
-        info.BufferLength      = (SQLINTEGER)cb;
-        info.StrLen_or_Ind     = (SQLINTEGER)cb;
-    }
-    else
-    {
-        // Too long to pass all at once, so we'll provide the data at execute.
-        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_LONGVARCHAR : SQL_WLONGVARCHAR;
-        info.ParameterValuePtr = &info;
-        info.BufferLength      = sizeof(ParamInfo*);
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLINTEGER)cb) : SQL_DATA_AT_EXEC;
-        info.maxlength = maxlength;
-    }
-
-    return true;
-}
-
-static bool GetBooleanInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    info.ValueType         = SQL_C_BIT;
-    info.ParameterType     = SQL_BIT;
-    info.StrLen_or_Ind     = 1;
-    info.Data.ch           = (unsigned char)(param == Py_True ? 1 : 0);
-    info.ParameterValuePtr = &info.Data.ch;
-    return true;
-}
-
-static bool GetDateTimeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    info.Data.timestamp.year   = (SQLSMALLINT) PyDateTime_GET_YEAR(param);
-    info.Data.timestamp.month  = (SQLUSMALLINT)PyDateTime_GET_MONTH(param);
-    info.Data.timestamp.day    = (SQLUSMALLINT)PyDateTime_GET_DAY(param);
-    info.Data.timestamp.hour   = (SQLUSMALLINT)PyDateTime_DATE_GET_HOUR(param);
-    info.Data.timestamp.minute = (SQLUSMALLINT)PyDateTime_DATE_GET_MINUTE(param);
-    info.Data.timestamp.second = (SQLUSMALLINT)PyDateTime_DATE_GET_SECOND(param);
-
-    // SQL Server chokes if the fraction has more data than the database supports.  We expect other databases to be the
-    // same, so we reduce the value to what the database supports.  http://support.microsoft.com/kb/263872
-
-    int precision = ((Connection*)cur->cnxn)->datetime_precision - 20; // (20 includes a separating period)
-    if (precision <= 0)
-    {
-        info.Data.timestamp.fraction = 0;
-    }
-    else
-    {
-        info.Data.timestamp.fraction = (SQLUINTEGER)(PyDateTime_DATE_GET_MICROSECOND(param) * 1000); // 1000 == micro -> nano
-
-        // (How many leading digits do we want to keep?  With SQL Server 2005, this should be 3: 123000000)
-        int keep = (int)pow(10.0, 9-min(9, precision));
-        info.Data.timestamp.fraction = info.Data.timestamp.fraction / keep * keep;
-        info.DecimalDigits = (SQLSMALLINT)precision;
-    }
-
-    info.ValueType         = SQL_C_TIMESTAMP;
-    info.ParameterType     = SQL_TIMESTAMP;
-    info.ColumnSize        = (SQLUINTEGER)((Connection*)cur->cnxn)->datetime_precision;
-    info.StrLen_or_Ind     = sizeof(TIMESTAMP_STRUCT);
-    info.ParameterValuePtr = &info.Data.timestamp;
-    return true;
-}
-
-static bool GetDateInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    info.Data.date.year  = (SQLSMALLINT) PyDateTime_GET_YEAR(param);
-    info.Data.date.month = (SQLUSMALLINT)PyDateTime_GET_MONTH(param);
-    info.Data.date.day   = (SQLUSMALLINT)PyDateTime_GET_DAY(param);
-
-    info.ValueType         = SQL_C_TYPE_DATE;
-    info.ParameterType     = SQL_TYPE_DATE;
-    info.ColumnSize        = 10;
-    info.ParameterValuePtr = &info.Data.date;
-    info.StrLen_or_Ind     = sizeof(DATE_STRUCT);
-    return true;
-}
-
-static bool GetTimeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    info.Data.time.hour   = (SQLUSMALLINT)PyDateTime_TIME_GET_HOUR(param);
-    info.Data.time.minute = (SQLUSMALLINT)PyDateTime_TIME_GET_MINUTE(param);
-    info.Data.time.second = (SQLUSMALLINT)PyDateTime_TIME_GET_SECOND(param);
-
-    info.ValueType         = SQL_C_TYPE_TIME;
-    info.ParameterType     = SQL_TYPE_TIME;
-    info.ColumnSize        = 8;
-    info.ParameterValuePtr = &info.Data.time;
-    info.StrLen_or_Ind     = sizeof(TIME_STRUCT);
-    return true;
-}
-
-#if PY_MAJOR_VERSION < 3
-static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    info.Data.l = PyInt_AsLong(param);
-
-#if LONG_BIT == 64
-    info.ValueType     = SQL_C_SBIGINT;
-    // info.ValueType     = SQL_C_LONG;
-    info.ParameterType = SQL_BIGINT;
-#elif LONG_BIT == 32
-    info.ValueType     = SQL_C_LONG;
-    info.ParameterType = SQL_INTEGER;
-#else
-    #error Unexpected LONG_BIT value
-#endif
-
-    info.ParameterValuePtr = &info.Data.l;
-    return true;
-}
-#endif
-
-static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    // Try to use integer when possible.  BIGINT is not always supported and is a "special
-    // case" for some drivers.
-
-    // REVIEW: C & C++ now have constants for max sizes, but I'm not sure if they will be
-    // available on all platforms Python supports right now.  It would be more performant when
-    // a lot of 64-bit values are used since we could avoid the AsLong call.
-
-    // It's not clear what the maximum SQL_INTEGER should be.  The Microsoft documentation says
-    // it is a 'long int', but some drivers run into trouble at high values.  We'll use
-    // SQL_INTEGER as an optimization for smaller values and rely on BIGINT
-
-    info.Data.l = PyLong_AsLong(param);
-    if (!PyErr_Occurred() && (info.Data.l <= 0x7FFFFFFF))
-    {
-        info.ValueType         = SQL_C_LONG;
-        info.ParameterType     = SQL_INTEGER;
-        info.ParameterValuePtr = &info.Data.l;
-    }
-    else
-    {
-        PyErr_Clear();
-        info.Data.i64 = (INT64)PyLong_AsLongLong(param);
-        if (!PyErr_Occurred())
-        {
-            info.ValueType         = SQL_C_SBIGINT;
-            info.ParameterType     = SQL_BIGINT;
-            info.ParameterValuePtr = &info.Data.i64;
-        }
-    }
-
-    return !PyErr_Occurred();
-}
-
-static bool GetFloatInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    // TODO: Overflow?
-    info.Data.dbl = PyFloat_AsDouble(param);
-
-    info.ValueType         = SQL_C_DOUBLE;
-    info.ParameterType     = SQL_DOUBLE;
-    info.ParameterValuePtr = &info.Data.dbl;
-    info.ColumnSize = 15;
-    return true;
-}
-
-static char* CreateDecimalString(long sign, PyObject* digits, long exp)
-{
-    // Allocate an ASCII string containing the given decimal.
-
-    long count = (long)PyTuple_GET_SIZE(digits);
-
-    char* pch;
-    long len;
-
-    if (exp >= 0)
-    {
-        // (1 2 3) exp = 2 --> '12300'
-
-        len = sign + count + exp + 1; // 1: NULL
-        pch = (char*)pyodbc_malloc((size_t)len);
-        if (pch)
-        {
-            char* p = pch;
-            if (sign)
-                *p++ = '-';
-            for (long i = 0; i < count; i++)
-                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
-            for (long i = 0; i < exp; i++)
-                *p++ = '0';
-            *p = 0;
-        }
-    }
-    else if (-exp < count)
-    {
-        // (1 2 3) exp = -2 --> 1.23 : prec = 3, scale = 2
-
-        len = sign + count + 2; // 2: decimal + NULL
-        pch = (char*)pyodbc_malloc((size_t)len);
-        if (pch)
-        {
-            char* p = pch;
-            if (sign)
-                *p++ = '-';
-            int i = 0;
-            for (; i < (count + exp); i++)
-                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
-            *p++ = '.';
-            for (; i < count; i++)
-                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
-            *p++ = 0;
-        }
-    }
-    else
-    {
-        // (1 2 3) exp = -5 --> 0.00123 : prec = 5, scale = 5
-
-        len = sign + -exp + 3; // 3: leading zero + decimal + NULL
-
-        pch = (char*)pyodbc_malloc((size_t)len);
-        if (pch)
-        {
-            char* p = pch;
-            if (sign)
-                *p++ = '-';
-            *p++ = '0';
-            *p++ = '.';
-
-            for (int i = 0; i < -(exp + count); i++)
-                *p++ = '0';
-
-            for (int i = 0; i < count; i++)
-                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
-            *p++ = 0;
-        }
-    }
-
-    I(pch == 0 || (int)(strlen(pch) + 1) == len);
-
-    return pch;
-}
-
-static bool GetUUIDInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, PyObject* uuid_type)
-{
-    // uuid_type: This is a new reference that we are responsible for freeing.
-    Object tmp(uuid_type);
-
-    info.ValueType = SQL_C_GUID;
-    info.ParameterType = SQL_GUID;
-    info.ColumnSize = 16;
-
-    info.allocated = true;
-    info.ParameterValuePtr = pyodbc_malloc(sizeof(SQLGUID));
-    if (!info.ParameterValuePtr)
-    {
-        PyErr_NoMemory();
-        return false;
-    }
-
-    // Do we need to use "bytes" on a big endian machine?
-    Object b(PyObject_GetAttrString(param, "bytes_le"));
-    if (!b)
-        return false;
-    memcpy(info.ParameterValuePtr, PyBytes_AS_STRING(b.Get()), sizeof(SQLGUID));
-    return true;
-}
-
-
-static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, PyObject* decimal_type)
-{
-    // decimal_type: This is a new reference that we are responsible for freeing.
-    Object tmp(decimal_type);
-
-    // The NUMERIC structure never works right with SQL Server and probably a lot of other drivers.  We'll bind as a
-    // string.  Unfortunately, the Decimal class doesn't seem to have a way to force it to return a string without
-    // exponents, so we'll have to build it ourselves.
-
-    Object t(PyObject_CallMethod(param, "as_tuple", 0));
-    if (!t)
-        return false;
-
-    long       sign   = PyInt_AsLong(PyTuple_GET_ITEM(t.Get(), 0));
-    PyObject*  digits = PyTuple_GET_ITEM(t.Get(), 1);
-    long       exp    = PyInt_AsLong(PyTuple_GET_ITEM(t.Get(), 2));
-
-    Py_ssize_t count = PyTuple_GET_SIZE(digits);
-
-    info.ValueType     = SQL_C_CHAR;
-    info.ParameterType = SQL_NUMERIC;
-
-    if (exp >= 0)
-    {
-        // (1 2 3) exp = 2 --> '12300'
-
-        info.ColumnSize    = (SQLUINTEGER)count + exp;
-        info.DecimalDigits = 0;
-
-    }
-    else if (-exp <= count)
-    {
-        // (1 2 3) exp = -2 --> 1.23 : prec = 3, scale = 2
-        info.ColumnSize    = (SQLUINTEGER)count;
-        info.DecimalDigits = (SQLSMALLINT)-exp;
-    }
-    else
-    {
-        // (1 2 3) exp = -5 --> 0.00123 : prec = 5, scale = 5
-        info.ColumnSize    = (SQLUINTEGER)(count + (-exp));
-        info.DecimalDigits = (SQLSMALLINT)info.ColumnSize;
-    }
-
-    I(info.ColumnSize >= (SQLULEN)info.DecimalDigits);
-
-    info.ParameterValuePtr = CreateDecimalString(sign, digits, exp);
-    if (!info.ParameterValuePtr)
-    {
-        PyErr_NoMemory();
-        return false;
-    }
-    info.allocated = true;
-
-    info.StrLen_or_Ind = (SQLINTEGER)strlen((char*)info.ParameterValuePtr);
-
-    return true;
-}
-
-#if PY_MAJOR_VERSION < 3
-static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    info.ValueType = SQL_C_BINARY;
-
-    const char* pb;
-    Py_ssize_t  cb = PyBuffer_GetMemory(param, &pb);
-
-    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-    if (maxlength == 0 || cb <= maxlength)
-    {
-        // There is one segment, so we can bind directly into the buffer object.
-
-        info.ParameterType     = SQL_VARBINARY;
-        info.ParameterValuePtr = (SQLPOINTER)pb;
-        info.BufferLength      = (SQLINTEGER)cb;
-        info.ColumnSize        = (SQLUINTEGER)max(cb, 1);
-        info.StrLen_or_Ind     = (SQLINTEGER)cb;
-    }
-    else
-    {
-        // There are multiple segments, so we'll provide the data at execution time.  Pass the PyObject pointer as
-        // the parameter value which will be pased back to us when the data is needed.  (If we release threads, we
-        // need to up the refcount!)
-
-        info.ParameterType     = SQL_LONGVARBINARY;
-        info.ParameterValuePtr = &info;
-        info.BufferLength      = sizeof(ParamInfo*);
-        info.ColumnSize        = (SQLUINTEGER)PyBuffer_Size(param);
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)PyBuffer_Size(param)) : SQL_DATA_AT_EXEC;
-        info.pObject = param;
-        Py_INCREF(info.pObject);
-        info.maxlength = maxlength;
-    }
-
-    return true;
-}
-#endif
-
-#if PY_VERSION_HEX >= 0x02060000
-static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    info.ValueType = SQL_C_BINARY;
-
-    Py_ssize_t cb = PyByteArray_Size(param);
-
-    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-    if (maxlength == 0 || cb <= maxlength)
-    {
-        info.ParameterType     = SQL_VARBINARY;
-        info.ParameterValuePtr = (SQLPOINTER)PyByteArray_AsString(param);
-        info.BufferLength      = (SQLINTEGER)cb;
-        info.ColumnSize        = (SQLUINTEGER)max(cb, 1);
-        info.StrLen_or_Ind     = (SQLINTEGER)cb;
-    }
-    else
-    {
-        info.ParameterType     = SQL_LONGVARBINARY;
-        info.ParameterValuePtr = &info;
-        info.BufferLength      = sizeof(ParamInfo*);
-        info.ColumnSize        = (SQLUINTEGER)cb;
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)cb) : SQL_DATA_AT_EXEC;
-        info.pObject = param;
-        Py_INCREF(info.pObject);
-        info.maxlength = maxlength;
-    }
-    return true;
-}
-#endif
-
-static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    // Determines the type of SQL parameter that will be used for this parameter based on the Python data type.
-    //
-    // Populates `info`.
-
-    if (param == Py_None)
-        return GetNullInfo(cur, index, info);
-
-    if (param == null_binary)
-        return GetNullBinaryInfo(cur, index, info);
-
-#if PY_MAJOR_VERSION >= 3
-    if (PyBytes_Check(param))
-        return GetBytesInfo(cur, index, param, info);
-#else
-    if (PyBytes_Check(param))
-        return GetStrInfo(cur, index, param, info);
-#endif
-
-    if (PyUnicode_Check(param))
-        return GetUnicodeInfo(cur, index, param, info);
-
-    if (PyBool_Check(param))
-        return GetBooleanInfo(cur, index, param, info);
-
-    if (PyDateTime_Check(param))
-        return GetDateTimeInfo(cur, index, param, info);
-
-    if (PyDate_Check(param))
-        return GetDateInfo(cur, index, param, info);
-
-    if (PyTime_Check(param))
-        return GetTimeInfo(cur, index, param, info);
-
-    if (PyLong_Check(param))
-        return GetLongInfo(cur, index, param, info);
-
-    if (PyFloat_Check(param))
-        return GetFloatInfo(cur, index, param, info);
-
-#if PY_VERSION_HEX >= 0x02060000
-    if (PyByteArray_Check(param))
-        return GetByteArrayInfo(cur, index, param, info);
-#endif
-
-#if PY_MAJOR_VERSION < 3
-    if (PyInt_Check(param))
-        return GetIntInfo(cur, index, param, info);
-
-    if (PyBuffer_Check(param))
-        return GetBufferInfo(cur, index, param, info);
-#endif
-
-    // Decimal
-
-    PyObject* cls = 0;
-    if (!IsInstanceForThread(param, "decimal", "Decimal", &cls))
-        return false;
-
-    if (cls != 0)
-        return GetDecimalInfo(cur, index, param, info, cls);
-
-    // UUID
-
-    if (!IsInstanceForThread(param, "uuid", "UUID", &cls))
-        return false;
-
-    if (cls != 0)
-        return GetUUIDInfo(cur, index, param, info, cls);
-
-    RaiseErrorV("HY105", ProgrammingError, "Invalid parameter type.  param-index=%zd param-type=%s", index, Py_TYPE(param)->tp_name);
-    return false;
-}
-
-bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
-{
-    SQLSMALLINT sqltype = info.ParameterType;
-    SQLULEN colsize = info.ColumnSize;
-    SQLSMALLINT scale = info.DecimalDigits;
-
-    if (cur->inputsizes && index < PySequence_Length(cur->inputsizes))
-    {
-        PyObject *desc = PySequence_GetItem(cur->inputsizes, index);
-        if (desc)
-        {
-            // integer - sets colsize
-            // type object - sets sqltype (not implemented yet; mapping between Python
-            //               and SQL types  is not 1:1 so doesn't seem to offer much)
-            // Consider: sequence of (colsize, sqltype, scale) ?
-#if PY_MAJOR_VERSION < 3
-            if (PyInt_Check(desc))
-            {
-                colsize = (SQLULEN)PyInt_AS_LONG(desc);
-            }
-            else
-#endif
-            if (PyLong_Check(desc))
-            {
-                colsize = (SQLULEN)PyLong_AsLong(desc);
-            }
-        }
-        Py_XDECREF(desc);
-    }
     TRACE("BIND: param=%ld ValueType=%d (%s) ParameterType=%d (%s) ColumnSize=%ld DecimalDigits=%d BufferLength=%ld *pcb=%ld\n",
-          (index+1), info.ValueType, CTypeName(info.ValueType), sqltype, SqlTypeName(sqltype), colsize,
-          scale, info.BufferLength, info.StrLen_or_Ind);
+          (i+1), ppi->ValueType, CTypeName(ppi->ValueType), ppi->ParameterType, SqlTypeName(ppi->ParameterType), ppi->ColumnSize,
+          ppi->DecimalDigits, ppi->BufferLength, ppi->StrLen_or_Ind);
 
-    SQLRETURN ret = -1;
+    SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLBindParameter(cur->hstmt, (SQLUSMALLINT)(index + 1), SQL_PARAM_INPUT,
-        info.ValueType, sqltype, colsize, scale, info.ParameterValuePtr, info.BufferLength, &info.StrLen_or_Ind);
+    ret = SQLBindParameter(cur->hstmt, (SQLUSMALLINT)(i + 1), SQL_PARAM_INPUT,
+        ppi->ValueType, ppi->ParameterType, ppi->ColumnSize,
+        ppi->DecimalDigits, ppi->ParameterValuePtr, ppi->BufferLength, &ppi->StrLen_or_Ind);
     Py_END_ALLOW_THREADS;
-
     if (GetConnection(cur)->hdbc == SQL_NULL_HANDLE)
     {
         // The connection was closed by another thread in the ALLOW_THREADS block above.
@@ -1266,10 +1153,30 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
         RaiseErrorFromHandle(cur->cnxn, "SQLBindParameter", GetConnection(cur)->hdbc, cur->hstmt);
         return false;
     }
+    
+    if (ppi->ValueType == SQL_C_NUMERIC)
+    {
+        SQLHDESC desc;
+        SQLGetStmtAttr(cur->hstmt, SQL_ATTR_APP_PARAM_DESC, &desc, 0, 0);
+        SQLSetDescField(desc, i + 1, SQL_DESC_TYPE, (SQLPOINTER)SQL_C_NUMERIC, 0);
+        SQLSetDescField(desc, i + 1, SQL_DESC_PRECISION, (SQLPOINTER)ppi->ColumnSize, 0);
+        SQLSetDescField(desc, i + 1, SQL_DESC_SCALE, (SQLPOINTER)(uintptr_t)ppi->DecimalDigits, 0);
+        SQLSetDescField(desc, i + 1, SQL_DESC_DATA_PTR, ppi->ParameterValuePtr, 0);
+    }
 
     return true;
 }
 
+static void FreeInfos(ParamInfo* a, Py_ssize_t count)
+{
+    for (Py_ssize_t i = 0; i < count; i++)
+    {
+        if (a[i].allocated)
+            pyodbc_free(a[i].ParameterValuePtr);
+        Py_XDECREF(a[i].pObject);
+    }
+    pyodbc_free(a);
+}
 
 void FreeParameterData(Cursor* cur)
 {
@@ -1380,8 +1287,102 @@ bool Prepare(Cursor* cur, PyObject* pSql)
     return true;
 }
 
-bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool skip_first)
+static bool GetIntVal(PyObject *obj, SQLULEN *pOut)
 {
+    bool ret = false;
+#if PY_MAJOR_VERSION < 3
+    if (ret = PyInt_Check(obj))
+    {
+        *pOut = (SQLULEN)PyInt_AS_LONG(obj);
+    }
+    else
+#endif
+    if (ret = PyLong_Check(obj))
+    {
+        *pOut = (SQLULEN)PyLong_AsLong(obj);
+    }
+    Py_XDECREF(obj);
+    return ret;
+}
+
+void SetParameterInfo(Cursor *cur, Py_ssize_t i, PyObject *value)
+{
+    // Sets the SQL type, length, and precision of the parameter according to and in
+    // order of precedence:
+    // setinputsizes()
+    // SQLDescribeParam
+    // C/Python type
+    // hardcoded default
+    ParamInfo& info = cur->paramInfos[i];
+    SQLSMALLINT nullable;
+    
+    if (!cur->cnxn->supports_describeparam ||
+        !SQL_SUCCEEDED(SQLDescribeParam(cur->hstmt, i + 1, &info.ParameterType,
+        &info.ColumnSize, &info.DecimalDigits, &nullable)))
+    {
+        // Either no DescribeParam or DescribeParam failed, inspect C/Python type and
+        // use that instead
+        if (!DetectSQLType(cur, value, &info))
+        {
+            // Default to a medium-length varchar if all else fails
+            info.ParameterType = SQL_VARCHAR;
+            info.ColumnSize = 255;
+            info.DecimalDigits = 0;
+        }
+    }
+    
+    // If inputsizes() is set, override SQL type and length using it
+    if (cur->inputsizes && i < PySequence_Length(cur->inputsizes))
+    {
+        PyObject *desc = PySequence_GetItem(cur->inputsizes, i);
+        if (desc)
+        {
+            // integer - sets colsize
+            // type object - sets sqltype (not implemented yet; mapping between Python
+            //               and SQL types  is not 1:1 so doesn't seem to offer much)
+            // sequence of (colsize, sqltype, scale) ?
+#if PY_MAJOR_VERSION < 3
+            if (PyInt_Check(desc))
+            {
+                info.ColumnSize = (SQLULEN)PyInt_AS_LONG(desc);
+            }
+            else
+#endif
+            if (PyLong_Check(desc))
+            {
+                info.ColumnSize = (SQLULEN)PyLong_AsLong(desc);
+            }
+            else if(PySequence_Check(desc))
+            {
+                SQLULEN tmp;
+                Py_ssize_t len = PySequence_Size(desc);
+                if (len > 0 && GetIntVal(PySequence_ITEM(desc, 0), &tmp))
+                {
+                    info.ParameterType = (SQLSMALLINT)tmp;
+                }
+                if (len > 1 && GetIntVal(PySequence_ITEM(desc, 1), &tmp))
+                {
+                    info.ColumnSize = tmp;
+                }
+                
+                if (len > 2 && GetIntVal(PySequence_ITEM(desc, 3), &tmp))
+                {
+                    info.DecimalDigits = (SQLSMALLINT)tmp;
+                }
+            }
+            
+        }
+        Py_XDECREF(desc);
+    }
+    TRACE("SetParameterInfo %d -> %d %d %d\n", i, info.ParameterType, info.ColumnSize, info.DecimalDigits);
+}
+
+// Detects the SQL type, then sets the C type and buffer length
+bool ParamSetup(Cursor *cur, PyObject *sql, PyObject* original_params, bool skip_first)
+{
+    if (!Prepare(cur, sql))
+        return false;
+
     //
     // Normalize the parameter variables.
     //
@@ -1392,9 +1393,6 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
     int        params_offset = skip_first ? 1 : 0;
     Py_ssize_t cParams       = original_params == 0 ? 0 : PySequence_Length(original_params) - params_offset;
     
-    if (!Prepare(cur, pSql))
-        return false;
-
     if (cParams != cur->paramcount)
     {
         RaiseErrorV(0, ProgrammingError, "The SQL contains %d parameter markers, but %d parameters were supplied",
@@ -1410,23 +1408,19 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
     }
     memset(cur->paramInfos, 0, sizeof(ParamInfo) * cParams);
 
-    // Since you can't call SQLDesribeParam *after* calling SQLBindParameter, we'll loop through all of the
-    // GetParameterInfos first, then bind.
-
+    // Since you can't call SQLDescribeParam *after* calling SQLBindParameter, we'll loop through all of the
+    // SetParameterInfos first, then bind.
     for (Py_ssize_t i = 0; i < cParams; i++)
     {
         Object param(PySequence_GetItem(original_params, i + params_offset));
-        if (!GetParameterInfo(cur, i, param, cur->paramInfos[i]))
-        {
-            FreeInfos(cur->paramInfos, cParams);
-            cur->paramInfos = 0;
-            return false;
-        }
+        SetParameterInfo(cur, i, param);
     }
-
-    for (Py_ssize_t i = 0; i < cParams; i++)
+    
+    // Determine the C type to use, as well as the suggested length of the binding buffer
+    for (Py_ssize_t i = 0; i < cParams;i++)
     {
-        if (!BindParameter(cur, i, cur->paramInfos[i]))
+        Object param(PySequence_GetItem(original_params, i + params_offset));
+        if (!DetectCType(cur, param, &cur->paramInfos[i]))
         {
             FreeInfos(cur->paramInfos, cParams);
             cur->paramInfos = 0;
@@ -1442,30 +1436,6 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
     bool ret = true;
     char *szLastFunction = 0;
     SQLRETURN rc = SQL_SUCCESS;
-    if (!Prepare(cur, pSql))
-        return false;
-
-    if (!(cur->paramInfos = (ParamInfo*)pyodbc_malloc(sizeof(ParamInfo) * cur->paramcount)))
-    {
-        PyErr_NoMemory();
-        return 0;
-    }
-    memset(cur->paramInfos, 0, sizeof(ParamInfo) * cur->paramcount);
-
-    // Describe each parameter (SQL type) in preparation for allocation of paramset array
-    for (Py_ssize_t i = 0; i < cur->paramcount; i++)
-    {
-        SQLSMALLINT nullable;
-        if(!SQL_SUCCEEDED(SQLDescribeParam(cur->hstmt, i + 1, &(cur->paramInfos[i].ParameterType),
-            &cur->paramInfos[i].ColumnSize, &cur->paramInfos[i].DecimalDigits,
-            &nullable)))
-        {
-            // Default to a medium-length varchar if describing the parameter didn't work
-            cur->paramInfos[i].ParameterType = SQL_VARCHAR;
-            cur->paramInfos[i].ColumnSize = 255;
-            cur->paramInfos[i].DecimalDigits = 0;
-        }
-    }
 
     PyObject *rowseq = PySequence_Fast(paramArrayObj, "Parameter array must be a sequence.");
     if (!rowseq)
@@ -1478,6 +1448,12 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
     }
     Py_ssize_t rowcount = PySequence_Fast_GET_SIZE(rowseq);
     PyObject **rowptr = PySequence_Fast_ITEMS(rowseq);
+
+    // Describe each parameter (SQL type) in preparation for allocation of paramset array
+    if (!ParamSetup(cur, pSql, *rowptr, false))
+    {
+        goto ErrorRet1;
+    }
 
     Py_ssize_t r = 0;
     while ( r < rowcount )
@@ -1510,11 +1486,14 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         Py_ssize_t i = 0;
         for (; i < cur->paramcount; i++)
         {
-            if (!DetectCType(cells[i], &cur->paramInfos[i]))
+            if (!DetectCType(cur, cells[i], &cur->paramInfos[i]))
             {
                 goto ErrorRet3;
             }
 
+            TRACE("BIND: %d %d %d %d %d %p %d %p\n",
+                i+1, cur->paramInfos[i].ValueType, cur->paramInfos[i].ParameterType, cur->paramInfos[i].ColumnSize,
+                cur->paramInfos[i].DecimalDigits, bindptr, cur->paramInfos[i].BufferLength, (SQLLEN*)(bindptr + cur->paramInfos[i].BufferLength));
             if (!SQL_SUCCEEDED(SQLBindParameter(cur->hstmt, i + 1, SQL_PARAM_INPUT, cur->paramInfos[i].ValueType,
                 cur->paramInfos[i].ParameterType, cur->paramInfos[i].ColumnSize, cur->paramInfos[i].DecimalDigits,
                 bindptr, cur->paramInfos[i].BufferLength, (SQLLEN*)(bindptr + cur->paramInfos[i].BufferLength))))
@@ -1642,90 +1621,8 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             goto ErrorRet8;
         }
 
-        // TODO: Refactor into ProcessDAEParams() ?
-        while (rc == SQL_NEED_DATA)
-        {
-            // One or more parameters were too long to bind normally so we set the
-            // length to SQL_LEN_DATA_AT_EXEC.  ODBC will return SQL_NEED_DATA for
-            // each of the parameters we did this for.
-            //
-            // For each one we set a pointer to the ParamInfo as the "parameter
-            // data" we can access with SQLParamData.  We've stashed everything we
-            // need in there.
-
-            szLastFunction = "SQLParamData";
-            DAEParam *pInfo;
-            Py_BEGIN_ALLOW_THREADS
-            rc = SQLParamData(cur->hstmt, (SQLPOINTER*)&pInfo);
-            Py_END_ALLOW_THREADS
-
-            if (rc != SQL_NEED_DATA && rc != SQL_NO_DATA && !SQL_SUCCEEDED(rc))
-                return RaiseErrorFromHandle(cur->cnxn, "SQLParamData", cur->cnxn->hdbc, cur->hstmt);
-
-            TRACE("SQLParamData() --> %d\n", rc);
-
-            if (rc == SQL_NEED_DATA)
-            {
-                szLastFunction = "SQLPutData";
-                if (PyBytes_Check(pInfo->cell))
-                {
-                    const char* p = PyBytes_AS_STRING(pInfo->cell);
-                    SQLLEN offset = 0;
-                    SQLLEN cb = (SQLLEN)PyBytes_GET_SIZE(pInfo->cell);
-                    while (offset < cb)
-                    {
-                        SQLLEN remaining = min(pInfo->maxlen, cb - offset);
-                        TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
-                        Py_BEGIN_ALLOW_THREADS
-                        rc = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
-                        Py_END_ALLOW_THREADS
-                        if (!SQL_SUCCEEDED(rc))
-                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
-                        offset += remaining;
-                    }
-                }
-    #if PY_VERSION_HEX >= 0x02060000
-                else if (PyByteArray_Check(pInfo->cell))
-                {
-                    const char* p = PyByteArray_AS_STRING(pInfo->cell);
-                    SQLLEN offset = 0;
-                    SQLLEN cb     = (SQLLEN)PyByteArray_GET_SIZE(pInfo->cell);
-                    while (offset < cb)
-                    {
-                        SQLLEN remaining = min(pInfo->maxlen, cb - offset);
-                        TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
-                        Py_BEGIN_ALLOW_THREADS
-                        rc = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
-                        Py_END_ALLOW_THREADS
-                        if (!SQL_SUCCEEDED(rc))
-                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
-                        offset += remaining;
-                    }
-                }
-    #endif
-    #if PY_MAJOR_VERSION < 3
-                else if (PyBuffer_Check(pInfo->cell))
-                {
-                    // Buffers can have multiple segments, so we might need multiple writes.  Looping through buffers isn't
-                    // difficult, but we've wrapped it up in an iterator object to keep this loop simple.
-
-                    BufferSegmentIterator it(pInfo->cell);
-                    byte* pb;
-                    SQLLEN cb;
-                    while (it.Next(pb, cb))
-                    {
-                        Py_BEGIN_ALLOW_THREADS
-                        rc = SQLPutData(cur->hstmt, pb, cb);
-                        Py_END_ALLOW_THREADS
-                        if (!SQL_SUCCEEDED(rc))
-                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
-                    }
-                }
-    #endif
-                Py_XDECREF(pInfo->cell);
-                rc = SQL_NEED_DATA;
-            }
-        }
+        if (!ProcessDAEParams(rc, cur, true))
+            return false;
 
         if (!SQL_SUCCEEDED(rc) && rc != SQL_NO_DATA)
             return RaiseErrorFromHandle(cur->cnxn, szLastFunction, cur->cnxn->hdbc, cur->hstmt);
@@ -1736,60 +1633,9 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         cur->paramArray = 0;
     }
 
+    Py_XDECREF(rowseq);
     FreeParameterData(cur);
     return ret;
-}
-
-static bool GetParamType(Cursor* cur, Py_ssize_t index, SQLSMALLINT& type)
-{
-    // Returns the ODBC type of the of given parameter.
-    //
-    // Normally we set the parameter type based on the parameter's Python object type (e.g. str --> SQL_CHAR), so this
-    // is only called when the parameter is None.  In that case, we can't guess the type and have to use
-    // SQLDescribeParam.
-    //
-    // If the database doesn't support SQLDescribeParam, we return SQL_VARCHAR since it converts to most other types.
-    // However, it will not usually work if the target column is a binary column.
-
-    if (!GetConnection(cur)->supports_describeparam || cur->paramcount == 0)
-    {
-        type = SQL_VARCHAR;
-        return true;
-    }
-
-    if (cur->paramtypes == 0)
-    {
-        cur->paramtypes = reinterpret_cast<SQLSMALLINT*>(pyodbc_malloc(sizeof(SQLSMALLINT) * cur->paramcount));
-        if (cur->paramtypes == 0)
-        {
-            PyErr_NoMemory();
-            return false;
-        }
-
-        // SQL_UNKNOWN_TYPE is zero, so zero out all columns since we haven't looked any up yet.
-        memset(cur->paramtypes, 0, sizeof(SQLSMALLINT) * cur->paramcount);
-    }
-
-    if (cur->paramtypes[index] == SQL_UNKNOWN_TYPE)
-    {
-        SQLULEN ParameterSizePtr;
-        SQLSMALLINT DecimalDigitsPtr;
-        SQLSMALLINT NullablePtr;
-        SQLRETURN ret;
-
-        Py_BEGIN_ALLOW_THREADS
-        ret = SQLDescribeParam(cur->hstmt, (SQLUSMALLINT)(index + 1), &cur->paramtypes[index], &ParameterSizePtr, &DecimalDigitsPtr, &NullablePtr);
-        Py_END_ALLOW_THREADS
-
-        if (!SQL_SUCCEEDED(ret))
-        {
-            // This can happen with ("select ?", None).  We'll default to VARCHAR which works with most types.
-            cur->paramtypes[index] = SQL_VARCHAR;
-        }
-    }
-
-    type = cur->paramtypes[index];
-    return true;
 }
 
 struct NullParam

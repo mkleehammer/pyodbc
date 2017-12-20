@@ -27,6 +27,9 @@
 #include "sqlwchar.h"
 #include <datetime.h>
 
+bool ParamSetup(Cursor *cur, PyObject *sql, PyObject* original_params, bool skip_first);
+int BindAndConvert(Cursor *cur, Py_ssize_t i, PyObject *cell, ParamInfo *ppi);
+
 enum
 {
     CURSOR_REQUIRE_CNXN    = 0x00000001,
@@ -555,10 +558,118 @@ static bool PrepareResults(Cursor* cur, int cCols)
     return true;
 }
 
+bool ProcessDAEParams(SQLRETURN &ret, Cursor *cur, bool freeObj)
+{
+    while (ret == SQL_NEED_DATA)
+    {
+        // One or more parameters were too long to bind normally so we set the
+        // length to SQL_LEN_DATA_AT_EXEC.  ODBC will return SQL_NEED_DATA for
+        // each of the parameters we did this for.
+        //
+        // For each one we set a pointer to the ParamInfo as the "parameter
+        // data" we can access with SQLParamData.  We've stashed everything we
+        // need in there.
+
+        void* pInfo;
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLParamData(cur->hstmt, (SQLPOINTER*)&pInfo);
+        Py_END_ALLOW_THREADS
+
+        if (ret != SQL_NEED_DATA && ret != SQL_NO_DATA && !SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle(cur->cnxn, "SQLParamData", cur->cnxn->hdbc, cur->hstmt);
+
+        TRACE("SQLParamData() --> %d\n", ret);
+        PyObject *obj = ((DAEParam*)pInfo)->cell;
+        SQLLEN maxlen = ((DAEParam*)pInfo)->maxlen;
+
+        if (ret == SQL_NEED_DATA)
+        {
+            if (PyBytes_Check(obj))
+            {
+                const char* p = PyBytes_AS_STRING(obj);
+                SQLLEN offset = 0;
+                SQLLEN cb = (SQLLEN)PyBytes_GET_SIZE(obj);
+                do
+                {
+                    SQLLEN remaining = min(maxlen, cb - offset);
+                    TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
+                    Py_BEGIN_ALLOW_THREADS
+                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
+                    Py_END_ALLOW_THREADS
+                    if (!SQL_SUCCEEDED(ret))
+                        return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                    offset += remaining;
+                }
+                while (offset < cb);
+            }
+            else if (PyUnicode_Check(obj))
+            {
+                const char* p = PyUnicode_AS_DATA(obj);
+                SQLLEN offset = 0;
+                SQLLEN cb = (SQLLEN)PyUnicode_GET_SIZE(obj) * sizeof(SQLWCHAR);
+                do
+                {
+                    SQLLEN remaining = min(maxlen, cb - offset);
+                    TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
+                    Py_BEGIN_ALLOW_THREADS
+                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
+                    Py_END_ALLOW_THREADS
+                    if (!SQL_SUCCEEDED(ret))
+                        return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                    offset += remaining;
+                }
+                while (offset < cb);
+            }
+#if PY_VERSION_HEX >= 0x02060000
+            else if (PyByteArray_Check(obj))
+            {
+                const char* p = PyByteArray_AS_STRING(obj);
+                SQLLEN offset = 0;
+                SQLLEN cb     = (SQLLEN)PyByteArray_GET_SIZE(obj);
+                do
+                {
+                    SQLLEN remaining = min(maxlen, cb - offset);
+                    TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
+                    Py_BEGIN_ALLOW_THREADS
+                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
+                    Py_END_ALLOW_THREADS
+                    if (!SQL_SUCCEEDED(ret))
+                        return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                    offset += remaining;
+                }
+                while (offset < cb);
+            }
+#endif
+#if PY_MAJOR_VERSION < 3
+            else if (PyBuffer_Check(obj))
+            {
+                // Buffers can have multiple segments, so we might need multiple writes.  Looping through buffers isn't
+                // difficult, but we've wrapped it up in an iterator object to keep this loop simple.
+
+                BufferSegmentIterator it(obj);
+                byte* pb;
+                SQLLEN cb;
+                while (it.Next(pb, cb))
+                {
+                    Py_BEGIN_ALLOW_THREADS
+                    ret = SQLPutData(cur->hstmt, pb, cb);
+                    Py_END_ALLOW_THREADS
+                    if (!SQL_SUCCEEDED(ret))
+                        return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                }
+            }
+#endif
+            if (freeObj)
+                Py_XDECREF(obj);
+            ret = SQL_NEED_DATA;
+        }
+    }
+    return true;
+}
 
 static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
 {
-    // Internal function to execute SQL, called by .execute and .executemany.
+    // Internal function to execute SQL, called by .execute and non-fast .executemany.
     //
     // pSql
     //   A PyString, PyUnicode, or derived object containing the SQL.
@@ -583,7 +694,6 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
 
     int        params_offset = skip_first ? 1 : 0;
     Py_ssize_t cParams       = params == 0 ? 0 : PySequence_Length(params) - params_offset;
-
     SQLRETURN ret = 0;
 
     free_results(cur, FREE_STATEMENT | KEEP_PREPARED);
@@ -595,10 +705,16 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         // There are parameters, so we'll need to prepare the SQL statement and bind the parameters.  (We need to
         // prepare the statement because we can't bind a NULL (None) object without knowing the target datatype.  There
         // is no one data type that always maps to the others (no, not even varchar)).
-
-        if (!PrepareAndBind(cur, pSql, params, skip_first))
+        if (!ParamSetup(cur, pSql, params, skip_first))
             return 0;
 
+        // Detect, convert, and bind data
+        for (Py_ssize_t i = 0; i < cParams; i++)
+        {
+            Object param(PySequence_GetItem(params, i + params_offset));
+            if (!BindAndConvert(cur, i, param, &cur->paramInfos[i]))
+                return 0;
+        }
         szLastFunction = "SQLExecute";
         Py_BEGIN_ALLOW_THREADS
         ret = SQLExecute(cur->hstmt);
@@ -661,88 +777,8 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         return 0;
     }
 
-    while (ret == SQL_NEED_DATA)
-    {
-        // One or more parameters were too long to bind normally so we set the
-        // length to SQL_LEN_DATA_AT_EXEC.  ODBC will return SQL_NEED_DATA for
-        // each of the parameters we did this for.
-        //
-        // For each one we set a pointer to the ParamInfo as the "parameter
-        // data" we can access with SQLParamData.  We've stashed everything we
-        // need in there.
-
-        szLastFunction = "SQLParamData";
-        ParamInfo* pInfo;
-        Py_BEGIN_ALLOW_THREADS
-        ret = SQLParamData(cur->hstmt, (SQLPOINTER*)&pInfo);
-        Py_END_ALLOW_THREADS
-
-        if (ret != SQL_NEED_DATA && ret != SQL_NO_DATA && !SQL_SUCCEEDED(ret))
-            return RaiseErrorFromHandle(cur->cnxn, "SQLParamData", cur->cnxn->hdbc, cur->hstmt);
-
-        TRACE("SQLParamData() --> %d\n", ret);
-
-        if (ret == SQL_NEED_DATA)
-        {
-            szLastFunction = "SQLPutData";
-            if (PyBytes_Check(pInfo->pObject))
-            {
-                const char* p = PyBytes_AS_STRING(pInfo->pObject);
-                SQLLEN offset = 0;
-                SQLLEN cb = (SQLLEN)PyBytes_GET_SIZE(pInfo->pObject);
-                while (offset < cb)
-                {
-                    SQLLEN remaining = min(pInfo->maxlength, cb - offset);
-                    TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
-                    Py_BEGIN_ALLOW_THREADS
-                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
-                    Py_END_ALLOW_THREADS
-                    if (!SQL_SUCCEEDED(ret))
-                        return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
-                    offset += remaining;
-                }
-            }
-#if PY_VERSION_HEX >= 0x02060000
-            else if (PyByteArray_Check(pInfo->pObject))
-            {
-                const char* p = PyByteArray_AS_STRING(pInfo->pObject);
-                SQLLEN offset = 0;
-                SQLLEN cb     = (SQLLEN)PyByteArray_GET_SIZE(pInfo->pObject);
-                while (offset < cb)
-                {
-                    SQLLEN remaining = min(pInfo->maxlength, cb - offset);
-                    TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
-                    Py_BEGIN_ALLOW_THREADS
-                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
-                    Py_END_ALLOW_THREADS
-                    if (!SQL_SUCCEEDED(ret))
-                        return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
-                    offset += remaining;
-                }
-            }
-#endif
-#if PY_MAJOR_VERSION < 3
-            else if (PyBuffer_Check(pInfo->pObject))
-            {
-                // Buffers can have multiple segments, so we might need multiple writes.  Looping through buffers isn't
-                // difficult, but we've wrapped it up in an iterator object to keep this loop simple.
-
-                BufferSegmentIterator it(pInfo->pObject);
-                byte* pb;
-                SQLLEN cb;
-                while (it.Next(pb, cb))
-                {
-                    Py_BEGIN_ALLOW_THREADS
-                    ret = SQLPutData(cur->hstmt, pb, cb);
-                    Py_END_ALLOW_THREADS
-                    if (!SQL_SUCCEEDED(ret))
-                        return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
-                }
-            }
-#endif
-            ret = SQL_NEED_DATA;
-        }
-    }
+    if (!ProcessDAEParams(ret, cur, false))
+        return 0;
 
     FreeParameterData(cur);
 
@@ -2024,6 +2060,11 @@ static char fastexecmany_doc[] =
     "This read/write attribute specifies whether to use a faster executemany() which\n" \
     "uses parameter arrays. Not all drivers may work with this implementation.";
 
+static char decimalasstring_doc[] =
+    "This read/write attribute specifies whether Decimal objects will be bound as strings\n" \
+    "if the server column is of numerical type, for drivers which do not correctly handle\n" \
+    "SQL_NUMERIC_STRUCT.";
+
 static PyMemberDef Cursor_members[] =
 {
     {"rowcount",    T_INT,       offsetof(Cursor, rowcount),        READONLY, rowcount_doc },
@@ -2031,6 +2072,7 @@ static PyMemberDef Cursor_members[] =
     {"arraysize",   T_INT,       offsetof(Cursor, arraysize),       0,        arraysize_doc },
     {"connection",  T_OBJECT_EX, offsetof(Cursor, cnxn),            READONLY, connection_doc },
     {"fast_executemany",T_BOOL,  offsetof(Cursor, fastexecmany),    0,        fastexecmany_doc },
+    {"decimal_as_string",T_BOOL, offsetof(Cursor, decimal_as_string),0,       decimalasstring_doc },
     { 0 }
 };
 
@@ -2042,10 +2084,10 @@ static PyObject* Cursor_getnoscan(PyObject* self, void *closure)
     if (!cursor)
         return 0;
 
-    SQLUINTEGER noscan = SQL_NOSCAN_OFF;
+    SQLULEN noscan = SQL_NOSCAN_OFF;
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetStmtAttr(cursor->hstmt, SQL_ATTR_NOSCAN, (SQLPOINTER)&noscan, sizeof(SQLUINTEGER), 0);
+    ret = SQLGetStmtAttr(cursor->hstmt, SQL_ATTR_NOSCAN, (SQLPOINTER)&noscan, sizeof(SQLULEN), 0);
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))
@@ -2319,6 +2361,7 @@ Cursor_New(Connection* cnxn)
         cur->rowcount          = -1;
         cur->map_name_to_index = 0;
         cur->fastexecmany      = 0;
+        cur->decimal_as_string = 0;
 
         Py_INCREF(cnxn);
         Py_INCREF(cur->description);
