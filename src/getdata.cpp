@@ -644,6 +644,55 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
 }
 
 
+static PyObject* GetDataYearMonthInterval(Cursor* cur, Py_ssize_t iCol)
+{
+    SQL_INTERVAL_STRUCT value;
+
+    SQLLEN cbFetched = 0;
+    SQLRETURN ret;
+
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_INTERVAL_YEAR_TO_MONTH, &value, sizeof(value), &cbFetched);
+    Py_END_ALLOW_THREADS
+
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+
+    if (cbFetched == SQL_NULL_DATA)
+        Py_RETURN_NONE;
+
+    int sign = value.interval_sign == SQL_TRUE ? -1 : 1;
+    long int months = value.intval.year_month.year * 12 + value.intval.year_month.month;
+
+    return PyInt_FromLong(sign * months);
+}
+
+static PyObject* GetDataDaySecondInterval(Cursor* cur, Py_ssize_t iCol)
+{
+    SQL_INTERVAL_STRUCT value;
+
+    SQLLEN cbFetched = 0;
+    SQLRETURN ret;
+
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_INTERVAL_DAY_TO_SECOND, &value, sizeof(value), &cbFetched);
+    Py_END_ALLOW_THREADS
+
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+
+    if (cbFetched == SQL_NULL_DATA)
+        Py_RETURN_NONE;
+
+    int sign = value.interval_sign == SQL_TRUE ? -1 : 1;
+
+    long int days = value.intval.day_second.day;
+    long int seconds = value.intval.day_second.hour * 3600 + value.intval.day_second.minute * 60 + value.intval.day_second.second;
+    long int micros = value.intval.day_second.fraction;
+
+    return PyDelta_FromDSU(sign * days, sign * seconds, sign * micros);
+}
+
 int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
 {
     // If this sql type has a user-defined conversion, the index into the connection's `conv_funcs` array is returned.
@@ -749,6 +798,25 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
         pytype = (PyObject*)PyDateTimeAPI->DateTimeType;
         break;
 
+    case SQL_INTERVAL_YEAR:
+    case SQL_INTERVAL_MONTH:
+    case SQL_INTERVAL_YEAR_TO_MONTH:
+        pytype = (PyObject*)&PyInt_Type;
+        break;
+
+    case SQL_INTERVAL_DAY:
+    case SQL_INTERVAL_HOUR:
+    case SQL_INTERVAL_MINUTE:
+    case SQL_INTERVAL_SECOND:
+    case SQL_INTERVAL_DAY_TO_HOUR:
+    case SQL_INTERVAL_DAY_TO_MINUTE:
+    case SQL_INTERVAL_DAY_TO_SECOND:
+    case SQL_INTERVAL_HOUR_TO_MINUTE:
+    case SQL_INTERVAL_HOUR_TO_SECOND:
+    case SQL_INTERVAL_MINUTE_TO_SECOND:
+        pytype = (PyObject*)PyDateTimeAPI->DeltaType;
+        break;
+
     case SQL_BIGINT:
         pytype = (PyObject*)&PyLong_Type;
         break;
@@ -838,6 +906,23 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_TYPE_TIME:
     case SQL_TYPE_TIMESTAMP:
         return GetDataTimestamp(cur, iCol);
+
+    case SQL_INTERVAL_YEAR:
+    case SQL_INTERVAL_MONTH:
+    case SQL_INTERVAL_YEAR_TO_MONTH:
+        return GetDataYearMonthInterval(cur, iCol);
+
+    case SQL_INTERVAL_DAY:
+    case SQL_INTERVAL_HOUR:
+    case SQL_INTERVAL_MINUTE:
+    case SQL_INTERVAL_SECOND:
+    case SQL_INTERVAL_DAY_TO_HOUR:
+    case SQL_INTERVAL_DAY_TO_MINUTE:
+    case SQL_INTERVAL_DAY_TO_SECOND:
+    case SQL_INTERVAL_HOUR_TO_MINUTE:
+    case SQL_INTERVAL_HOUR_TO_SECOND:
+    case SQL_INTERVAL_MINUTE_TO_SECOND:
+        return GetDataDaySecondInterval(cur, iCol);
 
     case SQL_SS_TIME2:
         return GetSqlServerTime(cur, iCol);
