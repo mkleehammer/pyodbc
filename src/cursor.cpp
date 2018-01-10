@@ -942,6 +942,7 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
         }
         if (cursor->fastexecmany)
         {
+            free_results(cursor, FREE_STATEMENT | KEEP_PREPARED);
             if (!ExecuteMulti(cursor, pSql, param_seq))
                 return 0;
         }
