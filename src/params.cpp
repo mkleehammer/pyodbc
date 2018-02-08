@@ -85,7 +85,18 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
 #else
         pi->ValueType = SQL_C_BINARY;
 #endif
-        pi->BufferLength = pi->ColumnSize ? pi->ColumnSize : sizeof(DAEParam);
+        
+        // Fix for smalldatetime issue:
+        // smalldatetime does not store seconds, thus the size of data as a string is 'NNNN-NN-NN NN:NN' (16 characters)
+        // ODBC driver requires datetime string data to be passed in as 'NNNN-NN-NN NN:NN:NN' (19 characters) regardless
+        // Any buffer used to store datetime strings must be at least 19 characters long
+        SQLULEN numCharacters = pi->ColumnSize;
+        if(pi->ParameterType == SQL_TYPE_TIMESTAMP)
+        {
+            numCharacters = max(pi->ColumnSize, 19);
+        }
+
+        pi->BufferLength = numCharacters ? numCharacters * sizeof(SQLWCHAR) : sizeof(DAEParam);
     }
     else if (PyUnicode_Check(cell))
     {
