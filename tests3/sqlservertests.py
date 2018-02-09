@@ -1341,7 +1341,7 @@ class SqlServerTestCase(unittest.TestCase):
     def test_drivers(self):
         drivers = pyodbc.drivers()
         self.assertEqual(list, type(drivers))
-        self.assert_(len(drivers) > 1)
+        self.assert_(len(drivers) > 0)
 
         m = re.search('DRIVER={([^}]+)}', self.connection_string, re.IGNORECASE)
         current = m.group(1)
