@@ -451,7 +451,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
             if (Text_EqualsI(key, "encoding"))
             {
 #if PY_MAJOR_VERSION < 3
-                if (!PyString_Check(value) || !PyUnicode_Check(value))
+                if (!PyString_Check(value) && !PyUnicode_Check(value))
                     return PyErr_Format(PyExc_TypeError, "encoding must be a string or unicode object");
 #else
                 if (!PyUnicode_Check(value))
@@ -1039,6 +1039,22 @@ static const ConstantDef aConstants[] = {
     MAKECONST(SQL_UNION),
     MAKECONST(SQL_USER_NAME),
     MAKECONST(SQL_XOPEN_CLI_YEAR),
+    
+    // SQLSetConnectAttr transaction isolation
+    MAKECONST(SQL_ATTR_TXN_ISOLATION),
+    MAKECONST(SQL_TXN_READ_UNCOMMITTED),
+    MAKECONST(SQL_TXN_READ_COMMITTED),
+    MAKECONST(SQL_TXN_REPEATABLE_READ),
+    MAKECONST(SQL_TXN_SERIALIZABLE),
+    
+    // Outer Join Capabilities
+    MAKECONST(SQL_OJ_LEFT),
+    MAKECONST(SQL_OJ_RIGHT),
+    MAKECONST(SQL_OJ_FULL),
+    MAKECONST(SQL_OJ_NESTED),
+    MAKECONST(SQL_OJ_NOT_ORDERED),
+    MAKECONST(SQL_OJ_INNER),
+    MAKECONST(SQL_OJ_ALL_COMPARISON_OPS),
 };
 
 

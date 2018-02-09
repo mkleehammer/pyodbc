@@ -95,7 +95,11 @@ def main():
                        'Operating System :: POSIX',
                        'Programming Language :: Python',
                        'Programming Language :: Python :: 2',
+                       'Programming Language :: Python :: 2.7',
                        'Programming Language :: Python :: 3',
+                       'Programming Language :: Python :: 3.4',
+                       'Programming Language :: Python :: 3.5',
+                       'Programming Language :: Python :: 3.6',
                        'Topic :: Database',
                        ],
 
@@ -116,6 +120,7 @@ def get_compiler_settings(version_str):
 
     settings = {
         'extra_compile_args' : [],
+        'extra_link_args': [],
         'libraries': [],
         'include_dirs': [],
         'define_macros' : [ ('PYODBC_VERSION', version_str) ]
@@ -173,11 +178,22 @@ def get_compiler_settings(version_str):
         dirs = ['/usr/local/include', '/opt/local/include','~/homebrew/include']
         settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
 
+        # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
+        # ( also OS/X since El Capitan prevents /usr/lib from being accessed )
+        settings['library_dirs'] = [ '/usr/local/lib' ]
+
     else:
         # Other posix-like: Linux, Solaris, etc.
 
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].append('-Wno-write-strings')
+
+        cflags = os.popen('odbc_config --cflags 2>/dev/null').read().strip()
+        if cflags:
+            settings['extra_compile_args'].extend(cflags.split())
+        ldflags = os.popen('odbc_config --libs 2>/dev/null').read().strip()
+        if ldflags:
+            settings['extra_link_args'].extend(ldflags.split())
 
         from array import array
         UNICODE_WIDTH = array('u').itemsize

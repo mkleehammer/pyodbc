@@ -19,15 +19,27 @@ struct SqlStateMapping
 
 static const struct SqlStateMapping sql_state_mapping[] =
 {
+    { "01002", 5, &OperationalError },
+    { "08001", 5, &OperationalError },
+    { "08003", 5, &OperationalError },
+    { "08004", 5, &OperationalError },
+    { "08007", 5, &OperationalError },
+    { "08S01", 5, &OperationalError },
     { "0A000", 5, &NotSupportedError },
+    { "28000", 5, &InterfaceError },
     { "40002", 5, &IntegrityError },
     { "22",    2, &DataError },
     { "23",    2, &IntegrityError },
     { "24",    2, &ProgrammingError },
     { "25",    2, &ProgrammingError },
     { "42",    2, &ProgrammingError },
+    { "HY001", 5, &OperationalError },
+    { "HY014", 5, &OperationalError },
     { "HYT00", 5, &OperationalError },
     { "HYT01", 5, &OperationalError },
+    { "IM001", 5, &InterfaceError },
+    { "IM002", 5, &InterfaceError },
+    { "IM003", 5, &InterfaceError },
 };
 
 
