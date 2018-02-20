@@ -1449,6 +1449,21 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         goto ErrorRet1;
     }
 
+#if 0
+    for (Py_ssize_t i = 0; i < cur->paramcount; i++)
+    {
+        SQLSMALLINT nullable;
+        if(!SQL_SUCCEEDED(SQLDescribeParam(cur->hstmt, i + 1, &(cur->paramInfos[i].ParameterType),
+            &cur->paramInfos[i].ColumnSize, &cur->paramInfos[i].DecimalDigits,
+            &nullable)))
+        {
+            // Default to a medium-length varchar if describing the parameter didn't work
+            cur->paramInfos[i].ParameterType = SQL_VARCHAR;
+            cur->paramInfos[i].ColumnSize = 255;
+            cur->paramInfos[i].DecimalDigits = 0;
+        }
+    }
+#endif    
     Py_ssize_t r = 0;
     while ( r < rowcount )
     {
