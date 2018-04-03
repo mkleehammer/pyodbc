@@ -320,6 +320,34 @@ static bool AllocateEnv()
     return true;
 }
 
+static bool CheckAttrsVal(PyObject *val, bool allowSeq)
+{
+    if (IntOrLong_Check(val)
+#if PY_MAJOR_VERSION < 3
+     || PyBuffer_Check(val)
+#endif
+#if PY_VERSION_HEX >= 0x02060000
+     || PyByteArray_Check(val)
+#endif
+     || PyBytes_Check(val)
+     || PyUnicode_Check(val))
+        return true;
+    printf("CheckAttrsVal - sequence\n");
+    if (allowSeq && PySequence_Check(val))
+    {
+        Py_ssize_t len = PySequence_Size(val);
+        for (Py_ssize_t i = 0; i < len; i++)
+        {
+            Object v(PySequence_GetItem(val, i));
+            if (!CheckAttrsVal(v, false))
+                return false;
+        }
+        return true;
+    }
+    return (bool)PyErr_Format(PyExc_TypeError, "Attribute dictionary attrs must be"
+        " integers, buffers, bytes, %s", allowSeq ? "strings, or sequences" : "or strings");
+}
+
 static PyObject* _CheckAttrsDict(PyObject* attrs)
 {
     // The attrs_before dictionary must be keys to integer values.  If valid and non-empty,
@@ -340,8 +368,9 @@ static PyObject* _CheckAttrsDict(PyObject* attrs)
     {
         if (!IntOrLong_Check(key))
             return PyErr_Format(PyExc_TypeError, "Attribute dictionary keys must be integers");
-        if (!IntOrLong_Check(value))
-            return PyErr_Format(PyExc_TypeError, "Attribute dictionary attrs must be integers");
+
+        if (!CheckAttrsVal(value, true))
+            return 0;
     }
     Py_INCREF(attrs);
     return attrs;
@@ -441,7 +470,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
                 fReadOnly = PyObject_IsTrue(value);
                 continue;
             }
-            if (Text_EqualsI(key, "attrs_before"))
+            if (Text_EqualsI(key, "attrs_before") && PyDict_Check(value))
             {
                 attrs_before = _CheckAttrsDict(value);
                 if (PyErr_Occurred())
@@ -506,7 +535,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     }
 
     return (PyObject*)Connection_New(pConnectString.Get(), fAutoCommit != 0, fAnsi != 0, timeout,
-                                     fReadOnly != 0, attrs_before, encoding);
+                                     fReadOnly != 0, attrs_before.Detach(), encoding);
 }
 
 
@@ -1039,7 +1068,23 @@ static const ConstantDef aConstants[] = {
     MAKECONST(SQL_UNION),
     MAKECONST(SQL_USER_NAME),
     MAKECONST(SQL_XOPEN_CLI_YEAR),
-    
+
+    // Connection Attributes
+    MAKECONST(SQL_ACCESS_MODE), MAKECONST(SQL_ATTR_ACCESS_MODE),
+    MAKECONST(SQL_AUTOCOMMIT), MAKECONST(SQL_ATTR_AUTOCOMMIT),
+    MAKECONST(SQL_LOGIN_TIMEOUT), MAKECONST(SQL_ATTR_LOGIN_TIMEOUT),
+    MAKECONST(SQL_OPT_TRACE), MAKECONST(SQL_ATTR_TRACE),
+    MAKECONST(SQL_OPT_TRACEFILE), MAKECONST(SQL_ATTR_TRACEFILE),
+    MAKECONST(SQL_TRANSLATE_DLL), MAKECONST(SQL_ATTR_TRANSLATE_LIB),
+    MAKECONST(SQL_TRANSLATE_OPTION), MAKECONST(SQL_ATTR_TRANSLATE_OPTION),
+    MAKECONST(SQL_TXN_ISOLATION), MAKECONST(SQL_ATTR_TXN_ISOLATION),
+    MAKECONST(SQL_CURRENT_QUALIFIER), MAKECONST(SQL_ATTR_CURRENT_CATALOG),
+    MAKECONST(SQL_ODBC_CURSORS), MAKECONST(SQL_ATTR_ODBC_CURSORS),
+    MAKECONST(SQL_QUIET_MODE), MAKECONST(SQL_ATTR_QUIET_MODE),
+    MAKECONST(SQL_PACKET_SIZE),
+    MAKECONST(SQL_ATTR_ANSI_APP),
+
+
     // SQLSetConnectAttr transaction isolation
     MAKECONST(SQL_ATTR_TXN_ISOLATION),
     MAKECONST(SQL_TXN_READ_UNCOMMITTED),

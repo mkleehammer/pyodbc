@@ -9,6 +9,7 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "pyodbc.h"
+#include "buffer.h"
 #include "wrapper.h"
 #include "textenc.h"
 #include "connection.h"
@@ -121,6 +122,95 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
     return false;
 }
 
+static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value)
+{
+    SQLRETURN ret;
+    SQLPOINTER ivalue = 0;
+    SQLINTEGER vallen = 0;
+
+    if (PyLong_Check(value))
+    {
+        ivalue = (SQLPOINTER)PyLong_AsLong(value);
+        vallen = ivalue < 0 ? SQL_IS_INTEGER : SQL_IS_UINTEGER;
+    }
+#if PY_MAJOR_VERSION < 3
+    else if (PyInt_Check(value))
+    {
+        ivalue = (SQLPOINTER)PyInt_AsLong(value);
+        vallen = ivalue < 0 ? SQL_IS_INTEGER : SQL_IS_UINTEGER;
+    }
+    else if (PyBuffer_Check(value))
+    {
+        // We can only assume and take the first segment.
+        PyBuffer_GetMemory(value, (const char**)&ivalue);
+        vallen = SQL_IS_POINTER;
+    }
+#endif
+#if PY_VERSION_HEX >= 0x02060000
+    else if (PyByteArray_Check(value))
+    {
+        ivalue = (SQLPOINTER)PyByteArray_AsString(value);
+        vallen = SQL_IS_POINTER;
+    }
+#endif
+    else if (PyBytes_Check(value))
+    {
+        ivalue = PyBytes_AS_STRING(value);
+#if PY_MAJOR_VERSION < 3
+        vallen = SQL_NTS;
+#else
+        vallen = SQL_IS_POINTER;
+#endif
+    }
+    else if (PyUnicode_Check(value))
+    {
+if (sizeof(Py_UNICODE) == 2) // Should be compile-time.
+{
+        ivalue = PyUnicode_AS_UNICODE(value);
+}
+else
+{
+        Object uniStr(PyUnicode_EncodeUTF16(
+                          PyUnicode_AS_UNICODE(value),
+                          PyUnicode_GET_DATA_SIZE(value),
+                          0,
+                          -1));
+        ivalue = PyBytes_AS_STRING(uniStr.Get());
+}
+        vallen = SQL_NTS;
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLSetConnectAttrW(hdbc, ikey, ivalue, vallen);
+        Py_END_ALLOW_THREADS
+        goto checkSuccess;
+    }
+    else if (PySequence_Check(value))
+    {
+        // To allow for possibility of setting multiple attributes more than once.
+        Py_ssize_t len = PySequence_Size(value);
+        for (Py_ssize_t i = 0; i < len; i++)
+        {
+            Object v(PySequence_GetItem(value, i));
+            if (!ApplyPreconnAttrs(hdbc, ikey, v.Get()))
+                return false;
+        }
+        return true;
+    }
+
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLSetConnectAttr(hdbc, ikey, ivalue, vallen);
+    Py_END_ALLOW_THREADS
+
+checkSuccess:
+    if (!SQL_SUCCEEDED(ret))
+    {
+        RaiseErrorFromHandle(0, "SQLSetConnectAttr", hdbc, SQL_NULL_HANDLE);
+        Py_BEGIN_ALLOW_THREADS
+        SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
+        Py_END_ALLOW_THREADS
+        return false;
+    }
+    return true;
+}
 
 PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, long timeout, bool fReadOnly,
                          PyObject* attrs_before, Object& encoding)
@@ -135,6 +225,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     // Allocate HDBC and connect
     //
 
+    Object attrs_before_o(attrs_before);
     HDBC hdbc = SQL_NULL_HANDLE;
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
@@ -154,27 +245,16 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
         PyObject* value = 0;
         while (PyDict_Next(attrs_before, &pos, &key, &value))
         {
-            int ikey = 0, ivalue = 0;
-#if PY_MAJOR_VERSION < 3
-            if (PyInt_Check(key))
-                ikey = (int)PyInt_AsLong(key);
-            if (PyInt_Check(value))
-                ivalue = (int)PyInt_AsLong(value);
-#endif
+            SQLINTEGER ikey = 0;
+
             if (PyLong_Check(key))
                 ikey = (int)PyLong_AsLong(key);
-            if (PyLong_Check(value))
-                ivalue = (int)PyLong_AsLong(value);
-
-            Py_BEGIN_ALLOW_THREADS
-            ret = SQLSetConnectAttr(hdbc, ikey, (SQLPOINTER)(uintptr_t)ivalue, SQL_IS_INTEGER);
-            Py_END_ALLOW_THREADS
-            if (!SQL_SUCCEEDED(ret))
+#if PY_MAJOR_VERSION < 3
+            else if (PyInt_Check(key))
+                ikey = (int)PyInt_AsLong(key);
+#endif
+            if (!ApplyPreconnAttrs(hdbc, ikey, value))
             {
-                RaiseErrorFromHandle(0, "SQLSetConnectAttr", hdbc, SQL_NULL_HANDLE);
-                Py_BEGIN_ALLOW_THREADS
-                SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
-                Py_END_ALLOW_THREADS
                 return 0;
             }
         }
@@ -219,6 +299,8 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->conv_count   = 0;
     cnxn->conv_types   = 0;
     cnxn->conv_funcs   = 0;
+
+    cnxn->attrs_before = attrs_before_o.Detach();
 
     // This is an inefficient default, but should work all the time.  When we are offered
     // single-byte text we don't actually know what the encoding is.  For example, with SQL
@@ -422,6 +504,9 @@ static int Connection_clear(PyObject* self)
     free((void*)cnxn->str_enc.name);
     cnxn->str_enc.name = 0;
 #endif
+
+    Py_XDECREF(cnxn->attrs_before);
+    cnxn->attrs_before = 0;
 
     _clear_conv(cnxn);
 
