@@ -15,12 +15,6 @@
 
 struct Connection;
 
-struct DAEParam
-{
-    PyObject *cell;
-    SQLLEN maxlen;
-};
-
 struct ColumnInfo
 {
     SQLSMALLINT sql_type;
@@ -50,6 +44,7 @@ struct ParamInfo
     // The value pointer that will be bound.  If `alloc` is true, this was allocated with malloc and must be freed.
     // Otherwise it is zero or points into memory owned by the original Python parameter.
     SQLPOINTER ParameterValuePtr;
+
     SQLLEN BufferLength;
     SQLLEN StrLen_or_Ind;
 
@@ -79,11 +74,7 @@ struct ParamInfo
         TIMESTAMP_STRUCT timestamp;
         DATE_STRUCT date;
         TIME_STRUCT time;
-        DAEParam dae;
     } Data;
-    // To ensure enough space for the indicator, which follows the data immediately.
-    // This field is not written directly but is used to occupy its space.
-    SQLLEN dummyStrLen_or_Ind;
 };
 
 struct Cursor
@@ -126,9 +117,6 @@ struct Cursor
     // Whether to use fast executemany with parameter arrays and other optimisations
     char fastexecmany;
     
-    // Whether to bind DECIMAL as string, for those drivers that can't handle SQL_NUMERIC_STRUCT
-    char decimal_as_string;
-    
     // The list of information for setinputsizes().
     PyObject *inputsizes;
 
@@ -164,6 +152,5 @@ void Cursor_init();
 
 Cursor* Cursor_New(Connection* cnxn);
 PyObject* Cursor_execute(PyObject* self, PyObject* args);
-bool ProcessDAEParams(SQLRETURN &ret, Cursor *cur, bool freeObj);
 
 #endif
