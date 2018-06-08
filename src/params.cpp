@@ -259,7 +259,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                     Py_XDECREF(absVal);
                     return false;
                 }
-                
+
                 if (!scaler_table[pi->DecimalDigits - 1])
                 {
                     if (!tenObject)
@@ -530,7 +530,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             return false;
 
         Py_XDECREF(normCell);
-        
+
         SQL_NUMERIC_STRUCT *pNum = (SQL_NUMERIC_STRUCT*)*outbuf;
         pNum->sign = !PyInt_AsLong(PyTuple_GET_ITEM(cellParts, 0));
         PyObject*  digits = PyTuple_GET_ITEM(cellParts, 1);
@@ -545,7 +545,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             RaiseErrorV(0, ProgrammingError, "Converting decimal loses precision");
             return false;
         }
-        
+
         // Append '0's to the end of the digits to effect the scaling.
         PyObject *newDigits = PyTuple_New(numDigits + scaleDiff);
         for (Py_ssize_t i = 0; i < numDigits; i++)
@@ -1391,7 +1391,7 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 
     int        params_offset = skip_first ? 1 : 0;
     Py_ssize_t cParams       = original_params == 0 ? 0 : PySequence_Length(original_params) - params_offset;
-    
+
     if (!Prepare(cur, pSql))
         return false;
 
@@ -1464,6 +1464,33 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             cur->paramInfos[i].ParameterType = SQL_VARCHAR;
             cur->paramInfos[i].ColumnSize = 255;
             cur->paramInfos[i].DecimalDigits = 0;
+        }
+
+        // This supports overriding of input sizes via setinputsizes
+        // See issue 380
+        // The logic is duplicated from BindParameter
+        if (cur->inputsizes && i < PySequence_Length(cur->inputsizes))
+        {
+            PyObject *desc = PySequence_GetItem(cur->inputsizes, i);
+            if (desc)
+            {
+                // integer - sets colsize
+                // type object - sets sqltype (not implemented yet; mapping between Python
+                //               and SQL types  is not 1:1 so doesn't seem to offer much)
+                // Consider: sequence of (colsize, sqltype, scale) ?
+#if PY_MAJOR_VERSION < 3
+                if (PyInt_Check(desc))
+                {
+                    cur->paramInfos[i].ColumnSize = (SQLULEN)PyInt_AS_LONG(desc);
+                }
+                else
+#endif
+                if (PyLong_Check(desc))
+                {
+                    cur->paramInfos[i].ColumnSize = (SQLULEN)PyLong_AsLong(desc);
+                }
+            }
+            Py_XDECREF(desc);
         }
     }
 
@@ -1548,7 +1575,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
 
         unsigned char *pParamDat = cur->paramArray;
         Py_ssize_t rows_converted = 0;
-        
+
         ParamInfo *pi;
         for (;;)
         {
@@ -1729,7 +1756,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
 
         if (!SQL_SUCCEEDED(rc) && rc != SQL_NO_DATA)
             return RaiseErrorFromHandle(cur->cnxn, szLastFunction, cur->cnxn->hdbc, cur->hstmt);
-        
+
         SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAMSET_SIZE, (SQLPOINTER)1, SQL_IS_UINTEGER);
         SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAM_BIND_OFFSET_PTR, 0, SQL_IS_POINTER);
         pyodbc_free(cur->paramArray);
