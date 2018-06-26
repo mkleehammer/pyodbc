@@ -1251,6 +1251,13 @@ static long getSequenceValue(PyObject *pSequence, Py_ssize_t nIndex, long nDefau
 	return v;
 }
 
+/**
+ * UpdateParamInfo updates the current columnsizes with the information provided
+ * by a set from the client code, to manually override values returned by SQLDescribeParam()
+ * which can be wrong in case of SQL Server statements.
+ *
+ * sparhawk@gmx.at (Gerhard Gruber)
+ */
 static bool UpdateParamInfo(Cursor* pCursor, Py_ssize_t nIndex, ParamInfo *pInfo)
 {
 	if (pCursor->inputsizes == NULL || nIndex >= PySequence_Length(pCursor->inputsizes))
@@ -1264,14 +1271,13 @@ static bool UpdateParamInfo(Cursor* pCursor, Py_ssize_t nIndex, ParamInfo *pInfo
 	long v;
 	bool clearError = true;
 
-	// if the error was already set before we entereed here, it is not from us, so we leave it alone.
+	// If the error was already set before we entered here, it is not from us, so we leave it alone.
 	if (PyErr_Occurred())
 		clearError = false;
 
 	// integer - sets colsize
-	// type object - sets sqltype (not implemented yet; mapping between Python
-	//               and SQL types  is not 1:1 so doesn't seem to offer much)
-	// Consider: sequence of (colsize, sqltype, scale) ?
+	// type object - sets sqltype (mapping between Python and SQL types is not 1:1 so it may not always work)
+	// Consider: sequence of (colsize, sqltype, scale)
 	if (getObjectValue(desc, v))
 	{
 		pInfo->ColumnSize = (SQLULEN)v;
