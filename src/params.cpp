@@ -21,8 +21,6 @@
 #include "row.h"
 #include <datetime.h>
 
-
-
 inline Connection* GetConnection(Cursor* cursor)
 {
     return (Connection*)cursor->cnxn;
@@ -272,8 +270,8 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                 Py_XDECREF(absVal);
                 absVal = scaledVal;
             }
-            pNum->precision = pi->ColumnSize;
-            pNum->scale = pi->DecimalDigits;
+            pNum->precision = (SQLCHAR)pi->ColumnSize;
+            pNum->scale = (SQLCHAR)pi->DecimalDigits;
             pNum->sign = _PyLong_Sign(cell) >= 0;
             if (_PyLong_AsByteArray((PyLongObject*)absVal, pNum->val, sizeof(pNum->val), 1, 0))
                 goto NumericOverflow;
@@ -564,8 +562,8 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         Py_XDECREF(scaledDecimal);
         Py_XDECREF(cellParts);
 
-        pNum->precision = pi->ColumnSize;
-        pNum->scale = pi->DecimalDigits;
+        pNum->precision = (SQLCHAR)pi->ColumnSize;
+        pNum->scale = (SQLCHAR)pi->DecimalDigits;
 
         int ret = _PyLong_AsByteArray((PyLongObject*)digitLong, pNum->val, sizeof(pNum->val), 1, 0);
         Py_XDECREF(digitLong);
@@ -1215,36 +1213,105 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     return false;
 }
 
+static bool getObjectValue(PyObject *pObject, long& nValue)
+{
+	if (pObject == NULL)
+		return false;
+
+#if PY_MAJOR_VERSION < 3
+	if (PyInt_Check(pObject))
+	{
+		nValue = PyInt_AS_LONG(pObject);
+		return true;
+	}
+
+#endif
+	if (PyLong_Check(pObject))
+	{
+		nValue = PyLong_AsLong(pObject);
+		return true;
+	}
+
+	return false;
+}
+
+static long getSequenceValue(PyObject *pSequence, Py_ssize_t nIndex, long nDefault, bool &bChanged)
+{
+	PyObject *obj;
+	long v = nDefault;
+
+	obj = PySequence_GetItem(pSequence, nIndex);
+	if (obj != NULL)
+	{
+		if (getObjectValue(obj, v))
+			bChanged = true;
+	}
+	Py_CLEAR(obj);
+
+	return v;
+}
+
+static bool UpdateParamInfo(Cursor* pCursor, Py_ssize_t nIndex, ParamInfo *pInfo)
+{
+	if (pCursor->inputsizes == NULL || nIndex >= PySequence_Length(pCursor->inputsizes))
+		return false;
+
+	PyObject *desc = PySequence_GetItem(pCursor->inputsizes, nIndex);
+	if (desc == NULL)
+		return false;
+
+	bool rc = false;
+	long v;
+	bool clearError = true;
+
+	// if the error was already set before we entereed here, it is not from us, so we leave it alone.
+	if (PyErr_Occurred())
+		clearError = false;
+
+	// integer - sets colsize
+	// type object - sets sqltype (not implemented yet; mapping between Python
+	//               and SQL types  is not 1:1 so doesn't seem to offer much)
+	// Consider: sequence of (colsize, sqltype, scale) ?
+	if (getObjectValue(desc, v))
+	{
+		pInfo->ColumnSize = (SQLULEN)v;
+		rc = true;
+	}
+	else if (PySequence_Check(desc))
+	{
+		pInfo->ParameterType = (SQLSMALLINT)getSequenceValue(desc, 0, (long)pInfo->ParameterType, rc);
+		pInfo->ColumnSize = (SQLUINTEGER)getSequenceValue(desc, 1, (long)pInfo->ColumnSize, rc);
+		pInfo->DecimalDigits = (SQLSMALLINT)getSequenceValue(desc, 2, (long)pInfo->ColumnSize, rc);
+	}
+
+	Py_CLEAR(desc);
+
+	// If the user didn't provide the full array (in case he gave us an array), the above code would
+	// set an internal error on the cursor object, as we try to read three values from an array
+	// which may not have as many. This is ok, because we don't really care if the array is not completly
+	// specified, so we clear the error in case it comes from this. If the error was already present before that
+	// we keep it, so the user can handle it.
+	if (clearError)
+		PyErr_Clear();
+
+	return rc;
+}
+
 bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 {
     SQLSMALLINT sqltype = info.ParameterType;
     SQLULEN colsize = info.ColumnSize;
     SQLSMALLINT scale = info.DecimalDigits;
 
-    if (cur->inputsizes && index < PySequence_Length(cur->inputsizes))
+    if (UpdateParamInfo(cur, index, &info))
     {
-        PyObject *desc = PySequence_GetItem(cur->inputsizes, index);
-        if (desc)
-        {
-            // integer - sets colsize
-            // type object - sets sqltype (not implemented yet; mapping between Python
-            //               and SQL types  is not 1:1 so doesn't seem to offer much)
-            // Consider: sequence of (colsize, sqltype, scale) ?
-#if PY_MAJOR_VERSION < 3
-            if (PyInt_Check(desc))
-            {
-                colsize = (SQLULEN)PyInt_AS_LONG(desc);
-            }
-            else
-#endif
-            if (PyLong_Check(desc))
-            {
-                colsize = (SQLULEN)PyLong_AsLong(desc);
-            }
-        }
-        Py_XDECREF(desc);
+		// Reload in case it has changed.
+		colsize = info.ColumnSize;
+		sqltype = info.ParameterType;
+		scale = info.DecimalDigits;
     }
-    TRACE("BIND: param=%ld ValueType=%d (%s) ParameterType=%d (%s) ColumnSize=%ld DecimalDigits=%d BufferLength=%ld *pcb=%ld\n",
+
+	TRACE("BIND: param=%ld ValueType=%d (%s) ParameterType=%d (%s) ColumnSize=%ld DecimalDigits=%d BufferLength=%ld *pcb=%ld\n",
           (index+1), info.ValueType, CTypeName(info.ValueType), sqltype, SqlTypeName(sqltype), colsize,
           scale, info.BufferLength, info.StrLen_or_Ind);
 
@@ -1452,10 +1519,10 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
     }
     memset(cur->paramInfos, 0, sizeof(ParamInfo) * cur->paramcount);
 
-    // Describe each parameter (SQL type) in preparation for allocation of paramset array
+	// Describe each parameter (SQL type) in preparation for allocation of paramset array
     for (Py_ssize_t i = 0; i < cur->paramcount; i++)
     {
-        SQLSMALLINT nullable;
+		SQLSMALLINT nullable;
         if(!SQL_SUCCEEDED(SQLDescribeParam(cur->hstmt, i + 1, &(cur->paramInfos[i].ParameterType),
             &cur->paramInfos[i].ColumnSize, &cur->paramInfos[i].DecimalDigits,
             &nullable)))
@@ -1466,33 +1533,11 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             cur->paramInfos[i].DecimalDigits = 0;
         }
 
-        // This supports overriding of input sizes via setinputsizes
-        // See issue 380
-        // The logic is duplicated from BindParameter
-        if (cur->inputsizes && i < PySequence_Length(cur->inputsizes))
-        {
-            PyObject *desc = PySequence_GetItem(cur->inputsizes, i);
-            if (desc)
-            {
-                // integer - sets colsize
-                // type object - sets sqltype (not implemented yet; mapping between Python
-                //               and SQL types  is not 1:1 so doesn't seem to offer much)
-                // Consider: sequence of (colsize, sqltype, scale) ?
-#if PY_MAJOR_VERSION < 3
-                if (PyInt_Check(desc))
-                {
-                    cur->paramInfos[i].ColumnSize = (SQLULEN)PyInt_AS_LONG(desc);
-                }
-                else
-#endif
-                if (PyLong_Check(desc))
-                {
-                    cur->paramInfos[i].ColumnSize = (SQLULEN)PyLong_AsLong(desc);
-                }
-            }
-            Py_XDECREF(desc);
-        }
-    }
+		// This supports overriding of input sizes via setinputsizes
+		// See issue 380
+		// The logic is duplicated from BindParameter
+		UpdateParamInfo(cur, i, &cur->paramInfos[i]);
+	}
 
     PyObject *rowseq = PySequence_Fast(paramArrayObj, "Parameter array must be a sequence.");
     if (!rowseq)
@@ -1687,7 +1732,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             Py_END_ALLOW_THREADS
 
             if (rc != SQL_NEED_DATA && rc != SQL_NO_DATA && !SQL_SUCCEEDED(rc))
-                return RaiseErrorFromHandle(cur->cnxn, "SQLParamData", cur->cnxn->hdbc, cur->hstmt);
+                return RaiseErrorFromHandle(cur->cnxn, "SQLParamData", cur->cnxn->hdbc, cur->hstmt) != NULL;
 
             TRACE("SQLParamData() --> %d\n", rc);
 
@@ -1707,7 +1752,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         rc = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
                         Py_END_ALLOW_THREADS
                         if (!SQL_SUCCEEDED(rc))
-                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt) != NULL;
                         offset += remaining;
                     }
                 }
@@ -1725,7 +1770,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         rc = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
                         Py_END_ALLOW_THREADS
                         if (!SQL_SUCCEEDED(rc))
-                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt) != NULL;
                         offset += remaining;
                     }
                 }
@@ -1745,7 +1790,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         rc = SQLPutData(cur->hstmt, pb, cb);
                         Py_END_ALLOW_THREADS
                         if (!SQL_SUCCEEDED(rc))
-                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt) != NULL;
                     }
                 }
     #endif
@@ -1755,7 +1800,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         }
 
         if (!SQL_SUCCEEDED(rc) && rc != SQL_NO_DATA)
-            return RaiseErrorFromHandle(cur->cnxn, szLastFunction, cur->cnxn->hdbc, cur->hstmt);
+            return RaiseErrorFromHandle(cur->cnxn, szLastFunction, cur->cnxn->hdbc, cur->hstmt) != NULL;
 
         SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAMSET_SIZE, (SQLPOINTER)1, SQL_IS_UINTEGER);
         SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAM_BIND_OFFSET_PTR, 0, SQL_IS_POINTER);
@@ -1765,7 +1810,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
 
     Py_XDECREF(rowseq);
     FreeParameterData(cur);
-    return ret;
+	return ret;
 }
 
 static bool GetParamType(Cursor* cur, Py_ssize_t index, SQLSMALLINT& type)
