@@ -2043,10 +2043,10 @@ static PyObject* Cursor_getnoscan(PyObject* self, void *closure)
     if (!cursor)
         return 0;
 
-    SQLUINTEGER noscan = SQL_NOSCAN_OFF;
+    SQLULEN noscan = SQL_NOSCAN_OFF;
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetStmtAttr(cursor->hstmt, SQL_ATTR_NOSCAN, (SQLPOINTER)&noscan, sizeof(SQLUINTEGER), 0);
+    ret = SQLGetStmtAttr(cursor->hstmt, SQL_ATTR_NOSCAN, (SQLPOINTER)&noscan, sizeof(SQLULEN), 0);
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))
