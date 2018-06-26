@@ -122,7 +122,7 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
     return false;
 }
 
-static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value)
+static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char *strencoding)
 {
     SQLRETURN ret;
     SQLPOINTER ivalue = 0;
@@ -164,18 +164,18 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value)
     }
     else if (PyUnicode_Check(value))
     {
-if (sizeof(Py_UNICODE) == 2) // Should be compile-time.
+        Object stringholder;
+if (sizeof(Py_UNICODE) == 2 // This part should be compile-time.
+    && (!strencoding || !strcmp(strencoding, "utf-16le")))
 {
+        // default or utf-16le is set, pass through directly
         ivalue = PyUnicode_AS_UNICODE(value);
 }
 else
 {
-        Object uniStr(PyUnicode_EncodeUTF16(
-                          PyUnicode_AS_UNICODE(value),
-                          PyUnicode_GET_DATA_SIZE(value),
-                          0,
-                          -1));
-        ivalue = PyBytes_AS_STRING(uniStr.Get());
+        // use strencoding to convert, default to utf-16le if not set.
+        stringholder = PyCodec_Encode(value, strencoding ? strencoding : "utf-16le", "strict");
+        ivalue = PyBytes_AS_STRING(stringholder.Get());
 }
         vallen = SQL_NTS;
         Py_BEGIN_ALLOW_THREADS
@@ -190,7 +190,7 @@ else
         for (Py_ssize_t i = 0; i < len; i++)
         {
             Object v(PySequence_GetItem(value, i));
-            if (!ApplyPreconnAttrs(hdbc, ikey, v.Get()))
+            if (!ApplyPreconnAttrs(hdbc, ikey, v.Get(), strencoding))
                 return false;
         }
         return true;
@@ -243,6 +243,12 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
         Py_ssize_t pos = 0;
         PyObject* key = 0;
         PyObject* value = 0;
+
+        Object encodingholder;
+        char *strencoding = encoding.Get() ?
+            (PyUnicode_Check(encoding) ? PyBytes_AsString(encodingholder = PyCodec_Encode(encoding, "utf-8", "strict")) :
+             PyBytes_Check(encoding) ? PyBytes_AsString(encoding) : 0) : 0;
+
         while (PyDict_Next(attrs_before, &pos, &key, &value))
         {
             SQLINTEGER ikey = 0;
@@ -253,7 +259,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
             else if (PyInt_Check(key))
                 ikey = (int)PyInt_AsLong(key);
 #endif
-            if (!ApplyPreconnAttrs(hdbc, ikey, value))
+            if (!ApplyPreconnAttrs(hdbc, ikey, value, strencoding))
             {
                 return 0;
             }
