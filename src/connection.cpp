@@ -63,14 +63,6 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
     // This should have been checked by the global connect function.
     I(PyString_Check(pConnectString) || PyUnicode_Check(pConnectString));
 
-    const int cchMax = 600;
-
-    if (PySequence_Length(pConnectString) >= cchMax)
-    {
-        PyErr_SetString(PyExc_TypeError, "connection string too long");
-        return false;
-    }
-
     // The driver manager determines if the app is a Unicode app based on whether we call SQLDriverConnectA or
     // SQLDriverConnectW.  Some drivers, notably Microsoft Access/Jet, change their behavior based on this, so we try
     // the Unicode version first.  (The Access driver only supports Unicode text, but SQLDescribeCol returns SQL_CHAR
