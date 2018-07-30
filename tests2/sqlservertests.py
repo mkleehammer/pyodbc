@@ -116,9 +116,9 @@ class SqlServerTestCase(unittest.TestCase):
 
     def test_binary_type(self):
         if sys.hexversion >= 0x02060000:
-            self.assertIs(pyodbc.BINARY, bytearray)
+            self.assertTrue(pyodbc.BINARY is bytearray)
         else:
-            self.assertIs(pyodbc.BINARY, buffer)
+            self.assertTrue(pyodbc.BINARY is buffer)
 
     def test_multiple_bindings(self):
         "More than one bind and select on a cursor"
@@ -186,7 +186,7 @@ class SqlServerTestCase(unittest.TestCase):
 
         pyodbc.native_uuid = True
         result = self.cursor.execute("select n from t1").fetchval()
-        self.assertIsInstance(result, uuid.UUID)
+        self.assert_(isinstance(result, uuid.UUID))
         self.assertEqual(value, result)
 
     def test_nextset(self):
@@ -1513,7 +1513,7 @@ class SqlServerTestCase(unittest.TestCase):
     def test_drivers(self):
         drivers = pyodbc.drivers()
         self.assertEqual(list, type(drivers))
-        self.assert_(len(drivers) > 1)
+        self.assert_(len(drivers) > 0)
 
         m = re.search('DRIVER={([^}]+)}', self.connection_string, re.IGNORECASE)
         current = m.group(1)
