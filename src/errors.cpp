@@ -194,7 +194,6 @@ PyObject* RaiseErrorFromHandle(Connection *conn, const char* szFunction, HDBC hd
     return 0;
 }
 
-
 inline void CopySqlState(const ODBCCHAR* src, char* dest)
 {
     // Copies a SQLSTATE read as SQLWCHAR into a character buffer.  We know that SQLSTATEs are
@@ -223,7 +222,6 @@ inline void CopySqlState(const ODBCCHAR* src, char* dest)
     }
     *pchDest = 0;
 }
-
 
 PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc, HSTMT hstmt)
 {
