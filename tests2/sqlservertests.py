@@ -1084,6 +1084,18 @@ class SqlServerTestCase(unittest.TestCase):
             self.assertEqual(param[0], row[0])
             self.assertEqual(param[1], row[1])
 
+    def test_executemany_dae_0(self):
+        """
+        DAE for 0-length value
+        """
+        self.cursor.execute("create table t1(a nvarchar(max))")
+
+        self.cursor.fast_executemany = True
+        self.cursor.executemany("insert into t1(a) values(?)", [['']])
+
+        self.assertEqual(self.cursor.execute("select a from t1").fetchone()[0], '')
+
+        self.cursor.fast_executemany = False
 
     def test_executemany_failure(self):
         """
