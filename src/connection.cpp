@@ -122,14 +122,21 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
 
     if (PyLong_Check(value))
     {
-        ivalue = (SQLPOINTER)PyLong_AsLong(value);
-        vallen = ivalue < 0 ? SQL_IS_INTEGER : SQL_IS_UINTEGER;
+        if (_PyLong_Sign(value) >= 0)
+        {
+            ivalue = (SQLPOINTER)PyLong_AsUnsignedLong(value);
+            vallen = SQL_IS_UINTEGER;
+        } else
+        {
+            ivalue = (SQLPOINTER)PyLong_AsLong(value);
+            vallen = SQL_IS_INTEGER;
+        }
     }
 #if PY_MAJOR_VERSION < 3
     else if (PyInt_Check(value))
     {
         ivalue = (SQLPOINTER)PyInt_AsLong(value);
-        vallen = ivalue < 0 ? SQL_IS_INTEGER : SQL_IS_UINTEGER;
+        vallen = SQL_IS_INTEGER;
     }
     else if (PyBuffer_Check(value))
     {
