@@ -9,6 +9,7 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "pyodbc.h"
+#include "buffer.h"
 #include "wrapper.h"
 #include "textenc.h"
 #include "connection.h"
@@ -63,14 +64,6 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
     // This should have been checked by the global connect function.
     I(PyString_Check(pConnectString) || PyUnicode_Check(pConnectString));
 
-    const int cchMax = 600;
-
-    if (PySequence_Length(pConnectString) >= cchMax)
-    {
-        PyErr_SetString(PyExc_TypeError, "connection string too long");
-        return false;
-    }
-
     // The driver manager determines if the app is a Unicode app based on whether we call SQLDriverConnectA or
     // SQLDriverConnectW.  Some drivers, notably Microsoft Access/Jet, change their behavior based on this, so we try
     // the Unicode version first.  (The Access driver only supports Unicode text, but SQLDescribeCol returns SQL_CHAR
@@ -121,6 +114,102 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
     return false;
 }
 
+static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char *strencoding)
+{
+    SQLRETURN ret;
+    SQLPOINTER ivalue = 0;
+    SQLINTEGER vallen = 0;
+
+    if (PyLong_Check(value))
+    {
+        if (_PyLong_Sign(value) >= 0)
+        {
+            ivalue = (SQLPOINTER)PyLong_AsUnsignedLong(value);
+            vallen = SQL_IS_UINTEGER;
+        } else
+        {
+            ivalue = (SQLPOINTER)PyLong_AsLong(value);
+            vallen = SQL_IS_INTEGER;
+        }
+    }
+#if PY_MAJOR_VERSION < 3
+    else if (PyInt_Check(value))
+    {
+        ivalue = (SQLPOINTER)PyInt_AsLong(value);
+        vallen = SQL_IS_INTEGER;
+    }
+    else if (PyBuffer_Check(value))
+    {
+        // We can only assume and take the first segment.
+        PyBuffer_GetMemory(value, (const char**)&ivalue);
+        vallen = SQL_IS_POINTER;
+    }
+#endif
+#if PY_VERSION_HEX >= 0x02060000
+    else if (PyByteArray_Check(value))
+    {
+        ivalue = (SQLPOINTER)PyByteArray_AsString(value);
+        vallen = SQL_IS_POINTER;
+    }
+#endif
+    else if (PyBytes_Check(value))
+    {
+        ivalue = PyBytes_AS_STRING(value);
+#if PY_MAJOR_VERSION < 3
+        vallen = SQL_NTS;
+#else
+        vallen = SQL_IS_POINTER;
+#endif
+    }
+    else if (PyUnicode_Check(value))
+    {
+        Object stringholder;
+if (sizeof(Py_UNICODE) == 2 // This part should be compile-time.
+    && (!strencoding || !strcmp(strencoding, "utf-16le")))
+{
+        // default or utf-16le is set, pass through directly
+        ivalue = PyUnicode_AS_UNICODE(value);
+}
+else
+{
+        // use strencoding to convert, default to utf-16le if not set.
+        stringholder = PyCodec_Encode(value, strencoding ? strencoding : "utf-16le", "strict");
+        ivalue = PyBytes_AS_STRING(stringholder.Get());
+}
+        vallen = SQL_NTS;
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLSetConnectAttrW(hdbc, ikey, ivalue, vallen);
+        Py_END_ALLOW_THREADS
+        goto checkSuccess;
+    }
+    else if (PySequence_Check(value))
+    {
+        // To allow for possibility of setting multiple attributes more than once.
+        Py_ssize_t len = PySequence_Size(value);
+        for (Py_ssize_t i = 0; i < len; i++)
+        {
+            Object v(PySequence_GetItem(value, i));
+            if (!ApplyPreconnAttrs(hdbc, ikey, v.Get(), strencoding))
+                return false;
+        }
+        return true;
+    }
+
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLSetConnectAttr(hdbc, ikey, ivalue, vallen);
+    Py_END_ALLOW_THREADS
+
+checkSuccess:
+    if (!SQL_SUCCEEDED(ret))
+    {
+        RaiseErrorFromHandle(0, "SQLSetConnectAttr", hdbc, SQL_NULL_HANDLE);
+        Py_BEGIN_ALLOW_THREADS
+        SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
+        Py_END_ALLOW_THREADS
+        return false;
+    }
+    return true;
+}
 
 PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, long timeout, bool fReadOnly,
                          PyObject* attrs_before, Object& encoding)
@@ -135,6 +224,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     // Allocate HDBC and connect
     //
 
+    Object attrs_before_o(attrs_before);
     HDBC hdbc = SQL_NULL_HANDLE;
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
@@ -152,29 +242,24 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
         Py_ssize_t pos = 0;
         PyObject* key = 0;
         PyObject* value = 0;
+
+        Object encodingholder;
+        char *strencoding = encoding.Get() ?
+            (PyUnicode_Check(encoding) ? PyBytes_AsString(encodingholder = PyCodec_Encode(encoding, "utf-8", "strict")) :
+             PyBytes_Check(encoding) ? PyBytes_AsString(encoding) : 0) : 0;
+
         while (PyDict_Next(attrs_before, &pos, &key, &value))
         {
-            int ikey = 0, ivalue = 0;
-#if PY_MAJOR_VERSION < 3
-            if (PyInt_Check(key))
-                ikey = (int)PyInt_AsLong(key);
-            if (PyInt_Check(value))
-                ivalue = (int)PyInt_AsLong(value);
-#endif
+            SQLINTEGER ikey = 0;
+
             if (PyLong_Check(key))
                 ikey = (int)PyLong_AsLong(key);
-            if (PyLong_Check(value))
-                ivalue = (int)PyLong_AsLong(value);
-
-            Py_BEGIN_ALLOW_THREADS
-            ret = SQLSetConnectAttr(hdbc, ikey, (SQLPOINTER)(uintptr_t)ivalue, SQL_IS_INTEGER);
-            Py_END_ALLOW_THREADS
-            if (!SQL_SUCCEEDED(ret))
+#if PY_MAJOR_VERSION < 3
+            else if (PyInt_Check(key))
+                ikey = (int)PyInt_AsLong(key);
+#endif
+            if (!ApplyPreconnAttrs(hdbc, ikey, value, strencoding))
             {
-                RaiseErrorFromHandle(0, "SQLSetConnectAttr", hdbc, SQL_NULL_HANDLE);
-                Py_BEGIN_ALLOW_THREADS
-                SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
-                Py_END_ALLOW_THREADS
                 return 0;
             }
         }
@@ -219,6 +304,8 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->conv_count   = 0;
     cnxn->conv_types   = 0;
     cnxn->conv_funcs   = 0;
+
+    cnxn->attrs_before = attrs_before_o.Detach();
 
     // This is an inefficient default, but should work all the time.  When we are offered
     // single-byte text we don't actually know what the encoding is.  For example, with SQL
@@ -422,6 +509,9 @@ static int Connection_clear(PyObject* self)
     free((void*)cnxn->str_enc.name);
     cnxn->str_enc.name = 0;
 #endif
+
+    Py_XDECREF(cnxn->attrs_before);
+    cnxn->attrs_before = 0;
 
     _clear_conv(cnxn);
 

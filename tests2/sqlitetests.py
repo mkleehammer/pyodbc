@@ -61,14 +61,6 @@ class SqliteTestCase(unittest.TestCase):
         unittest.TestCase.__init__(self, method_name)
         self.connection_string = connection_string
 
-    def get_sqlite_version(self):
-        """
-        Returns the major version: 8-->2000, 9-->2005, 10-->2008
-        """
-        self.cursor.execute("exec master..xp_msver 'ProductVersion'")
-        row = self.cursor.fetchone()
-        return int(row.Character_Value.split('.', 1)[0])
-
     def setUp(self):
         self.cnxn   = pyodbc.connect(self.connection_string)
         self.cursor = self.cnxn.cursor()
@@ -228,7 +220,7 @@ class SqliteTestCase(unittest.TestCase):
     # Generate a test for each fencepost size: test_unicode_0, etc.
     def _maketest(value):
         def t(self):
-            self._test_strtype('blob', buffer(value), len(value))
+            self._test_strtype('blob', bytearray(value), len(value))
         return t
     for value in ANSI_FENCEPOSTS:
         locals()['test_blob_%s' % len(value)] = _maketest(value)
@@ -334,6 +326,10 @@ class SqliteTestCase(unittest.TestCase):
     # rowcount
     #
 
+    # Note: SQLRowCount does not define what the driver must return after a select statement
+    # and says that its value should not be relied upon.  The sqliteodbc driver is hardcoded to
+    # return 0 so I've deleted the test.
+
     def test_rowcount_delete(self):
         self.assertEquals(self.cursor.rowcount, -1)
         self.cursor.execute("create table t1(i int)")
@@ -355,37 +351,6 @@ class SqliteTestCase(unittest.TestCase):
         # This is a different code path internally.
         self.cursor.execute("delete from t1")
         self.assertEquals(self.cursor.rowcount, 0)
-
-    def test_rowcount_select(self):
-        """
-        Ensure Cursor.rowcount is set properly after a select statement.
-        """
-        self.cursor.execute("create table t1(i int)")
-        count = 4
-        for i in range(count):
-            self.cursor.execute("insert into t1 values (?)", i)
-        self.cursor.execute("select * from t1")
-        self.assertEquals(self.cursor.rowcount, count)
-
-        rows = self.cursor.fetchall()
-        self.assertEquals(len(rows), count)
-        self.assertEquals(self.cursor.rowcount, count)
-
-    # Fails.  Not terribly important so I'm going to comment out for now and report to the ODBC driver writer.
-    # def test_rowcount_reset(self):
-    #     "Ensure rowcount is reset to -1"
-    #     self.cursor.execute("create table t1(i int)")
-    #     count = 4
-    #     for i in range(count):
-    #         self.cursor.execute("insert into t1 values (?)", i)
-    #     self.assertEquals(self.cursor.rowcount, 1)
-    #  
-    #     self.cursor.execute("create table t2(i int)")
-    #     self.assertEquals(self.cursor.rowcount, -1)
-
-    #
-    # always return Cursor
-    #
 
     # In the 2.0.x branch, Cursor.execute sometimes returned the cursor and sometimes the rowcount.  This proved very
     # confusing when things went wrong and added very little value even when things went right since users could always
@@ -645,27 +610,9 @@ class SqliteTestCase(unittest.TestCase):
         # text
         t = self.cursor.description[1]
         self.assertEqual(t[0], 's')
-        self.assertEqual(t[1], unicode)
+        self.assertEqual(t[1], str)
         self.assertEqual(t[5], 0)       # scale
         self.assertEqual(t[6], True)    # nullable
-
-    def test_none_param(self):
-        "Ensure None can be used for params other than the first"
-        # Some driver/db versions would fail if NULL was not the first parameter because SQLDescribeParam (only used
-        # with NULL) could not be used after the first call to SQLBindParameter.  This means None always worked for the
-        # first column, but did not work for later columns.
-        #
-        # If SQLDescribeParam doesn't work, pyodbc would use VARCHAR which almost always worked.  However,
-        # binary/varbinary won't allow an implicit conversion.
-
-        value = u'\x12abc'
-        self.cursor.execute("create table t1(n int, b blob)")
-        self.cursor.execute("insert into t1 values (1, ?)", value)
-        row = self.cursor.execute("select * from t1").fetchone()
-        self.assertEqual(row.n, 1)
-        self.assertEqual(type(row.b), buffer)
-        self.assertEqual(row.b, value)
-
 
     def test_row_equal(self):
         self.cursor.execute("create table t1(n int, s varchar(20))")
@@ -690,13 +637,27 @@ class SqliteTestCase(unittest.TestCase):
         rows.sort() # uses <
         
     def test_context_manager(self):
+
+        # WARNING: This isn't working right now.  We've set the driver's autocommit to "off",
+        # but that doesn't automatically start a transaction.  I'm not familiar enough with the
+        # internals of the driver to tell what is going on, but it looks like there is support
+        # for the autocommit flag.
+        #
+        # I thought it might be a timing issue, like it not actually starting a txn until you
+        # try to do something, but that doesn't seem to work either.  I'll leave this in to
+        # remind us that it isn't working yet but we need to contact the SQLite ODBC driver
+        # author for some guidance.
+
         with pyodbc.connect(self.connection_string) as cnxn:
-            cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
+            cursor = cnxn.cursor()
+            cursor.execute("begin")
+            cursor.execute("create table t1(i int)")
+            cursor.execute('rollback')
 
         # The connection should be closed now.
         def test():
-            cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
-        self.assertRaises(pyodbc.ProgrammingError, test)
+            cnxn.execute('rollback')
+        self.assertRaises(pyodbc.Error, test)
 
     def test_untyped_none(self):
         # From issue 129
@@ -705,7 +666,7 @@ class SqliteTestCase(unittest.TestCase):
         
     def test_large_update_nodata(self):
         self.cursor.execute('create table t1(a blob)')
-        hundredkb = buffer('x'*100*1024)
+        hundredkb = 'x'*100*1024
         self.cursor.execute('update t1 set a=? where 1=0', (hundredkb,))
 
     def test_no_fetch(self):
@@ -718,7 +679,7 @@ class SqliteTestCase(unittest.TestCase):
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage=usage)
-    parser.add_option("-v", "--verbose", action="count", help="Increment test verbosity (can be used multiple times)")
+    parser.add_option("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
     parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
     parser.add_option("-t", "--test", help="Run only the named test")
 
@@ -729,7 +690,6 @@ def main():
 
     if not args:
         connection_string = load_setup_connection_string('sqlitetests')
-        print 'connection_string:', connection_string
 
         if not connection_string:
             parser.print_help()

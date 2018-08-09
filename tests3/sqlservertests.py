@@ -1412,7 +1412,22 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("select 1")
         self.cursor.cancel()
 
+    def test_emoticons(self):
+        # https://github.com/mkleehammer/pyodbc/issues/423
+        #
+        # When sending a varchar parameter, pyodbc is supposed to set ColumnSize to the number
+        # of characters.  Ensure it works even with 4-byte characters.
+        #
+        # http://www.fileformat.info/info/unicode/char/1f31c/index.htm
+        v = "x \U0001F31C z"
 
+        self.cursor.execute("create table t1(s nvarchar(100))")
+        self.cursor.execute("insert into t1 values (?)", v)
+
+        result = self.cursor.execute("select s from t1").fetchone()[0]
+
+        self.assertEqual(result, v)
+        
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage=usage)
