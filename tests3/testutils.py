@@ -91,7 +91,7 @@ def load_setup_connection_string(section):
     FILENAME = 'setup.cfg'
     KEY      = 'connection-string'
 
-    path = join(dirname(dirname(abspath(__file__))), 'tmp', FILENAME)
+    path = join(dirname(abspath(__file__)), 'tmp', FILENAME)
 
     if exists(path):
         try:
