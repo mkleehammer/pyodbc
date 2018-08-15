@@ -90,11 +90,11 @@ class PGTestCase(unittest.TestCase):
 
     def test_drivers(self):
         p = pyodbc.drivers()
-        self.assert_(isinstance(p, list))
+        self.assertTrue(isinstance(p, list))
 
     def test_datasources(self):
         p = pyodbc.dataSources()
-        self.assert_(isinstance(p, dict))
+        self.assertTrue(isinstance(p, dict))
 
     # def test_gettypeinfo(self):
     #     self.cursor.getTypeInfo(pyodbc.SQL_VARCHAR)
@@ -106,19 +106,19 @@ class PGTestCase(unittest.TestCase):
 
     def test_getinfo_string(self):
         value = self.cnxn.getinfo(pyodbc.SQL_CATALOG_NAME_SEPARATOR)
-        self.assert_(isinstance(value, str))
+        self.assertTrue(isinstance(value, str))
 
     def test_getinfo_bool(self):
         value = self.cnxn.getinfo(pyodbc.SQL_ACCESSIBLE_TABLES)
-        self.assert_(isinstance(value, bool))
+        self.assertTrue(isinstance(value, bool))
 
     def test_getinfo_int(self):
         value = self.cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
-        self.assert_(isinstance(value, int))
+        self.assertTrue(isinstance(value, int))
 
     def test_getinfo_smallint(self):
         value = self.cnxn.getinfo(pyodbc.SQL_CONCAT_NULL_BEHAVIOR)
-        self.assert_(isinstance(value, int))
+        self.assertTrue(isinstance(value, int))
 
 
     def test_negative_float(self):
@@ -330,20 +330,20 @@ class PGTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s varchar(20))")
         self.cursor.execute("insert into t1 values(?)", "1")
         row = self.cursor.execute("select * from t1").fetchone()
-        self.assertEquals(row[0], "1")
-        self.assertEquals(row[-1], "1")
+        self.assertEqual(row[0], "1")
+        self.assertEqual(row[-1], "1")
 
     def test_version(self):
-        self.assertEquals(3, len(pyodbc.version.split('.'))) # 1.3.1 etc.
+        self.assertEqual(3, len(pyodbc.version.split('.'))) # 1.3.1 etc.
 
     def test_rowcount_delete(self):
-        self.assertEquals(self.cursor.rowcount, -1)
+        self.assertEqual(self.cursor.rowcount, -1)
         self.cursor.execute("create table t1(i int)")
         count = 4
         for i in range(count):
             self.cursor.execute("insert into t1 values (?)", i)
         self.cursor.execute("delete from t1")
-        self.assertEquals(self.cursor.rowcount, count)
+        self.assertEqual(self.cursor.rowcount, count)
 
     def test_rowcount_nodata(self):
         """
@@ -356,7 +356,7 @@ class PGTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(i int)")
         # This is a different code path internally.
         self.cursor.execute("delete from t1")
-        self.assertEquals(self.cursor.rowcount, 0)
+        self.assertEqual(self.cursor.rowcount, 0)
 
     def test_rowcount_select(self):
         self.cursor.execute("create table t1(i int)")
@@ -364,7 +364,7 @@ class PGTestCase(unittest.TestCase):
         for i in range(count):
             self.cursor.execute("insert into t1 values (?)", i)
         self.cursor.execute("select * from t1")
-        self.assertEquals(self.cursor.rowcount, 4)
+        self.assertEqual(self.cursor.rowcount, 4)
 
     # PostgreSQL driver fails here?
     # def test_rowcount_reset(self):
@@ -374,10 +374,10 @@ class PGTestCase(unittest.TestCase):
     #     count = 4
     #     for i in range(count):
     #         self.cursor.execute("insert into t1 values (?)", i)
-    #     self.assertEquals(self.cursor.rowcount, 1)
+    #     self.assertEqual(self.cursor.rowcount, 1)
     #
     #     self.cursor.execute("create table t2(i int)")
-    #     self.assertEquals(self.cursor.rowcount, -1)
+    #     self.assertEqual(self.cursor.rowcount, -1)
 
     def test_lower_case(self):
         "Ensure pyodbc.lowercase forces returned column names to lowercase."
@@ -393,7 +393,7 @@ class PGTestCase(unittest.TestCase):
         names = [ t[0] for t in self.cursor.description ]
         names.sort()
 
-        self.assertEquals(names, [ "abc", "def" ])
+        self.assertEqual(names, [ "abc", "def" ])
 
         # Put it back so other tests don't fail.
         pyodbc.lowercase = False
@@ -408,7 +408,7 @@ class PGTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values(1, 'abc')")
 
         row = self.cursor.execute("select * from t1").fetchone()
-        self.assertEquals(self.cursor.description, row.cursor_description)
+        self.assertEqual(self.cursor.description, row.cursor_description)
 
 
     def test_executemany(self):
@@ -466,7 +466,7 @@ class PGTestCase(unittest.TestCase):
                    ('error', 'not an int'),
                    (3, 'good') ]
 
-        self.failUnlessRaises(pyodbc.Error, self.cursor.executemany, "insert into t1(a, b) value (?, ?)", params)
+        self.assertRaises(pyodbc.Error, self.cursor.executemany, "insert into t1(a, b) value (?, ?)", params)
 
 
     def test_row_slicing(self):
@@ -476,13 +476,13 @@ class PGTestCase(unittest.TestCase):
         row = self.cursor.execute("select * from t1").fetchone()
 
         result = row[:]
-        self.failUnless(result is row)
+        self.assertTrue(result is row)
 
         result = row[:-1]
         self.assertEqual(result, (1,2,3))
 
         result = row[0:4]
-        self.failUnless(result is row)
+        self.assertTrue(result is row)
 
     def test_cnxn_execute_error(self):
         """
@@ -492,7 +492,7 @@ class PGTestCase(unittest.TestCase):
         """
         self.cursor.execute("create table t1(a int primary key)")
         self.cursor.execute("insert into t1 values (1)")
-        self.failUnlessRaises(pyodbc.Error, self.cnxn.execute, "insert into t1 values (1)")
+        self.assertRaises(pyodbc.Error, self.cnxn.execute, "insert into t1 values (1)")
 
     def test_row_repr(self):
         self.cursor.execute("create table t1(a int, b int, c int, d int)")
@@ -522,7 +522,7 @@ class PGTestCase(unittest.TestCase):
         # This is really making sure we are properly encoding and comparing the SQLSTATEs.
         self.cursor.execute("create table t1(s1 varchar(10) primary key)")
         self.cursor.execute("insert into t1 values ('one')")
-        self.failUnlessRaises(pyodbc.IntegrityError, self.cursor.execute, "insert into t1 values ('one')")
+        self.assertRaises(pyodbc.IntegrityError, self.cursor.execute, "insert into t1 values ('one')")
 
 
     def test_cnxn_set_attr_before(self):

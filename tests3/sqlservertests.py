@@ -143,27 +143,27 @@ class SqlServerTestCase(unittest.TestCase):
 
     def test_drivers(self):
         p = pyodbc.drivers()
-        self.assert_(isinstance(p, list))
+        self.assertTrue(isinstance(p, list))
 
     def test_datasources(self):
         p = pyodbc.dataSources()
-        self.assert_(isinstance(p, dict))
+        self.assertTrue(isinstance(p, dict))
 
     def test_getinfo_string(self):
         value = self.cnxn.getinfo(pyodbc.SQL_CATALOG_NAME_SEPARATOR)
-        self.assert_(isinstance(value, str))
+        self.assertTrue(isinstance(value, str))
 
     def test_getinfo_bool(self):
         value = self.cnxn.getinfo(pyodbc.SQL_ACCESSIBLE_TABLES)
-        self.assert_(isinstance(value, bool))
+        self.assertTrue(isinstance(value, bool))
 
     def test_getinfo_int(self):
         value = self.cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
-        self.assert_(isinstance(value, (int, int)))
+        self.assertTrue(isinstance(value, (int, int)))
 
     def test_getinfo_smallint(self):
         value = self.cnxn.getinfo(pyodbc.SQL_CONCAT_NULL_BEHAVIOR)
-        self.assert_(isinstance(value, int))
+        self.assertTrue(isinstance(value, int))
 
     def test_noscan(self):
         self.assertEqual(self.cursor.noscan, False)
@@ -552,11 +552,11 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s varchar(20))")
         self.cursor.execute("insert into t1 values(?)", "1")
         row = self.cursor.execute("select * from t1").fetchone()
-        self.assertEquals(row[0], "1")
-        self.assertEquals(row[-1], "1")
+        self.assertEqual(row[0], "1")
+        self.assertEqual(row[-1], "1")
 
     def test_version(self):
-        self.assertEquals(3, len(pyodbc.version.split('.'))) # 1.3.1 etc.
+        self.assertEqual(3, len(pyodbc.version.split('.'))) # 1.3.1 etc.
 
     #
     # date, time, datetime
@@ -569,8 +569,8 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEquals(type(value), datetime)
-        self.assertEquals(value, result)
+        self.assertEqual(type(value), datetime)
+        self.assertEqual(value, result)
 
     def test_datetime_fraction(self):
         # SQL Server supports milliseconds, but Python's datetime supports nanoseconds, so the most granular datetime
@@ -582,8 +582,8 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEquals(type(value), datetime)
-        self.assertEquals(result, value)
+        self.assertEqual(type(value), datetime)
+        self.assertEqual(result, value)
 
     def test_datetime_fraction_rounded(self):
         # SQL Server supports milliseconds, but Python's datetime supports nanoseconds.  pyodbc rounds down to what the
@@ -596,8 +596,8 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", full)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEquals(type(result), datetime)
-        self.assertEquals(result, rounded)
+        self.assertEqual(type(result), datetime)
+        self.assertEqual(result, rounded)
 
     def test_date(self):
         ver = self.get_sqlserver_version()
@@ -610,8 +610,8 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select d from t1").fetchone()[0]
-        self.assertEquals(type(value), date)
-        self.assertEquals(value, result)
+        self.assertEqual(type(value), date)
+        self.assertEqual(value, result)
 
     def test_time(self):
         ver = self.get_sqlserver_version()
@@ -628,8 +628,8 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select t from t1").fetchone()[0]
-        self.assertEquals(type(value), time)
-        self.assertEquals(value, result)
+        self.assertEqual(type(value), time)
+        self.assertEqual(value, result)
 
     def test_datetime2(self):
         value = datetime(2007, 1, 15, 3, 4, 5)
@@ -638,8 +638,8 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEquals(type(value), datetime)
-        self.assertEquals(value, result)
+        self.assertEqual(type(value), datetime)
+        self.assertEqual(value, result)
 
     #
     # ints and floats
@@ -650,14 +650,14 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(n int)")
         self.cursor.execute("insert into t1 values (?)", value)
         result = self.cursor.execute("select n from t1").fetchone()[0]
-        self.assertEquals(result, value)
+        self.assertEqual(result, value)
 
     def test_negative_int(self):
         value = -1
         self.cursor.execute("create table t1(n int)")
         self.cursor.execute("insert into t1 values (?)", value)
         result = self.cursor.execute("select n from t1").fetchone()[0]
-        self.assertEquals(result, value)
+        self.assertEqual(result, value)
 
     def test_bigint(self):
         input = 3000000000
@@ -671,7 +671,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(n float)")
         self.cursor.execute("insert into t1 values (?)", value)
         result = self.cursor.execute("select n from t1").fetchone()[0]
-        self.assertEquals(result, value)
+        self.assertEqual(result, value)
 
     def test_negative_float(self):
         value = -200
@@ -697,9 +697,9 @@ class SqlServerTestCase(unittest.TestCase):
               from sysobjects
             """)
         rows = self.cursor.execute("exec proc1").fetchall()
-        self.assertEquals(type(rows), list)
-        self.assertEquals(len(rows), 10) # there has to be at least 10 items in sysobjects
-        self.assertEquals(type(rows[0].refdate), datetime)
+        self.assertEqual(type(rows), list)
+        self.assertEqual(len(rows), 10) # there has to be at least 10 items in sysobjects
+        self.assertEqual(type(rows[0].refdate), datetime)
 
 
     def test_sp_results_from_temp(self):
@@ -719,13 +719,13 @@ class SqlServerTestCase(unittest.TestCase):
               select * from #tmptable
             """)
         self.cursor.execute("exec proc1")
-        self.assert_(self.cursor.description is not None)
-        self.assert_(len(self.cursor.description) == 4)
+        self.assertTrue(self.cursor.description is not None)
+        self.assertTrue(len(self.cursor.description) == 4)
 
         rows = self.cursor.fetchall()
-        self.assertEquals(type(rows), list)
-        self.assertEquals(len(rows), 10) # there has to be at least 10 items in sysobjects
-        self.assertEquals(type(rows[0].refdate), datetime)
+        self.assertEqual(type(rows), list)
+        self.assertEqual(len(rows), 10) # there has to be at least 10 items in sysobjects
+        self.assertEqual(type(rows[0].refdate), datetime)
 
 
     def test_sp_results_from_vartbl(self):
@@ -744,9 +744,9 @@ class SqlServerTestCase(unittest.TestCase):
             """)
         self.cursor.execute("exec proc1")
         rows = self.cursor.fetchall()
-        self.assertEquals(type(rows), list)
-        self.assertEquals(len(rows), 10) # there has to be at least 10 items in sysobjects
-        self.assertEquals(type(rows[0].refdate), datetime)
+        self.assertEqual(type(rows), list)
+        self.assertEqual(len(rows), 10) # there has to be at least 10 items in sysobjects
+        self.assertEqual(type(rows[0].refdate), datetime)
 
     def test_sp_with_dates(self):
         # Reported in the forums that passing two datetimes to a stored procedure doesn't work.
@@ -765,8 +765,8 @@ class SqlServerTestCase(unittest.TestCase):
             """)
         self.cursor.execute("exec test_sp ?, ?", datetime.now(), datetime.now())
         rows = self.cursor.fetchall()
-        self.assert_(rows is not None)
-        self.assert_(rows[0][0] == 0)   # 0 years apart
+        self.assertTrue(rows is not None)
+        self.assertTrue(rows[0][0] == 0)   # 0 years apart
 
     def test_sp_with_none(self):
         # Reported in the forums that passing None caused an error.
@@ -785,8 +785,8 @@ class SqlServerTestCase(unittest.TestCase):
             """)
         self.cursor.execute("exec test_sp ?", None)
         rows = self.cursor.fetchall()
-        self.assert_(rows is not None)
-        self.assert_(rows[0][0] == None)   # 0 years apart
+        self.assertTrue(rows is not None)
+        self.assertTrue(rows[0][0] == None)   # 0 years apart
 
 
     #
@@ -794,13 +794,13 @@ class SqlServerTestCase(unittest.TestCase):
     #
 
     def test_rowcount_delete(self):
-        self.assertEquals(self.cursor.rowcount, -1)
+        self.assertEqual(self.cursor.rowcount, -1)
         self.cursor.execute("create table t1(i int)")
         count = 4
         for i in range(count):
             self.cursor.execute("insert into t1 values (?)", i)
         self.cursor.execute("delete from t1")
-        self.assertEquals(self.cursor.rowcount, count)
+        self.assertEqual(self.cursor.rowcount, count)
 
     def test_rowcount_nodata(self):
         """
@@ -813,7 +813,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(i int)")
         # This is a different code path internally.
         self.cursor.execute("delete from t1")
-        self.assertEquals(self.cursor.rowcount, 0)
+        self.assertEqual(self.cursor.rowcount, 0)
 
     def test_rowcount_select(self):
         """
@@ -828,11 +828,11 @@ class SqlServerTestCase(unittest.TestCase):
         for i in range(count):
             self.cursor.execute("insert into t1 values (?)", i)
         self.cursor.execute("select * from t1")
-        self.assertEquals(self.cursor.rowcount, -1)
+        self.assertEqual(self.cursor.rowcount, -1)
 
         rows = self.cursor.fetchall()
-        self.assertEquals(len(rows), count)
-        self.assertEquals(self.cursor.rowcount, -1)
+        self.assertEqual(len(rows), count)
+        self.assertEqual(self.cursor.rowcount, -1)
 
     def test_rowcount_reset(self):
         "Ensure rowcount is reset to -1"
@@ -841,10 +841,10 @@ class SqlServerTestCase(unittest.TestCase):
         count = 4
         for i in range(count):
             self.cursor.execute("insert into t1 values (?)", i)
-        self.assertEquals(self.cursor.rowcount, 1)
+        self.assertEqual(self.cursor.rowcount, 1)
 
         self.cursor.execute("create table t2(i int)")
-        self.assertEquals(self.cursor.rowcount, -1)
+        self.assertEqual(self.cursor.rowcount, -1)
 
     #
     # always return Cursor
@@ -858,7 +858,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(i int)")
         self.cursor.execute("insert into t1 values (1)")
         v = self.cursor.execute("delete from t1")
-        self.assertEquals(v, self.cursor)
+        self.assertEqual(v, self.cursor)
 
     def test_retcursor_nodata(self):
         """
@@ -870,13 +870,13 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(i int)")
         # This is a different code path internally.
         v = self.cursor.execute("delete from t1")
-        self.assertEquals(v, self.cursor)
+        self.assertEqual(v, self.cursor)
 
     def test_retcursor_select(self):
         self.cursor.execute("create table t1(i int)")
         self.cursor.execute("insert into t1 values (1)")
         v = self.cursor.execute("select * from t1")
-        self.assertEquals(v, self.cursor)
+        self.assertEqual(v, self.cursor)
 
     #
     # misc
@@ -890,7 +890,7 @@ class SqlServerTestCase(unittest.TestCase):
             self.cursor.execute("insert into [test one] values(1)")
             self.cursor.execute("select * from [test one]")
             v = self.cursor.fetchone()[0]
-            self.assertEquals(v, 1)
+            self.assertEqual(v, 1)
         finally:
             self.cnxn.rollback()
 
@@ -908,7 +908,7 @@ class SqlServerTestCase(unittest.TestCase):
         names = [ t[0] for t in self.cursor.description ]
         names.sort()
 
-        self.assertEquals(names, [ "abc", "def" ])
+        self.assertEqual(names, [ "abc", "def" ])
 
         # Put it back so other tests don't fail.
         pyodbc.lowercase = False
@@ -924,7 +924,7 @@ class SqlServerTestCase(unittest.TestCase):
 
         row = self.cursor.execute("select * from t1").fetchone()
 
-        self.assertEquals(self.cursor.description, row.cursor_description)
+        self.assertEqual(self.cursor.description, row.cursor_description)
 
 
     def test_temp_select(self):
@@ -997,7 +997,7 @@ class SqlServerTestCase(unittest.TestCase):
                    ('error', 'not an int'),
                    (3, 'good') ]
 
-        self.failUnlessRaises(pyodbc.Error, self.cursor.executemany, "insert into t1(a, b) value (?, ?)", params)
+        self.assertRaises(pyodbc.Error, self.cursor.executemany, "insert into t1(a, b) value (?, ?)", params)
 
 
     def test_row_slicing(self):
@@ -1007,13 +1007,13 @@ class SqlServerTestCase(unittest.TestCase):
         row = self.cursor.execute("select * from t1").fetchone()
 
         result = row[:]
-        self.failUnless(result is row)
+        self.assertTrue(result is row)
 
         result = row[:-1]
         self.assertEqual(result, (1,2,3))
 
         result = row[0:4]
-        self.failUnless(result is row)
+        self.assertTrue(result is row)
 
 
     def test_row_repr(self):
@@ -1055,8 +1055,8 @@ class SqlServerTestCase(unittest.TestCase):
         # Select from the view
         self.cursor.execute("select * from t2")
         rows = self.cursor.fetchall()
-        self.assert_(rows is not None)
-        self.assert_(len(rows) == 3)
+        self.assertTrue(rows is not None)
+        self.assertTrue(len(rows) == 3)
 
     def test_autocommit(self):
         self.assertEqual(self.cnxn.autocommit, False)
@@ -1264,11 +1264,11 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (1, 'test1')")
         self.cursor.execute("insert into t1 values (1, 'test2')")
         rows = self.cursor.execute("select n, s from t1 order by s").fetchall()
-        self.assert_(rows[0] < rows[1])
-        self.assert_(rows[0] <= rows[1])
-        self.assert_(rows[1] > rows[0])
-        self.assert_(rows[1] >= rows[0])
-        self.assert_(rows[0] != rows[1])
+        self.assertTrue(rows[0] < rows[1])
+        self.assertTrue(rows[0] <= rows[1])
+        self.assertTrue(rows[1] > rows[0])
+        self.assertTrue(rows[1] >= rows[0])
+        self.assertTrue(rows[0] != rows[1])
 
         rows = list(rows)
         rows.sort() # uses <
@@ -1282,8 +1282,8 @@ class SqlServerTestCase(unittest.TestCase):
             self.cursor.execute("insert into t1 values (1)")
 
         rows = self.cursor.execute("select n from t1").fetchall()
-        self.assertEquals(len(rows), 1)
-        self.assertEquals(rows[0][0], 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][0], 1)
 
     def test_context_manager_failure(self):
         "Ensure `with` rolls back if an exception is raised"
@@ -1329,7 +1329,7 @@ class SqlServerTestCase(unittest.TestCase):
                             ''')
         self.cnxn.commit()
         value = self.cursor.execute("select * from func1(?)", 'test').fetchone()[0]
-        self.assertEquals(value, 'test')
+        self.assertEqual(value, 'test')
 
     def test_no_fetch(self):
         # Issue 89 with FreeTDS: Multiple selects (or catalog functions that issue selects) without fetches seem to
@@ -1341,11 +1341,11 @@ class SqlServerTestCase(unittest.TestCase):
     def test_drivers(self):
         drivers = pyodbc.drivers()
         self.assertEqual(list, type(drivers))
-        self.assert_(len(drivers) > 0)
+        self.assertTrue(len(drivers) > 0)
 
         m = re.search('DRIVER={([^}]+)}', self.connection_string, re.IGNORECASE)
         current = m.group(1)
-        self.assert_(current in drivers)
+        self.assertTrue(current in drivers)
 
     def test_decode_meta(self):
         """
@@ -1362,7 +1362,7 @@ class SqlServerTestCase(unittest.TestCase):
         # This is really making sure we are properly encoding and comparing the SQLSTATEs.
         self.cursor.execute("create table t1(s1 varchar(10) primary key)")
         self.cursor.execute("insert into t1 values ('one')")
-        self.failUnlessRaises(pyodbc.IntegrityError, self.cursor.execute, "insert into t1 values ('one')")
+        self.assertRaises(pyodbc.IntegrityError, self.cursor.execute, "insert into t1 values ('one')")
 
     def test_columns(self):
         # When using aiohttp, `await cursor.primaryKeys('t1')` was raising the error
