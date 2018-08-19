@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-import sys, os, re, platform
-from os.path import exists, abspath, dirname, join, isdir, relpath
+import sys, os, re
+from os.path import exists, abspath, dirname, join, isdir, relpath, expanduser
 
 try:
     # Allow use of setuptools so eggs can be built.
@@ -19,9 +19,11 @@ else:
 
 OFFICIAL_BUILD = 9999
 
+
 def _print(s):
     # Python 2/3 compatibility
     sys.stdout.write(s + '\n')
+
 
 class VersionCommand(Command):
 
@@ -36,7 +38,7 @@ class VersionCommand(Command):
         pass
 
     def run(self):
-        version_str, version = get_version()
+        version_str, _version = get_version()
         sys.stdout.write(version_str + '\n')
 
 
@@ -170,17 +172,17 @@ def get_compiler_settings(version_str):
             '-Wno-deprecated-declarations'
         ])
 
-        # Apple has decided they won't maintain the iODBC system in OS/X and has added deprecation warnings in 10.8.
-        # For now target 10.7 to eliminate the warnings.
-        settings['define_macros'].append( ('MAC_OS_X_VERSION_10_7',) )
+        # Apple has decided they won't maintain the iODBC system in OS/X and has added
+        # deprecation warnings in 10.8.  For now target 10.7 to eliminate the warnings.
+        settings['define_macros'].append(('MAC_OS_X_VERSION_10_7',))
 
         # Add directories for MacPorts and Homebrew.
-        dirs = ['/usr/local/include', '/opt/local/include','~/homebrew/include']
+        dirs = ['/usr/local/include', '/opt/local/include', expanduser('~/homebrew/include')]
         settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
 
         # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
         # ( also OS/X since El Capitan prevents /usr/lib from being accessed )
-        settings['library_dirs'] = [ '/usr/local/lib' ]
+        settings['library_dirs'] = ['/usr/local/lib']
 
     else:
         # Other posix-like: Linux, Solaris, etc.
