@@ -354,6 +354,15 @@ class SqlServerTestCase(unittest.TestCase):
         rows = self.cursor.fetchall()
         self.assertEqual(rows[0][0], v)
 
+    def test_fast_executemany_to_local_temp_table(self):
+        v = 'Ώπα'
+        self.cursor.execute("CREATE TABLE #issue295 (id INT IDENTITY PRIMARY KEY, txt NVARCHAR(50))")
+        sql = "INSERT INTO #issue295 (txt) VALUES (?)"
+        params = [(v,)]
+        self.cursor.setinputsizes([(pyodbc.SQL_WVARCHAR, 50, 0)])
+        self.cursor.fast_executemany = True
+        self.cursor.executemany(sql, params)
+        self.assertEqual(self.cursor.execute("SELECT txt FROM #issue295").fetchval(), v)
 
     #
     # binary
