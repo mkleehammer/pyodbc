@@ -91,16 +91,22 @@ def load_setup_connection_string(section):
     FILENAME = 'setup.cfg'
     KEY      = 'connection-string'
 
-    path = join(dirname(dirname(abspath(__file__))), 'tmp', FILENAME)
+    path = dirname(abspath(__file__))
+    while True:
+        fqn = join(path, 'tmp', FILENAME)
+        if exists(fqn):
+            break
+        parent = dirname(path)
+        print('{} --> {}'.format(path, parent))
+        if parent == path:
+            return None
+        path = parent
 
-    if exists(path):
-        try:
-            p = SafeConfigParser()
-            p.read(path)
-        except:
-            raise SystemExit('Unable to parse %s: %s' % (path, sys.exc_info()[1]))
+    try:
+        p = SafeConfigParser()
+        p.read(fqn)
+    except:
+        raise SystemExit('Unable to parse %s: %s' % (path, sys.exc_info()[1]))
 
-        if p.has_option(section, KEY):
-            return p.get(section, KEY)
-
-    return None
+    if p.has_option(section, KEY):
+        return p.get(section, KEY)

@@ -12,6 +12,11 @@ a 'test' database, so you can probably use the following.  (Update the driver na
 
 These tests use the pyodbc library from the build directory, not the version installed in your
 Python directories.  You must run `python setup.py build` before running these tests.
+
+You can also put the connection string into a tmp/setup.cfg file like so:
+
+  [mysqltests]
+  connection-string=DRIVER={MySQL};SERVER=localhost;UID=uid;PWD=pwd;DATABASE=db
 """
 
 import sys, os, re

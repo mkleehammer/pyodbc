@@ -11,7 +11,7 @@ These run using the version from the 'build' directory, not the version
 installed into the Python directories.  You must run python setup.py build
 before running the tests.
 
-You can also put the connection string into tmp/setup.cfg like so:
+You can also put the connection string into a tmp/setup.cfg file like so:
 
   [freetdstests]
   connection-string=DSN=xyz;UID=test;PWD=test

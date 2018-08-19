@@ -13,8 +13,7 @@ These run using the version from the 'build' directory, not the version
 installed into the Python directories.  You must run python setup.py build
 before running the tests.
 
-You can also put the connection string into a setup.cfg file in the root of the project
-(the same one setup.py would use) like so:
+You can also put the connection string into a tmp/setup.cfg file like so:
 
   [sqlservertests]
   connection-string=DRIVER={SQL Server};SERVER=localhost;UID=uid;PWD=pwd;DATABASE=db
