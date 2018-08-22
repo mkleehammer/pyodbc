@@ -1526,7 +1526,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(list, type(drivers))
         self.assertTrue(len(drivers) > 0)
 
-        m = re.search('DRIVER={([^}]+)}', self.connection_string, re.IGNORECASE)
+        m = re.search('DRIVER={?([^}]+?)}?;', self.connection_string, re.IGNORECASE)
         current = m.group(1)
         self.assertTrue(current in drivers)
 
