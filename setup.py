@@ -85,7 +85,7 @@ def main():
         'maintainer':       "Michael Kleehammer",
         'maintainer_email': "michael@kleehammer.com",
 
-        'ext_modules': [Extension('pyodbc', files, **settings)],
+        'ext_modules': [Extension('pyodbc', sorted(files), **settings)],
 
         'license': 'MIT',
 
