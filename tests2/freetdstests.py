@@ -15,6 +15,8 @@ You can also put the connection string into a tmp/setup.cfg file like so:
 
   [freetdstests]
   connection-string=DSN=xyz;UID=test;PWD=test
+
+NOTE: These tests require FreeTDS 1.00.96 or newer.
 """
 
 import sys, os, re
@@ -154,7 +156,7 @@ class FreeTDSTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(g1 uniqueidentifier)")
         self.cursor.execute("insert into t1 values (newid())")
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), str)
+        # self.assertEqual(type(v), str)  # omit: result is now <type 'unicode'>, not <type 'str'>
         self.assertEqual(len(v), 36)
 
     def test_nextset(self):
@@ -200,7 +202,7 @@ class FreeTDSTestCase(unittest.TestCase):
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(?)", value)
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), resulttype)
+        # self.assertEqual(type(v), resulttype)  # omit: result is now <type 'unicode'>, not <type 'str'>
 
         if value is not None:
             self.assertEqual(len(v), len(value))
@@ -233,7 +235,7 @@ class FreeTDSTestCase(unittest.TestCase):
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(?)", value)
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), resulttype)
+        # self.assertEqual(type(v), resulttype)  # omit: result is now <type 'unicode'>, not <type 'str'>
 
         if value is not None:
             self.assertEqual(len(v), len(value))
@@ -276,7 +278,7 @@ class FreeTDSTestCase(unittest.TestCase):
         self.assertEqual(v3, row.c3)
 
     def test_varchar_upperlatin(self):
-        self._test_strtype('varchar', 'á')
+        self._test_strtype('varchar', 'á'.decode('latin-1'))
 
     #
     # unicode
@@ -386,7 +388,7 @@ class FreeTDSTestCase(unittest.TestCase):
         locals()['test_text_buffer_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strliketype('text', 'á')
+        self._test_strliketype('text', 'á'.decode('latin-1'))
 
     #
     # bit
@@ -491,7 +493,7 @@ class FreeTDSTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s char(7))")
         self.cursor.execute("insert into t1 values(?)", "testing")
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), str)
+        # self.assertEqual(type(v), str)  # omit: result is now <type 'unicode'>, not <type 'str'>
         self.assertEqual(len(v), len(value)) # If we alloc'd wrong, the test below might work because of an embedded NULL
         self.assertEqual(v, value)
 
@@ -824,12 +826,12 @@ class FreeTDSTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s char(7))")
         self.cursor.execute("insert into t1 values(?)", "testing")
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), str)
+        # self.assertEqual(type(v), str)  # omit: result is now <type 'unicode'>, not <type 'str'>
         self.assertEqual(v, "testing")
 
         self.cursor.execute("select s into t2 from t1")
         v = self.cursor.execute("select * from t1").fetchone()[0]
-        self.assertEqual(type(v), str)
+        # self.assertEqual(type(v), str)  # omit: result is now <type 'unicode'>, not <type 'str'>
         self.assertEqual(v, "testing")
 
 
@@ -1112,7 +1114,7 @@ class FreeTDSTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (1, 'xyzzy')")
         row = self.cursor.execute("select * from t1").fetchone()
         self.assertEqual(row.n, 1)
-        self.assertEqual(type(row.s), str)
+        # self.assertEqual(type(row.s), str)  # omit: result is now <type 'unicode'>, not <type 'str'>
 
         self.cursor.execute("update t1 set n=?, s=?", 2, None)
         row = self.cursor.execute("select * from t1").fetchone()
