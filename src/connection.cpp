@@ -1065,6 +1065,54 @@ static int Connection_settimeout(PyObject* self, PyObject* value, void* closure)
     return 0;
 }
 
+static bool _remove_converter(PyObject* self, SQLSMALLINT sqltype)
+{
+    Connection* cnxn = (Connection*)self;
+
+    if (!cnxn->conv_count)
+    {
+        // There are no converters, so nothing to remove.
+        return true;
+    }
+
+    int          count = cnxn->conv_count;
+    SQLSMALLINT* types = cnxn->conv_types;
+    PyObject**   funcs = cnxn->conv_funcs;
+
+    int i = 0;
+    for (; i < count; i++)
+        if (types[i] == sqltype)
+            break;
+
+    if (i == count)
+    {
+        // There is no converter for this type, so nothing to remove.
+        return true;
+    }
+
+    Py_DECREF(funcs[i]);
+
+    int move = count - i - 1;  // How many are we moving?
+    if (move > 0)
+    {
+        memcpy(&types[i], &types[i+1], move * sizeof(SQLSMALLINT));
+        memcpy(&funcs[i], &funcs[i+1], move * sizeof(PyObject*));
+    }
+    count--;
+
+    // Note: If the realloc fails, the old array is still around and is 1 element too long but
+    // everything will still work, so we ignore.
+    pyodbc_realloc((BYTE**)&types, count * sizeof(SQLSMALLINT));
+    pyodbc_realloc((BYTE**)&funcs, count * sizeof(PyObject*));
+
+    cnxn->conv_count = count;
+    cnxn->conv_types = types;
+    cnxn->conv_funcs = funcs;
+
+    return true;
+}
+
+
 static bool _add_converter(PyObject* self, SQLSMALLINT sqltype, PyObject* func)
 {
     Connection* cnxn = (Connection*)self;
@@ -1139,10 +1187,12 @@ static char conv_add_doc[] =
     "  value, and should return the converted value.  If the value is NULL, the\n"
     "  parameter will be None.  Otherwise it will be a "
 #if PY_MAJOR_VERSION >= 3
-    "bytes object."
+    "bytes object.\n"
 #else
-    "str object with the raw bytes."
+    "str object with the raw bytes.\n"
 #endif
+    "\n"
+    "If func is None, any existing converter is removed."
     ;
 
 static PyObject* Connection_conv_add(PyObject* self, PyObject* args)
@@ -1152,7 +1202,40 @@ static PyObject* Connection_conv_add(PyObject* self, PyObject* args)
     if (!PyArg_ParseTuple(args, "iO", &sqltype, &func))
         return 0;
 
-    if (!_add_converter(self, (SQLSMALLINT)sqltype, func))
+    if (func != Py_None)
+    {
+        if (!_add_converter(self, (SQLSMALLINT)sqltype, func))
+            return 0;
+    }
+    else
+    {
+        if (!_remove_converter(self, (SQLSMALLINT)sqltype))
+            return 0;
+    }
+
+    Py_RETURN_NONE;
+}
+
+static char conv_remove_doc[] =
+    "remove_output_converter(sqltype) --> None\n"
+    "\n"
+    "Remove an output converter function that was registered with\n"
+    "add_output_converter.  It is safe to call if no converter is\n"
+    "registered for the type.\n"
+    "\n"
+    "sqltype\n"
+    "  The integer SQL type value being converted, which can be one of the defined\n"
+    "  standard constants (e.g. pyodbc.SQL_VARCHAR) or a database-specific value\n"
+    "  (e.g. -151 for the SQL Server 2008 geometry data type).\n"
+    ;
+
+static PyObject* Connection_conv_remove(PyObject* self, PyObject* args)
+{
+    int sqltype;
+    if (!PyArg_ParseTuple(args, "i", &sqltype))
+        return 0;
+
+    if (!_remove_converter(self, (SQLSMALLINT)sqltype))
         return 0;
 
     Py_RETURN_NONE;
@@ -1462,6 +1545,7 @@ static struct PyMethodDef Connection_methods[] =
     { "rollback",                Connection_rollback,        METH_NOARGS,  rollback_doc   },
     { "getinfo",                 Connection_getinfo,         METH_VARARGS, getinfo_doc    },
     { "add_output_converter",    Connection_conv_add,        METH_VARARGS, conv_add_doc   },
+    { "remove_output_converter", Connection_conv_remove,     METH_VARARGS, conv_remove_doc },
     { "clear_output_converters", Connection_conv_clear,      METH_NOARGS,  conv_clear_doc },
     { "setdecoding",             (PyCFunction)Connection_setdecoding,     METH_VARARGS|METH_KEYWORDS, setdecoding_doc },
     { "setencoding",             (PyCFunction)Connection_setencoding,     METH_VARARGS|METH_KEYWORDS, 0 },

@@ -593,6 +593,43 @@ class PGTestCase(unittest.TestCase):
 
         self.assertEqual(result, v)
         
+    def test_output_conversion(self):
+        # Note the use of SQL_WVARCHAR, not SQL_VARCHAR.
+
+        def convert(value):
+            # The value is the raw bytes (as a bytes object) read from the
+            # database.  We'll simply add an X at the beginning at the end.
+            return 'X' + value.decode('latin1') + 'X'
+
+        self.cursor.execute("create table t1(n int, v varchar(10))")
+        self.cursor.execute("insert into t1 values (1, '123.45')")
+
+        self.cnxn.add_output_converter(pyodbc.SQL_WVARCHAR, convert)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'X123.45X')
+
+        # Clear all conversions and try again.  There should be no Xs this time.
+        self.cnxn.clear_output_converters()
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, '123.45')
+
+        # Same but clear using remove_output_converter.
+        self.cnxn.add_output_converter(pyodbc.SQL_WVARCHAR, convert)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'X123.45X')
+
+        self.cnxn.remove_output_converter(pyodbc.SQL_WVARCHAR)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, '123.45')
+
+        # And lastly, clear by passing None for the converter.
+        self.cnxn.add_output_converter(pyodbc.SQL_WVARCHAR, convert)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'X123.45X')
+
+        self.cnxn.add_output_converter(pyodbc.SQL_WVARCHAR, None)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, '123.45')
         
 def main():
     from optparse import OptionParser
