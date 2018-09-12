@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Unit tests for PostgreSQL on OS X and Linux.
 
@@ -548,7 +549,7 @@ class PGTestCase(unittest.TestCase):
         # I'm not sure why, but PyArg_ParseTupleAndKeywords fails if you use "|s" for an
         # optional string keyword when calling indirectly.
 
-        self.cursor.execute("create table t1(a int, b varchar(3))")
+        self.cursor.execute("create table t1(a int, b varchar(3), xΏz varchar(4))")
 
         self.cursor.columns('t1')
         results = {row.column_name: row for row in self.cursor}
@@ -557,6 +558,9 @@ class PGTestCase(unittest.TestCase):
         row = results['b']
         assert row.type_name == 'varchar'
         assert row.precision == 3, row.precision
+        row = results['xΏz']
+        assert row.type_name == 'varchar'
+        assert row.precision == 4, row.precision
 
         # Now do the same, but specifically pass in None to one of the keywords.  Old versions
         # were parsing arguments incorrectly and would raise an error.  (This crops up when

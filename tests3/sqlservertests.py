@@ -1473,7 +1473,7 @@ class SqlServerTestCase(unittest.TestCase):
         # I'm not sure why, but PyArg_ParseTupleAndKeywords fails if you use "|s" for an
         # optional string keyword when calling indirectly.
 
-        self.cursor.execute("create table t1(a int, b varchar(3))")
+        self.cursor.execute("create table t1(a int, b varchar(3), xΏz varchar(4))")
 
         self.cursor.columns('t1')
         results = {row.column_name: row for row in self.cursor}
@@ -1494,6 +1494,9 @@ class SqlServerTestCase(unittest.TestCase):
         row = results['b']
         assert row.type_name == 'varchar'
         assert row.column_size == 3
+        row = results['xΏz']
+        assert row.type_name == 'varchar'
+        assert row.column_size == 4, row.column_size
 
     def test_cancel(self):
         # I'm not sure how to reliably cause a hang to cancel, so for now we'll settle with

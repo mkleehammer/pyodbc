@@ -347,7 +347,7 @@ static bool CheckAttrsVal(PyObject *val, bool allowSeq)
      || PyBytes_Check(val)
      || PyUnicode_Check(val))
         return true;
-    printf("CheckAttrsVal - sequence\n");
+
     if (allowSeq && PySequence_Check(val))
     {
         Py_ssize_t len = PySequence_Size(val);
@@ -359,8 +359,9 @@ static bool CheckAttrsVal(PyObject *val, bool allowSeq)
         }
         return true;
     }
-    return (bool)PyErr_Format(PyExc_TypeError, "Attribute dictionary attrs must be"
-        " integers, buffers, bytes, %s", allowSeq ? "strings, or sequences" : "or strings");
+
+    return PyErr_Format(PyExc_TypeError, "Attribute dictionary attrs must be"
+        " integers, buffers, bytes, %s", allowSeq ? "strings, or sequences" : "or strings") != 0;
 }
 
 static PyObject* _CheckAttrsDict(PyObject* attrs)

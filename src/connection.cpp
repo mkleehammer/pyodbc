@@ -17,15 +17,6 @@
 #include "pyodbcmodule.h"
 #include "errors.h"
 #include "cnxninfo.h"
-#include "sqlwchar.h"
-
-#ifdef WORDS_BIGENDIAN
-# define OPTENC_UTF16NE OPTENC_UTF16BE
-# define ENCSTR_UTF16NE "utf-16be"
-#else
-# define OPTENC_UTF16NE OPTENC_UTF16LE
-# define ENCSTR_UTF16NE "utf-16le"
-#endif
 
 #if PY_MAJOR_VERSION < 3
 static bool IsStringType(PyObject* t) { return (void*)t == (void*)&PyString_Type; }
@@ -85,26 +76,53 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
             RaiseErrorFromHandle(0, "SQLSetConnectAttr(SQL_ATTR_LOGIN_TIMEOUT)", hdbc, SQL_NULL_HANDLE);
     }
 
+    const char* szEncoding = 0;
+    Object encBytes;
+    if (encoding)
+    {
+        #if PY_MAJOR_VERSION < 3
+        if (PyString_Check(encoding))
+        {
+            szEncoding = PyString_AsString(encoding);
+            if (!szEncoding)
+                return false;
+        }
+        #endif
+        if (PyUnicode_Check(encoding))
+        {
+            #if PY_MAJOR_VERSION < 3
+                encBytes = PyUnicode_AsUTF8String(encoding);
+                if (!encBytes)
+                    return false;
+                szEncoding = PyString_AS_STRING(encBytes);
+            #else
+                szEncoding = PyUnicode_AsUTF8(encoding);
+            #endif
+        }
+    }
+
     if (!fAnsi)
     {
         // I want to call the W version when possible since the driver can use it as an
-        // indication that we can handle Unicode.  We are going to use the same unicode ending
-        // as we do for binding parameters.
+        // indication that we can handle Unicode.
 
-        SQLWChar wchar(pConnectString, SQL_C_WCHAR, encoding, ENCSTR_UTF16NE);
-        if (!wchar)
+        SQLWChar wchar(pConnectString, szEncoding ? szEncoding : ENCSTR_UTF16NE);
+        if (!wchar.isValid())
             return false;
 
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLDriverConnectW(hdbc, 0, (SQLWCHAR*)wchar.value(), (SQLSMALLINT)wchar.charlen(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
+        ret = SQLDriverConnectW(hdbc, 0, wchar.psz, SQL_NTS, 0, 0, 0, SQL_DRIVER_NOPROMPT);
         Py_END_ALLOW_THREADS
         if (SQL_SUCCEEDED(ret))
             return true;
     }
 
-    SQLWChar ch(pConnectString, SQL_C_CHAR, encoding, "utf-8");
+    SQLWChar wchar(pConnectString, szEncoding ? szEncoding : "utf-8");
+    if (!wchar.isValid())
+        return false;
+
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLDriverConnect(hdbc, 0, (SQLCHAR*)ch.value(), (SQLSMALLINT)ch.charlen(), 0, 0, 0, SQL_DRIVER_NOPROMPT);
+    ret = SQLDriverConnect(hdbc, 0, (SQLCHAR*)wchar.psz, SQL_NTS, 0, 0, 0, SQL_DRIVER_NOPROMPT);
     Py_END_ALLOW_THREADS
     if (SQL_SUCCEEDED(ret))
         return true;

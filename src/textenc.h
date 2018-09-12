@@ -1,4 +1,3 @@
-
 #ifndef _TEXTENC_H
 #define _TEXTENC_H
 
@@ -24,6 +23,23 @@ enum {
 #endif
 };
 
+#ifdef WORDS_BIGENDIAN
+# define OPTENC_UTF16NE OPTENC_UTF16BE
+# define ENCSTR_UTF16NE "utf-16be"
+#else
+# define OPTENC_UTF16NE OPTENC_UTF16LE
+# define ENCSTR_UTF16NE "utf-16le"
+#endif
+
+typedef unsigned short ODBCCHAR;
+// I'm not sure why, but unixODBC seems to define SQLWCHAR as wchar_t even with
+// the size is incorrect.  So we might get 4-byte SQLWCHAR on 64-bit Linux even
+// though it requires 2-byte characters.  We have to define our own type to
+// operate on.
+
+enum {
+    ODBCCHAR_SIZE = 2
+};
 
 struct TextEnc
 {
@@ -57,6 +73,91 @@ struct TextEnc
     PyObject* Encode(PyObject*) const;
     // Given a string (unicode or str for 2.7), return a bytes object encoded.  This is used
     // for encoding a Python object for passing to a function expecting SQLCHAR* or SQLWCHAR*.
+};
+
+
+struct SQLWChar
+{
+    // Encodes a Python string to a SQLWCHAR pointer.  This should eventually replace the
+    // SQLWchar structure.
+    //
+    // Note: This does *not* increment the refcount!
+
+    SQLWCHAR* psz;
+    bool isNone;
+    Object bytes;
+    // A temporary object holding the decoded bytes if we can't use a pointer into the original
+    // object.
+
+    SQLWChar(PyObject* src, const char* szEncoding)
+    {
+        TextEnc enc;
+        enc.name = szEncoding;
+        enc.ctype = SQL_C_WCHAR;
+        enc.optenc = (strcmp(szEncoding, "raw") == 0) ? OPTENC_RAW : OPTENC_NONE;
+        init(src, enc);
+    }
+
+    SQLWChar(PyObject* src, const TextEnc* penc)
+    {
+        init(src, *penc);
+    }
+
+    SQLWChar(PyObject* src, const TextEnc& enc)
+    {
+        init(src, enc);
+    }
+
+    void init(PyObject* src, const TextEnc& enc)
+    {
+        if (src == 0 || src == Py_None)
+        {
+            psz = 0;
+            isNone = true;
+            return;
+        }
+
+        isNone = false;
+
+        // If there are optimized encodings that don't require a temporary object, use them.
+        #if PY_MAJOR_VERSION < 3
+        if (enc.optenc == OPENC_RAW && PyString_Check(src))
+        {
+            psz = (SQLWCHAR*)PyString_AS_STRING(src);
+            return;
+        }
+        #endif
+
+        #if PY_MAJOR_VERSION >= 3
+        if (enc.optenc == OPTENC_UTF8 && PyUnicode_Check(src))
+        {
+            psz = (SQLWCHAR*)PyUnicode_AsUTF8(src);
+            return;
+        }
+        #endif
+
+        bytes.Attach(PyUnicode_AsEncodedString(src, enc.name, "strict"));
+        if (bytes)
+        {
+            // Careful: Some encodings don't return bytes.  Don't use AS_STRING macro.
+            psz = (SQLWCHAR*)PyBytes_AsString(bytes.Get());
+        }
+    }
+
+    bool isValidOrNone()
+    {
+        // Returns true if this object is a valid string *or* None.
+        return isNone || (psz != 0);
+    }
+
+    bool isValid()
+    {
+        return psz != 0;
+    }
+
+private:
+    SQLWChar(const SQLWChar&) {}
+    void operator=(const SQLWChar&) {}
 };
 
 

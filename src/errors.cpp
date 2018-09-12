@@ -5,7 +5,6 @@
 #include "connection.h"
 #include "errors.h"
 #include "pyodbcmodule.h"
-#include "sqlwchar.h"
 
 // Exceptions
 
