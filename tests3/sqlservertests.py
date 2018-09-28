@@ -621,7 +621,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEqual(type(value), datetime)
+        self.assertEqual(type(result), datetime)
         self.assertEqual(value, result)
 
     def test_datetime_fraction(self):
@@ -634,8 +634,8 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEqual(type(value), datetime)
-        self.assertEqual(result, value)
+        self.assertEqual(type(result), datetime)
+        self.assertEqual(value, result)
 
     def test_datetime_fraction_rounded(self):
         # SQL Server supports milliseconds, but Python's datetime supports nanoseconds.  pyodbc rounds down to what the
@@ -649,7 +649,7 @@ class SqlServerTestCase(unittest.TestCase):
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
         self.assertEqual(type(result), datetime)
-        self.assertEqual(result, rounded)
+        self.assertEqual(rounded, result)
 
     def test_date(self):
         ver = self.get_sqlserver_version()
@@ -662,7 +662,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select d from t1").fetchone()[0]
-        self.assertEqual(type(value), date)
+        self.assertEqual(type(result), date)
         self.assertEqual(value, result)
 
     def test_time(self):
@@ -680,7 +680,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select t from t1").fetchone()[0]
-        self.assertEqual(type(value), time)
+        self.assertEqual(type(result), time)
         self.assertEqual(value, result)
 
     def test_datetime2(self):
@@ -690,7 +690,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEqual(type(value), datetime)
+        self.assertEqual(type(result), datetime)
         self.assertEqual(value, result)
 
     #
