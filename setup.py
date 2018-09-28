@@ -149,8 +149,11 @@ def get_compiler_settings(version_str):
             '/wd4191', # casts to PYCFunction which doesn't have the keywords parameter
         ])
 
-        if '--debug' in sys.argv:
-            sys.argv.remove('--debug')
+        if '--windbg' in sys.argv:
+            # Used only temporarily to add some debugging flags to get better stack traces in
+            # the debugger.  This is not related to building debug versions of Python which use
+            # "--debug".
+            sys.argv.remove('--windbg')
             settings['extra_compile_args'].extend('/Od /Ge /GS /GZ /RTC1 /Wp64 /Yd'.split())
 
         settings['libraries'].append('odbc32')
