@@ -121,7 +121,7 @@ struct SQLWChar
 
         // If there are optimized encodings that don't require a temporary object, use them.
         #if PY_MAJOR_VERSION < 3
-        if (enc.optenc == OPENC_RAW && PyString_Check(src))
+        if (enc.optenc == OPTENC_RAW && PyString_Check(src))
         {
             psz = (SQLWCHAR*)PyString_AS_STRING(src);
             return;

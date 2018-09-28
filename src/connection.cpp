@@ -94,7 +94,7 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
                 encBytes = PyUnicode_AsUTF8String(encoding);
                 if (!encBytes)
                     return false;
-                szEncoding = PyString_AS_STRING(encBytes);
+                szEncoding = PyString_AS_STRING(encBytes.Get());
             #else
                 szEncoding = PyUnicode_AsUTF8(encoding);
             #endif
