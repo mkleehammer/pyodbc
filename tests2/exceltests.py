@@ -39,19 +39,19 @@ class ExcelTestCase(unittest.TestCase):
 
     def test_getinfo_string(self):
         value = self.cnxn.getinfo(pyodbc.SQL_CATALOG_NAME_SEPARATOR)
-        self.assert_(isinstance(value, str))
+        self.assertTrue(isinstance(value, str))
      
     def test_getinfo_bool(self):
         value = self.cnxn.getinfo(pyodbc.SQL_ACCESSIBLE_TABLES)
-        self.assert_(isinstance(value, bool))
+        self.assertTrue(isinstance(value, bool))
      
     def test_getinfo_int(self):
         value = self.cnxn.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
-        self.assert_(isinstance(value, (int, long)))
+        self.assertTrue(isinstance(value, (int, long)))
      
     def test_getinfo_smallint(self):
         value = self.cnxn.getinfo(pyodbc.SQL_CONCAT_NULL_BEHAVIOR)
-        self.assert_(isinstance(value, int))
+        self.assertTrue(isinstance(value, int))
 
 
     def test_read_sheet(self):
@@ -60,10 +60,10 @@ class ExcelTestCase(unittest.TestCase):
         # Our second sheet is named Sheet2 and has two columns.  The first has values 10, 20, 30, etc.
 
         rows = self.cursor.execute("select * from [Sheet2$]").fetchall()
-        self.assertEquals(len(rows), 5)
+        self.assertEqual(len(rows), 5)
 
         for index, row in enumerate(rows):
-            self.assertEquals(row.s2num, float(index + 1) * 10)
+            self.assertEqual(row.s2num, float(index + 1) * 10)
 
     def test_read_range(self):
         # The second method of reading data is to assign a name to a range of cells and access that as a table.
@@ -71,11 +71,11 @@ class ExcelTestCase(unittest.TestCase):
         # Our first worksheet has a section named Table1.  The first column has values 1, 2, 3, etc.
 
         rows = self.cursor.execute("select * from Table1").fetchall()
-        self.assertEquals(len(rows), 10)
+        self.assertEqual(len(rows), 10)
      
         for index, row in enumerate(rows):
-            self.assertEquals(row.num, float(index + 1))
-            self.assertEquals(row.val, chr(ord('a') + index))
+            self.assertEqual(row.num, float(index + 1))
+            self.assertEqual(row.val, chr(ord('a') + index))
 
     def test_tables(self):
         # This is useful for figuring out what is available
@@ -97,8 +97,8 @@ class ExcelTestCase(unittest.TestCase):
     #  
     #     print 'added:', nextnum, len(rows), 'rows'
     #  
-    #     self.assertEquals(row.s2num, nextnum)
-    #     self.assertEquals(row.s2val, 'z')
+    #     self.assertEqual(row.s2num, nextnum)
+    #     self.assertEqual(row.s2val, 'z')
     #  
     #     self.cnxn.commit()
 

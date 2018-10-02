@@ -24,7 +24,6 @@
 #include "errors.h"
 #include "getdata.h"
 #include "dbspecific.h"
-#include "sqlwchar.h"
 #include <datetime.h>
 
 enum
@@ -685,12 +684,32 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         if (ret == SQL_NEED_DATA)
         {
             szLastFunction = "SQLPutData";
-            if (PyBytes_Check(pInfo->pObject))
+            if (PyBytes_Check(pInfo->pObject)
+    #if PY_VERSION_HEX >= 0x02060000
+             || PyByteArray_Check(pInfo->pObject)
+    #endif
+            )
             {
-                const char* p = PyBytes_AS_STRING(pInfo->pObject);
+                char *(*pGetPtr)(PyObject*);
+                Py_ssize_t (*pGetLen)(PyObject*);
+    #if PY_VERSION_HEX >= 0x02060000
+                if (PyByteArray_Check(pInfo->pObject))
+                {
+                    pGetPtr = PyByteArray_AsString;
+                    pGetLen = PyByteArray_Size;
+                }
+                else
+    #endif
+                {
+                    pGetPtr = PyBytes_AsString;
+                    pGetLen = PyBytes_Size;
+                }
+
+                const char* p = pGetPtr(pInfo->pObject);
+                SQLLEN cb = (SQLLEN)pGetLen(pInfo->pObject);
                 SQLLEN offset = 0;
-                SQLLEN cb = (SQLLEN)PyBytes_GET_SIZE(pInfo->pObject);
-                while (offset < cb)
+
+                do
                 {
                     SQLLEN remaining = min(pInfo->maxlength, cb - offset);
                     TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
@@ -701,26 +720,8 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                         return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
                     offset += remaining;
                 }
+                while (offset < cb);
             }
-#if PY_VERSION_HEX >= 0x02060000
-            else if (PyByteArray_Check(pInfo->pObject))
-            {
-                const char* p = PyByteArray_AS_STRING(pInfo->pObject);
-                SQLLEN offset = 0;
-                SQLLEN cb     = (SQLLEN)PyByteArray_GET_SIZE(pInfo->pObject);
-                while (offset < cb)
-                {
-                    SQLLEN remaining = min(pInfo->maxlength, cb - offset);
-                    TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
-                    Py_BEGIN_ALLOW_THREADS
-                    ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
-                    Py_END_ALLOW_THREADS
-                    if (!SQL_SUCCEEDED(ret))
-                        return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
-                    offset += remaining;
-                }
-            }
-#endif
 #if PY_MAJOR_VERSION < 3
             else if (PyBuffer_Check(pInfo->pObject))
             {
@@ -907,9 +908,9 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
         if (cursor->fastexecmany)
         {
             free_results(cursor, FREE_STATEMENT | KEEP_PREPARED);
-            if (!ExecuteMulti(cursor, pSql, param_seq))
+			if (!ExecuteMulti(cursor, pSql, param_seq))
                 return 0;
-        }
+		}
         else
         {
             for (Py_ssize_t i = 0; i < c; i++)
@@ -966,6 +967,7 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
     }
 
     cursor->rowcount = -1;
+
     Py_RETURN_NONE;
 }
 
@@ -1280,12 +1282,12 @@ char* Cursor_column_kwnames[] = { "table", "catalog", "schema", "column", 0 };
 
 static PyObject* Cursor_columns(PyObject* self, PyObject* args, PyObject* kwargs)
 {
-    const char* szCatalog = 0;
-    const char* szSchema  = 0;
-    const char* szTable   = 0;
-    const char* szColumn  = 0;
+    PyObject* pCatalog = 0;
+    PyObject* pSchema  = 0;
+    PyObject* pTable   = 0;
+    PyObject* pColumn  = 0;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zzzz", Cursor_column_kwnames, &szTable, &szCatalog, &szSchema, &szColumn))
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|OOOO", Cursor_column_kwnames, &pTable, &pCatalog, &pSchema, &pColumn))
         return 0;
 
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
@@ -1295,8 +1297,21 @@ static PyObject* Cursor_columns(PyObject* self, PyObject* args, PyObject* kwargs
 
     SQLRETURN ret = 0;
 
+    const TextEnc& enc = cur->cnxn->metadata_enc;
+    SQLWChar catalog(pCatalog, enc);
+    SQLWChar schema(pSchema, enc);
+    SQLWChar table(pTable, enc);
+    SQLWChar column(pColumn, enc);
+
+    if (!catalog.isValidOrNone() || !schema.isValidOrNone() || !table.isValidOrNone() || !column.isValidOrNone())
+        return 0;
+
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLColumns(cur->hstmt, (SQLCHAR*)szCatalog, SQL_NTS, (SQLCHAR*)szSchema, SQL_NTS, (SQLCHAR*)szTable, SQL_NTS, (SQLCHAR*)szColumn, SQL_NTS);
+    ret = SQLColumnsW(cur->hstmt,
+                      catalog.psz, SQL_NTS,
+                      schema.psz, SQL_NTS,
+                      table.psz, SQL_NTS,
+                      column.psz, SQL_NTS);
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))

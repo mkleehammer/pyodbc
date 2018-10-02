@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-import sys, os, re, platform
-from os.path import exists, abspath, dirname, join, isdir, relpath
+import sys, os, re
+from os.path import exists, abspath, dirname, join, isdir, relpath, expanduser
 
 try:
     # Allow use of setuptools so eggs can be built.
@@ -19,9 +19,11 @@ else:
 
 OFFICIAL_BUILD = 9999
 
+
 def _print(s):
     # Python 2/3 compatibility
     sys.stdout.write(s + '\n')
+
 
 class VersionCommand(Command):
 
@@ -36,7 +38,7 @@ class VersionCommand(Command):
         pass
 
     def run(self):
-        version_str, version = get_version()
+        version_str, _version = get_version()
         sys.stdout.write(version_str + '\n')
 
 
@@ -83,7 +85,7 @@ def main():
         'maintainer':       "Michael Kleehammer",
         'maintainer_email': "michael@kleehammer.com",
 
-        'ext_modules': [Extension('pyodbc', files, **settings)],
+        'ext_modules': [Extension('pyodbc', sorted(files), **settings)],
 
         'license': 'MIT',
 
@@ -147,8 +149,11 @@ def get_compiler_settings(version_str):
             '/wd4191', # casts to PYCFunction which doesn't have the keywords parameter
         ])
 
-        if '--debug' in sys.argv:
-            sys.argv.remove('--debug')
+        if '--windbg' in sys.argv:
+            # Used only temporarily to add some debugging flags to get better stack traces in
+            # the debugger.  This is not related to building debug versions of Python which use
+            # "--debug".
+            sys.argv.remove('--windbg')
             settings['extra_compile_args'].extend('/Od /Ge /GS /GZ /RTC1 /Wp64 /Yd'.split())
 
         settings['libraries'].append('odbc32')
@@ -170,17 +175,17 @@ def get_compiler_settings(version_str):
             '-Wno-deprecated-declarations'
         ])
 
-        # Apple has decided they won't maintain the iODBC system in OS/X and has added deprecation warnings in 10.8.
-        # For now target 10.7 to eliminate the warnings.
-        settings['define_macros'].append( ('MAC_OS_X_VERSION_10_7',) )
+        # Apple has decided they won't maintain the iODBC system in OS/X and has added
+        # deprecation warnings in 10.8.  For now target 10.7 to eliminate the warnings.
+        settings['define_macros'].append(('MAC_OS_X_VERSION_10_7',))
 
         # Add directories for MacPorts and Homebrew.
-        dirs = ['/usr/local/include', '/opt/local/include','~/homebrew/include']
+        dirs = ['/usr/local/include', '/opt/local/include', expanduser('~/homebrew/include')]
         settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
 
         # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
         # ( also OS/X since El Capitan prevents /usr/lib from being accessed )
-        settings['library_dirs'] = [ '/usr/local/lib' ]
+        settings['library_dirs'] = ['/usr/local/lib']
 
     else:
         # Other posix-like: Linux, Solaris, etc.
