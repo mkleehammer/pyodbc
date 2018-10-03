@@ -17,7 +17,6 @@
 #include "buffer.h"
 #include "errors.h"
 #include "dbspecific.h"
-#include "sqlwchar.h"
 #include "row.h"
 #include <datetime.h>
 
