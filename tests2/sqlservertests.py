@@ -24,6 +24,8 @@ is installed:
   2000: DRIVER={SQL Server}
   2005: DRIVER={SQL Server}
   2008: DRIVER={SQL Server Native Client 10.0}
+  
+If using FreeTDS ODBC, be sure to use version 1.00.97 or newer.
 """
 
 import sys, os, re, uuid
@@ -31,6 +33,7 @@ import unittest
 from decimal import Decimal
 from datetime import datetime, date, time
 from os.path import join, getsize, dirname, abspath
+from warnings import warn
 from testutils import *
 
 _TESTSTR = '0123456789-abcdefghijklmnopqrstuvwxyz-'
@@ -70,6 +73,19 @@ class SqlServerTestCase(unittest.TestCase):
     def __init__(self, method_name, connection_string):
         unittest.TestCase.__init__(self, method_name)
         self.connection_string = connection_string
+
+    def driver_type_is(self, type_name):
+        recognized_types = {
+            'msodbcsql': '(Microsoft) ODBC Driver xx for SQL Server',
+            'freetds': 'FreeTDS ODBC',
+        }
+        if not type_name in recognized_types.keys():
+            raise KeyError('"{0}" is not a recognized driver type: {1}'.format(type_name, list(recognized_types.keys())))
+        driver_name = self.cnxn.getinfo(pyodbc.SQL_DRIVER_NAME).lower()
+        if type_name == 'msodbcsql':
+            return ('msodbcsql' in driver_name) or ('sqlncli' in driver_name) or ('sqlsrv32.dll' == driver_name)
+        elif type_name == 'freetds':
+            return ('tdsodbc' in driver_name)
 
     def get_sqlserver_version(self):
         """
@@ -207,6 +223,11 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("select i = 1; RAISERROR('c', 16, 1);")
         row = next(self.cursor)
         self.assertEqual(1, row.i)
+        if self.driver_type_is('freetds'):
+            warn('FREETDS_KNOWN_ISSUE - test_nextset_with_raiserror: test cancelled.')
+            # AssertionError: ProgrammingError not raised by nextset
+            # https://github.com/FreeTDS/freetds/issues/230
+            return  # for now
         self.assertRaises(pyodbc.ProgrammingError, self.cursor.nextset)
 
     def test_fixed_unicode(self):
@@ -230,12 +251,32 @@ class SqlServerTestCase(unittest.TestCase):
             sql = "create table t1(s %s(%s))" % (sqltype, colsize)
         else:
             sql = "create table t1(s %s)" % sqltype
+        self.cursor.execute(sql)
 
         if resulttype is None:
             resulttype = type(value)
 
-        self.cursor.execute(sql)
-        self.cursor.execute("insert into t1 values(?)", value)
+        sql = "insert into t1 values(?)"
+        try:
+            self.cursor.execute(sql, value)
+        except pyodbc.DataError:
+            if self.driver_type_is('freetds'):
+                # FREETDS_KNOWN_ISSUE
+                #
+                # cnxn.getinfo(pyodbc.SQL_DESCRIBE_PARAMETER) returns False for FreeTDS, so
+                # pyodbc can't call SQLDescribeParam to get the correct parameter type.
+                # This can lead to errors being returned from SQL Server when sp_prepexec is called, 
+                # e.g., "Implicit conversion from data type varchar to varbinary is not allowed." 
+                # for test_binary_null
+                #
+                # So at least verify that the user can manually specify the parameter type
+                if sqltype == 'varbinary':
+                    sql_param_type = pyodbc.SQL_VARBINARY
+                    # (add elif blocks for other cases as required)
+                self.cursor.setinputsizes([(sql_param_type, colsize, 0)])
+                self.cursor.execute(sql, value)
+            else:
+                raise
         v = self.cursor.execute("select * from t1").fetchone()[0]
 
         # To allow buffer --> db --> bytearray tests, always convert the input to the expected result type before
@@ -349,6 +390,19 @@ class SqlServerTestCase(unittest.TestCase):
         if ver < 9:            # 2005+
             return              # so pass / ignore
         self.cursor.execute("select cast(replicate(N'x', 512) as nvarchar(max))")
+
+    def test_fast_executemany_to_local_temp_table(self):
+        if self.driver_type_is('freetds'):
+            warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_to_local_temp_table: test cancelled.')
+            return 
+        v = u'Ώπα'
+        self.cursor.execute("CREATE TABLE #issue295 (id INT IDENTITY PRIMARY KEY, txt NVARCHAR(50))")
+        sql = "INSERT INTO #issue295 (txt) VALUES (?)"
+        params = [(v,)]
+        self.cursor.setinputsizes([(pyodbc.SQL_WVARCHAR, 50, 0)])
+        self.cursor.fast_executemany = True
+        self.cursor.executemany(sql, params)
+        self.assertEqual(self.cursor.execute("SELECT txt FROM #issue295").fetchval(), v)
 
     #
     # binary
@@ -664,7 +718,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEqual(type(value), datetime)
+        self.assertEqual(type(result), datetime)
         self.assertEqual(value, result)
 
     def test_datetime_fraction(self):
@@ -677,8 +731,8 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEqual(type(value), datetime)
-        self.assertEqual(result, value)
+        self.assertEqual(type(result), datetime)
+        self.assertEqual(value, result)
 
     def test_datetime_fraction_rounded(self):
         # SQL Server supports milliseconds, but Python's datetime supports nanoseconds.  pyodbc rounds down to what the
@@ -692,7 +746,7 @@ class SqlServerTestCase(unittest.TestCase):
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
         self.assertEqual(type(result), datetime)
-        self.assertEqual(result, rounded)
+        self.assertEqual(rounded, result)
 
     def test_date(self):
         ver = self.get_sqlserver_version()
@@ -705,7 +759,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select d from t1").fetchone()[0]
-        self.assertEqual(type(value), date)
+        self.assertEqual(type(result), date)
         self.assertEqual(value, result)
 
     def test_time(self):
@@ -723,7 +777,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select t from t1").fetchone()[0]
-        self.assertEqual(type(value), time)
+        self.assertEqual(type(result), time)
         self.assertEqual(value, result)
 
     def test_datetime2(self):
@@ -733,7 +787,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEqual(type(value), datetime)
+        self.assertEqual(type(result), datetime)
         self.assertEqual(value, result)
 
     #
@@ -931,7 +985,9 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(self.cursor.rowcount, -1)
 
     def test_rowcount_reset(self):
-        "Ensure rowcount is reset to -1"
+        "Ensure rowcount is reset after DDL"
+        
+        ddl_rowcount = 0 if self.driver_type_is('freetds') else -1
 
         self.cursor.execute("create table t1(i int)")
         count = 4
@@ -940,7 +996,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(self.cursor.rowcount, 1)
 
         self.cursor.execute("create table t2(i int)")
-        self.assertEqual(self.cursor.rowcount, -1)
+        self.assertEqual(self.cursor.rowcount, ddl_rowcount)
 
     #
     # always return Cursor
@@ -1344,7 +1400,23 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(row.n, 1)
         self.assertEqual(type(row.blob), bytearray)
 
-        self.cursor.execute("update t1 set n=?, blob=?", 2, None)
+        sql = "update t1 set n=?, blob=?"
+        try:
+            self.cursor.execute(sql, 2, None)
+        except pyodbc.DataError:
+            if self.driver_type_is('freetds'):
+                # FREETDS_KNOWN_ISSUE
+                #
+                # cnxn.getinfo(pyodbc.SQL_DESCRIBE_PARAMETER) returns False for FreeTDS, so
+                # pyodbc can't call SQLDescribeParam to get the correct parameter type.
+                # This can lead to errors being returned from SQL Server when sp_prepexec is called, 
+                # e.g., "Implicit conversion from data type varchar to varbinary(max) is not allowed." 
+                #
+                # So at least verify that the user can manually specify the parameter type
+                self.cursor.setinputsizes([(), (pyodbc.SQL_VARBINARY, None, None)])
+                self.cursor.execute(sql, 2, None)
+            else:
+                raise
         row = self.cursor.execute("select * from t1").fetchone()
         self.assertEqual(row.n, 2)
         self.assertEqual(row.blob, None)

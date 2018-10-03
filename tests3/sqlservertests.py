@@ -621,7 +621,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEqual(type(value), datetime)
+        self.assertEqual(type(result), datetime)
         self.assertEqual(value, result)
 
     def test_datetime_fraction(self):
@@ -634,8 +634,8 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEqual(type(value), datetime)
-        self.assertEqual(result, value)
+        self.assertEqual(type(result), datetime)
+        self.assertEqual(value, result)
 
     def test_datetime_fraction_rounded(self):
         # SQL Server supports milliseconds, but Python's datetime supports nanoseconds.  pyodbc rounds down to what the
@@ -649,7 +649,7 @@ class SqlServerTestCase(unittest.TestCase):
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
         self.assertEqual(type(result), datetime)
-        self.assertEqual(result, rounded)
+        self.assertEqual(rounded, result)
 
     def test_date(self):
         ver = self.get_sqlserver_version()
@@ -662,7 +662,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select d from t1").fetchone()[0]
-        self.assertEqual(type(value), date)
+        self.assertEqual(type(result), date)
         self.assertEqual(value, result)
 
     def test_time(self):
@@ -680,7 +680,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select t from t1").fetchone()[0]
-        self.assertEqual(type(value), time)
+        self.assertEqual(type(result), time)
         self.assertEqual(value, result)
 
     def test_datetime2(self):
@@ -690,7 +690,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
 
         result = self.cursor.execute("select dt from t1").fetchone()[0]
-        self.assertEqual(type(value), datetime)
+        self.assertEqual(type(result), datetime)
         self.assertEqual(value, result)
 
     #
@@ -1298,17 +1298,36 @@ class SqlServerTestCase(unittest.TestCase):
             # The value is the raw bytes (as a bytes object) read from the
             # database.  We'll simply add an X at the beginning at the end.
             return 'X' + value.decode('latin1') + 'X'
-        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert)
+
         self.cursor.execute("create table t1(n int, v varchar(10))")
         self.cursor.execute("insert into t1 values (1, '123.45')")
+
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert)
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, 'X123.45X')
 
-        # Now clear the conversions and try again.  There should be no Xs this time.
+        # Clear all conversions and try again.  There should be no Xs this time.
         self.cnxn.clear_output_converters()
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, '123.45')
 
+        # Same but clear using remove_output_converter.
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'X123.45X')
+
+        self.cnxn.remove_output_converter(pyodbc.SQL_VARCHAR)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, '123.45')
+
+        # And lastly, clear by passing None for the converter.
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'X123.45X')
+
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, None)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, '123.45')
 
     def test_too_large(self):
         """Ensure error raised if insert fails due to truncation"""
@@ -1454,7 +1473,7 @@ class SqlServerTestCase(unittest.TestCase):
         # I'm not sure why, but PyArg_ParseTupleAndKeywords fails if you use "|s" for an
         # optional string keyword when calling indirectly.
 
-        self.cursor.execute("create table t1(a int, b varchar(3))")
+        self.cursor.execute("create table t1(a int, b varchar(3), xΏz varchar(4))")
 
         self.cursor.columns('t1')
         results = {row.column_name: row for row in self.cursor}
@@ -1475,6 +1494,9 @@ class SqlServerTestCase(unittest.TestCase):
         row = results['b']
         assert row.type_name == 'varchar'
         assert row.column_size == 3
+        row = results['xΏz']
+        assert row.type_name == 'varchar'
+        assert row.column_size == 4, row.column_size
 
     def test_cancel(self):
         # I'm not sure how to reliably cause a hang to cancel, so for now we'll settle with

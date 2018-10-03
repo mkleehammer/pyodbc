@@ -10,7 +10,6 @@
 #include "connection.h"
 #include "errors.h"
 #include "dbspecific.h"
-#include "sqlwchar.h"
 #include <datetime.h>
 
 // NULL terminator notes:

@@ -126,6 +126,21 @@ static ExcInfo aExcInfos[] = {
 };
 
 
+bool pyodbc_realloc(BYTE** pp, size_t newlen)
+{
+    // A wrapper around realloc with a safer interface.  If it is successful, *pp is updated to the
+    // new pointer value.  If not successful, it is not modified.  (It is easy to forget and lose
+    // the old pointer value with realloc.)
+
+    BYTE* pT = (BYTE*)realloc(*pp, newlen);
+    if (pT == 0)
+        return false;
+    *pp = pT;
+    return true;
+}
+
+
+
 bool UseNativeUUID()
 {
     PyObject* o = PyObject_GetAttrString(pModule, "native_uuid");
@@ -332,7 +347,7 @@ static bool CheckAttrsVal(PyObject *val, bool allowSeq)
      || PyBytes_Check(val)
      || PyUnicode_Check(val))
         return true;
-    printf("CheckAttrsVal - sequence\n");
+
     if (allowSeq && PySequence_Check(val))
     {
         Py_ssize_t len = PySequence_Size(val);
@@ -344,8 +359,9 @@ static bool CheckAttrsVal(PyObject *val, bool allowSeq)
         }
         return true;
     }
-    return (bool)PyErr_Format(PyExc_TypeError, "Attribute dictionary attrs must be"
-        " integers, buffers, bytes, %s", allowSeq ? "strings, or sequences" : "or strings");
+
+    return PyErr_Format(PyExc_TypeError, "Attribute dictionary attrs must be"
+        " integers, buffers, bytes, %s", allowSeq ? "strings, or sequences" : "or strings") != 0;
 }
 
 static PyObject* _CheckAttrsDict(PyObject* attrs)
