@@ -36,6 +36,12 @@ from os.path import join, getsize, dirname, abspath
 from warnings import warn
 from testutils import *
 
+# Some tests have fallback code for known driver issues.
+# Change this value to False to bypass the fallback code, e.g., to see
+#   if a newer version of the driver has fixed the underlying issue.
+#
+handle_known_issues = True
+
 _TESTSTR = '0123456789-abcdefghijklmnopqrstuvwxyz-'
 
 def _generate_test_string(length):
@@ -80,6 +86,14 @@ class SqlServerTestCase(unittest.TestCase):
             return ('msodbcsql' in driver_name) or ('sqlncli' in driver_name) or ('sqlsrv32.dll' == driver_name)
         elif type_name == 'freetds':
             return ('tdsodbc' in driver_name)
+
+    def handle_known_issues_for(self, type_name):
+        if self.driver_type_is(type_name):
+            if handle_known_issues:
+                return True
+            else:
+                print("Known issue handling disabled. Does this test still fail?")
+        return False
 
     def get_sqlserver_version(self):
         """
@@ -227,7 +241,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("select i = 1; RAISERROR('c', 16, 1);")
         row = next(self.cursor)
         self.assertEqual(1, row.i)
-        if self.driver_type_is('freetds'):
+        if self.handle_known_issues_for('freetds'):
             warn('FREETDS_KNOWN_ISSUE - test_nextset_with_raiserror: test cancelled.')
             # AssertionError: ProgrammingError not raised by nextset
             # https://github.com/FreeTDS/freetds/issues/230
@@ -264,7 +278,7 @@ class SqlServerTestCase(unittest.TestCase):
         try:
             self.cursor.execute(sql, value)
         except pyodbc.DataError:
-            if self.driver_type_is('freetds'):
+            if self.handle_known_issues_for('freetds'):
                 # FREETDS_KNOWN_ISSUE
                 #
                 # cnxn.getinfo(pyodbc.SQL_DESCRIBE_PARAMETER) returns False for FreeTDS, so
@@ -396,7 +410,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(rows[0][0], v)
 
     def test_fast_executemany_to_local_temp_table(self):
-        if self.driver_type_is('freetds'):
+        if self.handle_known_issues_for('freetds'):
             warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_to_local_temp_table: test cancelled.')
             return 
         v = 'Ώπα'
@@ -1275,7 +1289,7 @@ class SqlServerTestCase(unittest.TestCase):
         try:
             self.cursor.execute(sql, 2, None)
         except pyodbc.DataError:
-            if self.driver_type_is('freetds'):
+            if self.handle_known_issues_for('freetds'):
                 # FREETDS_KNOWN_ISSUE
                 #
                 # cnxn.getinfo(pyodbc.SQL_DESCRIBE_PARAMETER) returns False for FreeTDS, so
