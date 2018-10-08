@@ -87,12 +87,39 @@ class SqlServerTestCase(unittest.TestCase):
         elif type_name == 'freetds':
             return ('tdsodbc' in driver_name)
 
-    def handle_known_issues_for(self, type_name):
+    def handle_known_issues_for(self, type_name, print_reminder=False):
+        """
+        Checks driver `type_name` and "killswitch" variable `handle_known_issues` to see if
+        known issue handling should be bypassed. Optionally prints a reminder message to
+        help identify tests that previously had issues but may have been fixed by a newer
+        version of the driver.
+
+        Usage examples:
+
+        # 1. print reminder at beginning of test (before any errors can occur)
+        #
+        def test_some_feature(self):
+            self.handle_known_issues_for('freetds', print_reminder=True)
+            # (continue with test code)
+
+        # 2. conditional execution of fallback code
+        #
+        try:
+            # (some test code)
+        except pyodbc.DataError:
+            if self.handle_known_issues_for('freetds'):
+                # FREETDS_KNOWN_ISSUE
+                #
+                # (fallback code to work around exception)
+            else:
+                raise
+        """
         if self.driver_type_is(type_name):
             if handle_known_issues:
                 return True
             else:
-                print("Known issue handling disabled. Does this test still fail?")
+                if print_reminder:
+                    print("Known issue handling is disabled. Does this test still fail?")
         return False
 
     def get_sqlserver_version(self):
@@ -238,6 +265,7 @@ class SqlServerTestCase(unittest.TestCase):
             self.assertEqual(i + 2, row.i)
 
     def test_nextset_with_raiserror(self):
+        self.handle_known_issues_for('freetds', print_reminder=True)
         self.cursor.execute("select i = 1; RAISERROR('c', 16, 1);")
         row = next(self.cursor)
         self.assertEqual(1, row.i)
@@ -410,7 +438,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(rows[0][0], v)
 
     def test_fast_executemany_to_local_temp_table(self):
-        if self.handle_known_issues_for('freetds'):
+        if self.handle_known_issues_for('freetds', print_reminder=True):
             warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_to_local_temp_table: test cancelled.')
             return 
         v = 'Ώπα'
@@ -427,6 +455,7 @@ class SqlServerTestCase(unittest.TestCase):
     #
 
     def test_binary_null(self):
+        self.handle_known_issues_for('freetds', print_reminder=True)
         self._test_strtype('varbinary', None, colsize=100)
 
     # bytearray
@@ -1278,6 +1307,8 @@ class SqlServerTestCase(unittest.TestCase):
         #
         # If SQLDescribeParam doesn't work, pyodbc would use VARCHAR which almost always worked.  However,
         # binary/varbinary won't allow an implicit conversion.
+
+        self.handle_known_issues_for('freetds', print_reminder=True)
 
         self.cursor.execute("create table t1(n int, blob varbinary(max))")
         self.cursor.execute("insert into t1 values (1, newid())")
