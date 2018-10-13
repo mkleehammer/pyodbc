@@ -814,6 +814,7 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
 
     case SQL_DECIMAL:
     case SQL_NUMERIC:
+    case SQL_DB2_DECFLOAT:
         return GetDataDecimal(cur, iCol);
 
     case SQL_BIT:

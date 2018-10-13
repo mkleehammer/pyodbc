@@ -12,6 +12,7 @@
 
 
 #define SQL_SS_XML -152         // SQL Server 2005 XML type
+#define SQL_DB2_DECFLOAT -360   // IBM DB/2 DECFLOAT type
 #define SQL_DB2_XML -370        // IBM DB/2 XML type
 #define SQL_SS_TIME2 -154       // SQL Server 2008 time type
 
