@@ -2141,7 +2141,7 @@ static char fetchone_doc[] =
     "A ProgrammingError exception is raised if the previous call to execute() did\n" \
     "not produce any result set or no call was issued yet.";
 
-static char fetchall_doc[] =
+static char fetchmany_doc[] =
     "fetchmany(size=cursor.arraysize) --> list of Rows\n" \
     "\n" \
     "Fetch the next set of rows of a query result, returning a list of Row\n" \
@@ -2156,8 +2156,8 @@ static char fetchall_doc[] =
     "A ProgrammingError exception is raised if the previous call to execute() did\n" \
     "not produce any result set or no call was issued yet.";
 
-static char fetchmany_doc[] =
-    "fetchmany() --> list of Rows\n" \
+static char fetchall_doc[] =
+    "fetchall() --> list of Rows\n" \
     "\n" \
     "Fetch all remaining rows of a query result, returning them as a list of Rows.\n" \
     "An empty list is returned if there are no more rows.\n" \
