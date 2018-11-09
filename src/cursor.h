@@ -64,6 +64,10 @@ struct ParamInfo
     // written to each SQLPutData call.  (It is not clear if they are limited
     // like SQLBindParameter or not.)
 
+    // For TVPs, the nested descriptors and current row.
+    struct ParamInfo *nested;
+    SQLLEN curTvpRow;
+
     // Optional data.  If used, ParameterValuePtr will point into this.
     union
     {

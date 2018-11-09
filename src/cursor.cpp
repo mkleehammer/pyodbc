@@ -684,11 +684,11 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         if (ret == SQL_NEED_DATA)
         {
             szLastFunction = "SQLPutData";
-            if (PyBytes_Check(pInfo->pObject)
+            if (pInfo->pObject && (PyBytes_Check(pInfo->pObject)
     #if PY_VERSION_HEX >= 0x02060000
              || PyByteArray_Check(pInfo->pObject)
     #endif
-            )
+            ))
             {
                 char *(*pGetPtr)(PyObject*);
                 Py_ssize_t (*pGetLen)(PyObject*);
@@ -711,7 +711,7 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
 
                 do
                 {
-                    SQLLEN remaining = min(pInfo->maxlength, cb - offset);
+                    SQLLEN remaining = pInfo->maxlength ? min(pInfo->maxlength, cb - offset) : cb;
                     TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
                     Py_BEGIN_ALLOW_THREADS
                     ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
@@ -723,7 +723,7 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                 while (offset < cb);
             }
 #if PY_MAJOR_VERSION < 3
-            else if (PyBuffer_Check(pInfo->pObject))
+            else if (pInfo->pObject && PyBuffer_Check(pInfo->pObject))
             {
                 // Buffers can have multiple segments, so we might need multiple writes.  Looping through buffers isn't
                 // difficult, but we've wrapped it up in an iterator object to keep this loop simple.
@@ -741,6 +741,65 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                 }
             }
 #endif
+            else if (pInfo->ParameterType == SQL_SS_TABLE)
+            {
+                // TVP
+                // Need to convert its columns into the bound row buffers
+                int hasTvpRows = 0;
+                if (pInfo->curTvpRow < PySequence_Length(pInfo->pObject))
+                {
+                    PyObject *tvpRow = PySequence_GetItem(pInfo->pObject, pInfo->curTvpRow);
+                    Py_XDECREF(tvpRow);
+                    for (Py_ssize_t i = 0; i < PySequence_Size(tvpRow); i++)
+                    {
+                        struct ParamInfo newParam;
+                        struct ParamInfo *prevParam = pInfo->nested + i;
+                        PyObject *cell = PySequence_GetItem(tvpRow, i);
+                        Py_XDECREF(cell);
+                        memset(&newParam, 0, sizeof(newParam));
+                        if (!GetParameterInfo(cur, i, cell, newParam))
+                        {
+                            // Error converting object
+                            FreeParameterData(cur);
+                            return false;
+                        }
+                        if (newParam.ValueType != prevParam->ValueType ||
+                            newParam.ParameterType != prevParam->ParameterType)
+                        {
+                            FreeParameterData(cur);
+                            return RaiseErrorV(0, ProgrammingError, "Type mismatch between TVP row values");
+                        }
+                        if (prevParam->allocated)
+                            pyodbc_free(prevParam->ParameterValuePtr);
+                        Py_XDECREF(prevParam->pObject);
+                        newParam.BufferLength = newParam.StrLen_or_Ind;
+                        newParam.StrLen_or_Ind = SQL_DATA_AT_EXEC;
+                        Py_INCREF(cell);
+                        newParam.pObject = cell;
+                        *prevParam = newParam;
+                        if(prevParam->ParameterValuePtr == &newParam.Data)
+                        {
+                            prevParam->ParameterValuePtr = &prevParam->Data;
+                        }
+                    }
+                    pInfo->curTvpRow++;
+                    hasTvpRows = 1;
+                }
+                Py_BEGIN_ALLOW_THREADS
+                ret = SQLPutData(cur->hstmt, hasTvpRows ? (SQLPOINTER)1 : 0, hasTvpRows);
+                Py_END_ALLOW_THREADS
+                if (!SQL_SUCCEEDED(ret))
+                    return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+            }
+            else
+            {
+                // TVP column sent as DAE
+                Py_BEGIN_ALLOW_THREADS
+                ret = SQLPutData(cur->hstmt, pInfo->ParameterValuePtr, pInfo->BufferLength);
+                Py_END_ALLOW_THREADS
+                if (!SQL_SUCCEEDED(ret))
+                    return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+            }
             ret = SQL_NEED_DATA;
         }
     }
