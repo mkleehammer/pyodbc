@@ -919,6 +919,7 @@ static bool GetFloatInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
     info.ParameterType     = SQL_DOUBLE;
     info.ParameterValuePtr = &info.Data.dbl;
     info.ColumnSize = 15;
+    info.StrLen_or_Ind = sizeof(double);
     return true;
 }
 
