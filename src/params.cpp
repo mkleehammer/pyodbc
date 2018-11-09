@@ -1021,6 +1021,7 @@ static bool GetUUIDInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     if (!b)
         return false;
     memcpy(info.ParameterValuePtr, PyBytes_AS_STRING(b.Get()), sizeof(SQLGUID));
+    info.StrLen_or_Ind = sizeof(SQLGUID);
     return true;
 }
 
