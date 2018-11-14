@@ -70,6 +70,18 @@ typedef int Py_ssize_t;
 #define _countof(a) (sizeof(a) / sizeof(a[0]))
 #endif
 
+#ifndef SQL_SS_TABLE
+#define SQL_SS_TABLE -153
+#endif
+
+#ifndef SQL_SOPT_SS_PARAM_FOCUS
+#define SQL_SOPT_SS_PARAM_FOCUS 1236
+#endif
+
+#ifndef SQL_CA_SS_TYPE_NAME
+#define SQL_CA_SS_TYPE_NAME 1227
+#endif
+
 inline bool IsSet(DWORD grf, DWORD flags)
 {
     return (grf & flags) == flags;
