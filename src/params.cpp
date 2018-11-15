@@ -628,17 +628,17 @@ static bool GetNullBinaryInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 
 
 #if PY_MAJOR_VERSION >= 3
-static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     // The Python 3 version that writes bytes as binary data.
     Py_ssize_t cb = PyBytes_GET_SIZE(param);
 
     info.ValueType  = SQL_C_BINARY;
-    info.ColumnSize = (SQLUINTEGER)max(cb, 1);
+    info.ColumnSize = isTVP?0:(SQLUINTEGER)max(cb, 1);
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
 
-    if (maxlength == 0 || cb <= maxlength)
+    if (maxlength == 0 || cb <= maxlength || isTVP)
     {
         info.ParameterType     = SQL_VARBINARY;
         info.StrLen_or_Ind     = cb;
@@ -662,7 +662,7 @@ static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
 #endif
 
 #if PY_MAJOR_VERSION < 3
-static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     const TextEnc& enc = cur->cnxn->str_enc;
 
@@ -670,7 +670,7 @@ static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
 
     Py_ssize_t cch = PyString_GET_SIZE(param);
 
-    info.ColumnSize = (SQLUINTEGER)max(cch, 1);
+    info.ColumnSize = isTVP?0:(SQLUINTEGER)max(cch, 1);
 
     Object encoded;
 
@@ -701,7 +701,7 @@ static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
     info.pObject = encoded.Detach();
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-    if (maxlength == 0 || cb <= maxlength)
+    if (maxlength == 0 || cb <= maxlength || isTVP)
     {
         info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
         info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
@@ -722,7 +722,7 @@ static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
 #endif
 
 
-static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     const TextEnc& enc = cur->cnxn->unicode_enc;
 
@@ -752,13 +752,13 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
         denom = 4;
     }
     
-    info.ColumnSize = (SQLUINTEGER)max(cb / denom, 1);
+    info.ColumnSize = isTVP?0:(SQLUINTEGER)max(cb / denom, 1);
     
     info.pObject = encoded.Detach();
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(enc.ctype);
 
-    if (maxlength == 0 || cb <= maxlength)
+    if (maxlength == 0 || cb <= maxlength || isTVP)
     {
         info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
         info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
@@ -852,10 +852,27 @@ static bool GetTimeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
 }
 
 #if PY_MAJOR_VERSION < 3
-static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
-    info.Data.l = PyInt_AsLong(param);
+    if(isTVP)
+    {
+        PyErr_Clear();
+        info.Data.i64 = (INT64)PyLong_AsLongLong(param);
+        if (!PyErr_Occurred())
+        {
+            info.ValueType         = SQL_C_SBIGINT;
+            info.ParameterType     = SQL_BIGINT;
+            info.ParameterValuePtr = &info.Data.i64;
+            info.StrLen_or_Ind     = 8;
+            
+            return true;
+        }
+        
+        return false;
+    }
 
+    info.Data.i64 = (INT64)PyLong_AsLongLong(param);
+    
 #if LONG_BIT == 64
     info.ValueType     = SQL_C_SBIGINT;
     // info.ValueType     = SQL_C_LONG;
@@ -873,7 +890,7 @@ static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
 }
 #endif
 
-static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     // Try to use integer when possible.  BIGINT is not always supported and is a "special
     // case" for some drivers.
@@ -886,13 +903,18 @@ static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     // it is a 'long int', but some drivers run into trouble at high values.  We'll use
     // SQL_INTEGER as an optimization for smaller values and rely on BIGINT
 
-    info.Data.l = PyLong_AsLong(param);
-    if (!PyErr_Occurred() && (info.Data.l <= 0x7FFFFFFF))
+    INT64 val = (INT64)PyLong_AsLongLong(param);
+    
+    if (!PyErr_Occurred() && !isTVP && (val >= -2147483648 && val <= 2147483647))
     {
-        info.ValueType         = SQL_C_LONG;
-        info.ParameterType     = SQL_INTEGER;
-        info.ParameterValuePtr = &info.Data.l;
-        info.StrLen_or_Ind     = 4;
+        info.Data.l = PyLong_AsLong(param);
+        if (!PyErr_Occurred())
+        {
+            info.ValueType         = SQL_C_LONG;
+            info.ParameterType     = SQL_INTEGER;
+            info.ParameterValuePtr = &info.Data.l;
+            info.StrLen_or_Ind     = 4;
+        }
     }
     else
     {
@@ -1124,19 +1146,20 @@ static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamI
 #endif
 
 #if PY_VERSION_HEX >= 0x02060000
-static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     info.ValueType = SQL_C_BINARY;
 
     Py_ssize_t cb = PyByteArray_Size(param);
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-    if (maxlength == 0 || cb <= maxlength)
+    
+    if (maxlength == 0 || cb <= maxlength || isTVP)
     {
         info.ParameterType     = SQL_VARBINARY;
         info.ParameterValuePtr = (SQLPOINTER)PyByteArray_AsString(param);
         info.BufferLength      = (SQLINTEGER)cb;
-        info.ColumnSize        = (SQLUINTEGER)max(cb, 1);
+        info.ColumnSize        = isTVP?0:(SQLUINTEGER)max(cb, 1);
         info.StrLen_or_Ind     = (SQLINTEGER)cb;
     }
     else
@@ -1196,7 +1219,7 @@ static bool GetTableInfo(Cursor *cur, Py_ssize_t index, PyObject* param, ParamIn
     return true;
 }
 
-bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     // Determines the type of SQL parameter that will be used for this parameter based on the Python data type.
     //
@@ -1210,14 +1233,14 @@ bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo&
 
 #if PY_MAJOR_VERSION >= 3
     if (PyBytes_Check(param))
-        return GetBytesInfo(cur, index, param, info);
+        return GetBytesInfo(cur, index, param, info, isTVP);
 #else
     if (PyBytes_Check(param))
-        return GetStrInfo(cur, index, param, info);
+        return GetStrInfo(cur, index, param, info, isTVP);
 #endif
 
     if (PyUnicode_Check(param))
-        return GetUnicodeInfo(cur, index, param, info);
+        return GetUnicodeInfo(cur, index, param, info, isTVP);
 
     if (PyBool_Check(param))
         return GetBooleanInfo(cur, index, param, info);
@@ -1232,19 +1255,19 @@ bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo&
         return GetTimeInfo(cur, index, param, info);
 
     if (PyLong_Check(param))
-        return GetLongInfo(cur, index, param, info);
+        return GetLongInfo(cur, index, param, info, isTVP);
 
     if (PyFloat_Check(param))
         return GetFloatInfo(cur, index, param, info);
 
 #if PY_VERSION_HEX >= 0x02060000
     if (PyByteArray_Check(param))
-        return GetByteArrayInfo(cur, index, param, info);
+        return GetByteArrayInfo(cur, index, param, info, isTVP);
 #endif
 
 #if PY_MAJOR_VERSION < 3
     if (PyInt_Check(param))
-        return GetIntInfo(cur, index, param, info);
+        return GetIntInfo(cur, index, param, info, isTVP);
 
     if (PyBuffer_Check(param))
         return GetBufferInfo(cur, index, param, info);
@@ -1455,7 +1478,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
             {
                 // Bind the TVP's columns --- all need to use DAE
                 PyObject *param = PySequence_GetItem(row, i);
-                GetParameterInfo(cur, i, param, info.nested[i]);
+                GetParameterInfo(cur, i, param, info.nested[i], true);
                 info.nested[i].BufferLength = info.nested[i].StrLen_or_Ind;
                 info.nested[i].StrLen_or_Ind = SQL_DATA_AT_EXEC;
 
@@ -1640,7 +1663,7 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
     for (Py_ssize_t i = 0; i < cParams; i++)
     {
         Object param(PySequence_GetItem(original_params, i + params_offset));
-        if (!GetParameterInfo(cur, i, param, cur->paramInfos[i]))
+        if (!GetParameterInfo(cur, i, param, cur->paramInfos[i], false))
         {
             FreeInfos(cur->paramInfos, cParams);
             cur->paramInfos = 0;

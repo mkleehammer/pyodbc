@@ -757,11 +757,11 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                         PyObject *cell = PySequence_GetItem(tvpRow, i);
                         Py_XDECREF(cell);
                         memset(&newParam, 0, sizeof(newParam));
-                        if (!GetParameterInfo(cur, i, cell, newParam))
+                        if (!GetParameterInfo(cur, i, cell, newParam, true))
                         {
                             // Error converting object
                             FreeParameterData(cur);
-                            return false;
+                            return NULL;
                         }
                         if (newParam.ValueType != prevParam->ValueType ||
                             newParam.ParameterType != prevParam->ParameterType)
