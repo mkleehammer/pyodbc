@@ -1058,7 +1058,7 @@ static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     else
     {
         // (1 2 3) exp = -5 --> 0.00123 : prec = 5, scale = 5
-        info.ColumnSize    = (SQLUINTEGER)(count + (-exp));
+        info.ColumnSize    = (SQLUINTEGER)(-exp);
         info.DecimalDigits = (SQLSMALLINT)info.ColumnSize;
     }
 
