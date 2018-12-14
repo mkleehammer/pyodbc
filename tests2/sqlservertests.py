@@ -1650,10 +1650,16 @@ class SqlServerTestCase(unittest.TestCase):
         #
         # pyodbc supports queries with table valued parameters in sql server
         #
-        
-        self.cursor.execute("DROP PROCEDURE IF EXISTS SelectTVP")
-        self.cursor.commit()
-        self.cursor.execute("DROP TYPE IF EXISTS TestTVP")
+
+        # (Don't use "if exists" since older SQL Servers don't support it.)
+        try:
+            self.cursor.execute("drop procedure SelectTVP")
+        except:
+            pass
+        try:
+            self.cursor.execute("drop type TestTVP")
+        except:
+            pass
         self.cursor.commit()
         
         query = "CREATE TYPE TestTVP AS TABLE("\
