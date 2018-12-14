@@ -310,7 +310,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             if (len > pi->BufferLength)
             {
                 RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                len = pi->BufferLength;
+                return false;
             }
             memcpy(*outbuf, PyBytes_AS_STRING(cell), len);
             *outbuf += pi->BufferLength;
@@ -356,7 +356,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                 if (len > pi->BufferLength)
                 {
                     RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                    len = pi->BufferLength;
+                    return false;
                 }
                 memcpy(*outbuf, PyBytes_AS_STRING((PyObject*)encoded), len);
                 *outbuf += pi->BufferLength;
@@ -381,7 +381,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                 if (len > pi->BufferLength)
                 {
                     RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                    len = pi->BufferLength;
+                    return false;
                 }
                 memcpy(*outbuf, PyUnicode_AS_DATA(cell), len);
                 *outbuf += pi->BufferLength;
@@ -462,7 +462,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             if (len > pi->BufferLength)
             {
                 RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                len = pi->BufferLength;
+                return false;
             }
             memcpy(*outbuf, PyByteArray_AS_STRING(cell), len);
             *outbuf += pi->BufferLength;
@@ -493,7 +493,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             if (len > pi->BufferLength)
             {
                 RaiseErrorV(0, ProgrammingError, "String data, right truncation: row %u column %u", 0 /* TODO */, 0 /* TODO */);
-                len = pi->BufferLength;
+                return false;
             }
             memcpy(*outbuf, pb, len);
             *outbuf += pi->BufferLength;
@@ -1677,7 +1677,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             cells = PySequence_Fast_ITEMS(colseq);
         }
     DoExecute:
-        if (!rows_converted)
+        if (!rows_converted || PyErr_Occurred())
         {
             if (!PyErr_Occurred())
                 RaiseErrorV(0, ProgrammingError, "No suitable conversion for one or more parameters.");
