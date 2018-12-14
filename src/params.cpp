@@ -1753,17 +1753,52 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
 
             if (rc == SQL_NEED_DATA)
             {
+                PyObject* objCell = pInfo->cell;
+
+#if PY_MAJOR_VERSION >= 3
+                // If the object is Unicode it needs to be converted into bytes before it can be used by SQLPutData
+                if (PyUnicode_Check(objCell))
+                {
+                    const TextEnc& enc = cur->cnxn->sqlwchar_enc;
+                    int cb = PyUnicode_GET_LENGTH(objCell);
+
+                    PyObject* bytes = NULL;
+                    const Py_UNICODE* source = PyUnicode_AS_UNICODE(objCell);
+
+                    switch (enc.optenc)
+                    {
+                    case OPTENC_UTF8:
+                        bytes = PyUnicode_EncodeUTF8(source, cb, "strict");
+                        break;
+                    case OPTENC_UTF16:
+                        bytes = PyUnicode_EncodeUTF16(source, cb, "strict", BYTEORDER_NATIVE);
+                        break;
+                    case OPTENC_UTF16LE:
+                        bytes = PyUnicode_EncodeUTF16(source, cb, "strict", BYTEORDER_LE);
+                        break;
+                    case OPTENC_UTF16BE:
+                        bytes = PyUnicode_EncodeUTF16(source, cb, "strict", BYTEORDER_BE);
+                        break;
+                    }
+
+                    if (bytes && PyBytes_Check(bytes))
+                    {
+                        objCell = bytes;
+                    }
+                }
+#endif
+
                 szLastFunction = "SQLPutData";
-                if (PyBytes_Check(pInfo->cell)
+                if (PyBytes_Check(objCell)
     #if PY_VERSION_HEX >= 0x02060000
-                 || PyByteArray_Check(pInfo->cell)
+                 || PyByteArray_Check(objCell)
     #endif
                 )
                 {
                     char *(*pGetPtr)(PyObject*);
                     Py_ssize_t (*pGetLen)(PyObject*);
     #if PY_VERSION_HEX >= 0x02060000
-                    if (PyByteArray_Check(pInfo->cell))
+                    if (PyByteArray_Check(objCell))
                     {
                         pGetPtr = PyByteArray_AsString;
                         pGetLen = PyByteArray_Size;
@@ -1775,14 +1810,15 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         pGetLen = PyBytes_Size;
                     }
 
-                    const char* p = pGetPtr(pInfo->cell);
-                    SQLLEN cb = (SQLLEN)pGetLen(pInfo->cell);
+                    const char* p = pGetPtr(objCell);
+                    SQLLEN cb = (SQLLEN)pGetLen(objCell);
                     SQLLEN offset = 0;
 
                     do
                     {
                         SQLLEN remaining = min(pInfo->maxlen, cb - offset);
                         TRACE("SQLPutData [%d] (%d) %.10s\n", offset, remaining, &p[offset]);
+
                         Py_BEGIN_ALLOW_THREADS
                         rc = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
                         Py_END_ALLOW_THREADS
@@ -1793,12 +1829,12 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                     while (offset < cb);
                 }
     #if PY_MAJOR_VERSION < 3
-                else if (PyBuffer_Check(pInfo->cell))
+                else if (PyBuffer_Check(objCell))
                 {
                     // Buffers can have multiple segments, so we might need multiple writes.  Looping through buffers isn't
                     // difficult, but we've wrapped it up in an iterator object to keep this loop simple.
 
-                    BufferSegmentIterator it(pInfo->cell);
+                    BufferSegmentIterator it(objCell);
                     byte* pb;
                     SQLLEN cb;
                     while (it.Next(pb, cb))
