@@ -36,6 +36,12 @@ from os.path import join, getsize, dirname, abspath
 from warnings import warn
 from testutils import *
 
+# Some tests have fallback code for known driver issues.
+# Change this value to False to bypass the fallback code, e.g., to see
+#   if a newer version of the driver has fixed the underlying issue.
+#
+handle_known_issues = True
+
 _TESTSTR = '0123456789-abcdefghijklmnopqrstuvwxyz-'
 
 def _generate_test_string(length):
@@ -80,6 +86,41 @@ class SqlServerTestCase(unittest.TestCase):
             return ('msodbcsql' in driver_name) or ('sqlncli' in driver_name) or ('sqlsrv32.dll' == driver_name)
         elif type_name == 'freetds':
             return ('tdsodbc' in driver_name)
+
+    def handle_known_issues_for(self, type_name, print_reminder=False):
+        """
+        Checks driver `type_name` and "killswitch" variable `handle_known_issues` to see if
+        known issue handling should be bypassed. Optionally prints a reminder message to
+        help identify tests that previously had issues but may have been fixed by a newer
+        version of the driver.
+
+        Usage examples:
+
+        # 1. print reminder at beginning of test (before any errors can occur)
+        #
+        def test_some_feature(self):
+            self.handle_known_issues_for('freetds', print_reminder=True)
+            # (continue with test code)
+
+        # 2. conditional execution of fallback code
+        #
+        try:
+            # (some test code)
+        except pyodbc.DataError:
+            if self.handle_known_issues_for('freetds'):
+                # FREETDS_KNOWN_ISSUE
+                #
+                # (fallback code to work around exception)
+            else:
+                raise
+        """
+        if self.driver_type_is(type_name):
+            if handle_known_issues:
+                return True
+            else:
+                if print_reminder:
+                    print("Known issue handling is disabled. Does this test still fail?")
+        return False
 
     def get_sqlserver_version(self):
         """
@@ -224,10 +265,11 @@ class SqlServerTestCase(unittest.TestCase):
             self.assertEqual(i + 2, row.i)
 
     def test_nextset_with_raiserror(self):
+        self.handle_known_issues_for('freetds', print_reminder=True)
         self.cursor.execute("select i = 1; RAISERROR('c', 16, 1);")
         row = next(self.cursor)
         self.assertEqual(1, row.i)
-        if self.driver_type_is('freetds'):
+        if self.handle_known_issues_for('freetds'):
             warn('FREETDS_KNOWN_ISSUE - test_nextset_with_raiserror: test cancelled.')
             # AssertionError: ProgrammingError not raised by nextset
             # https://github.com/FreeTDS/freetds/issues/230
@@ -264,7 +306,7 @@ class SqlServerTestCase(unittest.TestCase):
         try:
             self.cursor.execute(sql, value)
         except pyodbc.DataError:
-            if self.driver_type_is('freetds'):
+            if self.handle_known_issues_for('freetds'):
                 # FREETDS_KNOWN_ISSUE
                 #
                 # cnxn.getinfo(pyodbc.SQL_DESCRIBE_PARAMETER) returns False for FreeTDS, so
@@ -396,7 +438,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(rows[0][0], v)
 
     def test_fast_executemany_to_local_temp_table(self):
-        if self.driver_type_is('freetds'):
+        if self.handle_known_issues_for('freetds', print_reminder=True):
             warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_to_local_temp_table: test cancelled.')
             return 
         v = 'Ώπα'
@@ -413,6 +455,7 @@ class SqlServerTestCase(unittest.TestCase):
     #
 
     def test_binary_null(self):
+        self.handle_known_issues_for('freetds', print_reminder=True)
         self._test_strtype('varbinary', None, colsize=100)
 
     # bytearray
@@ -1265,6 +1308,8 @@ class SqlServerTestCase(unittest.TestCase):
         # If SQLDescribeParam doesn't work, pyodbc would use VARCHAR which almost always worked.  However,
         # binary/varbinary won't allow an implicit conversion.
 
+        self.handle_known_issues_for('freetds', print_reminder=True)
+
         self.cursor.execute("create table t1(n int, blob varbinary(max))")
         self.cursor.execute("insert into t1 values (1, newid())")
         row = self.cursor.execute("select * from t1").fetchone()
@@ -1275,7 +1320,7 @@ class SqlServerTestCase(unittest.TestCase):
         try:
             self.cursor.execute(sql, 2, None)
         except pyodbc.DataError:
-            if self.driver_type_is('freetds'):
+            if self.handle_known_issues_for('freetds'):
                 # FREETDS_KNOWN_ISSUE
                 #
                 # cnxn.getinfo(pyodbc.SQL_DESCRIBE_PARAMETER) returns False for FreeTDS, so
