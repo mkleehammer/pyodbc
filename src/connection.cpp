@@ -1259,6 +1259,45 @@ static PyObject* Connection_conv_remove(PyObject* self, PyObject* args)
     Py_RETURN_NONE;
 }
 
+static char conv_get_doc[] =
+    "get_output_converter(sqltype) --> <class 'function'>\n"
+    "\n"
+    "Get the output converter function that was registered with\n"
+    "add_output_converter.  It is safe to call if no converter is\n"
+    "registered for the type (returns None).\n"
+    "\n"
+    "sqltype\n"
+    "  The integer SQL type value being converted, which can be one of the defined\n"
+    "  standard constants (e.g. pyodbc.SQL_VARCHAR) or a database-specific value\n"
+    "  (e.g. -151 for the SQL Server 2008 geometry data type).\n"
+    ;
+
+static PyObject* _get_converter(PyObject* self, SQLSMALLINT sqltype)
+{
+    Connection* cnxn = (Connection*)self;
+
+    if (cnxn->conv_count)
+    {
+        for (int i = 0; i < cnxn->conv_count; i++)
+        {
+            if (cnxn->conv_types[i] == sqltype)
+            {
+                return cnxn->conv_funcs[i];
+            }
+        }
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject* Connection_conv_get(PyObject* self, PyObject* args)
+{
+    int sqltype;
+    if (!PyArg_ParseTuple(args, "i", &sqltype))
+        return 0;
+
+    return _get_converter(self, (SQLSMALLINT)sqltype);
+}
+
 static void NormalizeCodecName(const char* src, char* dest, size_t cbDest)
 {
     // Copies the codec name to dest, lowercasing it and replacing underscores with dashes.
@@ -1564,6 +1603,7 @@ static struct PyMethodDef Connection_methods[] =
     { "getinfo",                 Connection_getinfo,         METH_VARARGS, getinfo_doc    },
     { "add_output_converter",    Connection_conv_add,        METH_VARARGS, conv_add_doc   },
     { "remove_output_converter", Connection_conv_remove,     METH_VARARGS, conv_remove_doc },
+    { "get_output_converter",    Connection_conv_get,        METH_VARARGS, conv_get_doc },
     { "clear_output_converters", Connection_conv_clear,      METH_NOARGS,  conv_clear_doc },
     { "setdecoding",             (PyCFunction)Connection_setdecoding,     METH_VARARGS|METH_KEYWORDS, setdecoding_doc },
     { "setencoding",             (PyCFunction)Connection_setencoding,     METH_VARARGS|METH_KEYWORDS, 0 },
