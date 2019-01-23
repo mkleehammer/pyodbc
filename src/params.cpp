@@ -11,8 +11,8 @@
 #include "wrapper.h"
 #include "textenc.h"
 #include "pyodbcmodule.h"
-#include "params.h"
 #include "cursor.h"
+#include "params.h"
 #include "connection.h"
 #include "buffer.h"
 #include "errors.h"
@@ -310,7 +310,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             if (len > pi->BufferLength)
             {
                 RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                len = pi->BufferLength;
+                return false;
             }
             memcpy(*outbuf, PyBytes_AS_STRING(cell), len);
             *outbuf += pi->BufferLength;
@@ -356,7 +356,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                 if (len > pi->BufferLength)
                 {
                     RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                    len = pi->BufferLength;
+                    return false;
                 }
                 memcpy(*outbuf, PyBytes_AS_STRING((PyObject*)encoded), len);
                 *outbuf += pi->BufferLength;
@@ -381,7 +381,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                 if (len > pi->BufferLength)
                 {
                     RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                    len = pi->BufferLength;
+                    return false;
                 }
                 memcpy(*outbuf, PyUnicode_AS_DATA(cell), len);
                 *outbuf += pi->BufferLength;
@@ -462,7 +462,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             if (len > pi->BufferLength)
             {
                 RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                len = pi->BufferLength;
+                return false;
             }
             memcpy(*outbuf, PyByteArray_AS_STRING(cell), len);
             *outbuf += pi->BufferLength;
@@ -493,7 +493,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             if (len > pi->BufferLength)
             {
                 RaiseErrorV(0, ProgrammingError, "String data, right truncation: row %u column %u", 0 /* TODO */, 0 /* TODO */);
-                len = pi->BufferLength;
+                return false;
             }
             memcpy(*outbuf, pb, len);
             *outbuf += pi->BufferLength;
@@ -598,6 +598,8 @@ static void FreeInfos(ParamInfo* a, Py_ssize_t count)
     {
         if (a[i].allocated)
             pyodbc_free(a[i].ParameterValuePtr);
+        if (a[i].ParameterType == SQL_SS_TABLE && a[i].nested)
+            FreeInfos(a[i].nested, a[i].maxlength);
         Py_XDECREF(a[i].pObject);
     }
     pyodbc_free(a);
@@ -626,17 +628,17 @@ static bool GetNullBinaryInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 
 
 #if PY_MAJOR_VERSION >= 3
-static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     // The Python 3 version that writes bytes as binary data.
     Py_ssize_t cb = PyBytes_GET_SIZE(param);
 
     info.ValueType  = SQL_C_BINARY;
-    info.ColumnSize = (SQLUINTEGER)max(cb, 1);
+    info.ColumnSize = isTVP?0:(SQLUINTEGER)max(cb, 1);
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
 
-    if (maxlength == 0 || cb <= maxlength)
+    if (maxlength == 0 || cb <= maxlength || isTVP)
     {
         info.ParameterType     = SQL_VARBINARY;
         info.StrLen_or_Ind     = cb;
@@ -660,7 +662,7 @@ static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
 #endif
 
 #if PY_MAJOR_VERSION < 3
-static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     const TextEnc& enc = cur->cnxn->str_enc;
 
@@ -668,7 +670,7 @@ static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
 
     Py_ssize_t cch = PyString_GET_SIZE(param);
 
-    info.ColumnSize = (SQLUINTEGER)max(cch, 1);
+    info.ColumnSize = isTVP?0:(SQLUINTEGER)max(cch, 1);
 
     Object encoded;
 
@@ -699,7 +701,7 @@ static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
     info.pObject = encoded.Detach();
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-    if (maxlength == 0 || cb <= maxlength)
+    if (maxlength == 0 || cb <= maxlength || isTVP)
     {
         info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
         info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
@@ -720,7 +722,7 @@ static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
 #endif
 
 
-static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     const TextEnc& enc = cur->cnxn->unicode_enc;
 
@@ -750,13 +752,13 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
         denom = 4;
     }
     
-    info.ColumnSize = (SQLUINTEGER)max(cb / denom, 1);
+    info.ColumnSize = isTVP?0:(SQLUINTEGER)max(cb / denom, 1);
     
     info.pObject = encoded.Detach();
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(enc.ctype);
 
-    if (maxlength == 0 || cb <= maxlength)
+    if (maxlength == 0 || cb <= maxlength || isTVP)
     {
         info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
         info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
@@ -850,27 +852,45 @@ static bool GetTimeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
 }
 
 #if PY_MAJOR_VERSION < 3
-static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
-    info.Data.l = PyInt_AsLong(param);
+    if(isTVP)
+    {
+        PyErr_Clear();
+        info.Data.i64 = (INT64)PyLong_AsLongLong(param);
+        if (!PyErr_Occurred())
+        {
+            info.ValueType         = SQL_C_SBIGINT;
+            info.ParameterType     = SQL_BIGINT;
+            info.ParameterValuePtr = &info.Data.i64;
+            info.StrLen_or_Ind     = 8;
+            
+            return true;
+        }
+        
+        return false;
+    }
 
+    info.Data.i64 = (INT64)PyLong_AsLongLong(param);
+    
 #if LONG_BIT == 64
     info.ValueType     = SQL_C_SBIGINT;
     // info.ValueType     = SQL_C_LONG;
     info.ParameterType = SQL_BIGINT;
+    info.StrLen_or_Ind = 8;
 #elif LONG_BIT == 32
     info.ValueType     = SQL_C_LONG;
     info.ParameterType = SQL_INTEGER;
+    info.StrLen_or_Ind = 4;
 #else
     #error Unexpected LONG_BIT value
 #endif
-
     info.ParameterValuePtr = &info.Data.l;
     return true;
 }
 #endif
 
-static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     // Try to use integer when possible.  BIGINT is not always supported and is a "special
     // case" for some drivers.
@@ -883,12 +903,18 @@ static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     // it is a 'long int', but some drivers run into trouble at high values.  We'll use
     // SQL_INTEGER as an optimization for smaller values and rely on BIGINT
 
-    info.Data.l = PyLong_AsLong(param);
-    if (!PyErr_Occurred() && (info.Data.l <= 0x7FFFFFFF))
+    INT64 val = (INT64)PyLong_AsLongLong(param);
+    
+    if (!PyErr_Occurred() && !isTVP && (val >= -2147483648 && val <= 2147483647))
     {
-        info.ValueType         = SQL_C_LONG;
-        info.ParameterType     = SQL_INTEGER;
-        info.ParameterValuePtr = &info.Data.l;
+        info.Data.l = PyLong_AsLong(param);
+        if (!PyErr_Occurred())
+        {
+            info.ValueType         = SQL_C_LONG;
+            info.ParameterType     = SQL_INTEGER;
+            info.ParameterValuePtr = &info.Data.l;
+            info.StrLen_or_Ind     = 4;
+        }
     }
     else
     {
@@ -899,6 +925,7 @@ static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
             info.ValueType         = SQL_C_SBIGINT;
             info.ParameterType     = SQL_BIGINT;
             info.ParameterValuePtr = &info.Data.i64;
+            info.StrLen_or_Ind     = 8;
         }
     }
 
@@ -914,6 +941,7 @@ static bool GetFloatInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
     info.ParameterType     = SQL_DOUBLE;
     info.ParameterValuePtr = &info.Data.dbl;
     info.ColumnSize = 15;
+    info.StrLen_or_Ind = sizeof(double);
     return true;
 }
 
@@ -1015,6 +1043,7 @@ static bool GetUUIDInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     if (!b)
         return false;
     memcpy(info.ParameterValuePtr, PyBytes_AS_STRING(b.Get()), sizeof(SQLGUID));
+    info.StrLen_or_Ind = sizeof(SQLGUID);
     return true;
 }
 
@@ -1058,7 +1087,7 @@ static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     else
     {
         // (1 2 3) exp = -5 --> 0.00123 : prec = 5, scale = 5
-        info.ColumnSize    = (SQLUINTEGER)(count + (-exp));
+        info.ColumnSize    = (SQLUINTEGER)(-exp);
         info.DecimalDigits = (SQLSMALLINT)info.ColumnSize;
     }
 
@@ -1117,19 +1146,20 @@ static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamI
 #endif
 
 #if PY_VERSION_HEX >= 0x02060000
-static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     info.ValueType = SQL_C_BINARY;
 
     Py_ssize_t cb = PyByteArray_Size(param);
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-    if (maxlength == 0 || cb <= maxlength)
+    
+    if (maxlength == 0 || cb <= maxlength || isTVP)
     {
         info.ParameterType     = SQL_VARBINARY;
         info.ParameterValuePtr = (SQLPOINTER)PyByteArray_AsString(param);
         info.BufferLength      = (SQLINTEGER)cb;
-        info.ColumnSize        = (SQLUINTEGER)max(cb, 1);
+        info.ColumnSize        = isTVP?0:(SQLUINTEGER)max(cb, 1);
         info.StrLen_or_Ind     = (SQLINTEGER)cb;
     }
     else
@@ -1147,7 +1177,49 @@ static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
 }
 #endif
 
-static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+
+// TVP
+static bool GetTableInfo(Cursor *cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
+{
+    int nskip = 0;
+    Py_ssize_t nrows = PySequence_Size(param);
+    if (nrows > 0)
+    {
+        PyObject *cell0 = PySequence_GetItem(param, 0);
+        Py_XDECREF(cell0);
+        if (PyBytes_Check(cell0) || PyUnicode_Check(cell0))
+        {
+            SQLHDESC desc;
+            PyObject *tvpname = PyCodec_Encode(cell0, "UTF-16LE", 0);
+            SQLGetStmtAttr(cur->hstmt, SQL_ATTR_IMP_PARAM_DESC, &desc, 0, 0);
+            SQLSetDescFieldW(desc, index + 1, SQL_CA_SS_TYPE_NAME, (SQLPOINTER)PyBytes_AsString(tvpname), PyBytes_Size(tvpname));
+            nskip++;
+        }
+    }
+    nrows -= nskip;
+
+    if (!nskip)
+    {
+        // Need to describe in order to fill in IPD with the TVP's type name, because user has not provided it
+        SQLSMALLINT tvptype;
+        SQLDescribeParam(cur->hstmt, index + 1, &tvptype, 0, 0, 0);
+    }
+
+    info.pObject = param;
+    Py_INCREF(param);
+    info.ValueType = SQL_C_BINARY;
+    info.ParameterType = SQL_SS_TABLE;
+    info.ColumnSize = nrows;
+    info.DecimalDigits = 0;
+    info.ParameterValuePtr = &info;
+    info.BufferLength = 0;
+    info.curTvpRow = nskip;
+    info.StrLen_or_Ind = SQL_DATA_AT_EXEC;
+    info.allocated = false;
+    return true;
+}
+
+bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     // Determines the type of SQL parameter that will be used for this parameter based on the Python data type.
     //
@@ -1161,14 +1233,14 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
 
 #if PY_MAJOR_VERSION >= 3
     if (PyBytes_Check(param))
-        return GetBytesInfo(cur, index, param, info);
+        return GetBytesInfo(cur, index, param, info, isTVP);
 #else
     if (PyBytes_Check(param))
-        return GetStrInfo(cur, index, param, info);
+        return GetStrInfo(cur, index, param, info, isTVP);
 #endif
 
     if (PyUnicode_Check(param))
-        return GetUnicodeInfo(cur, index, param, info);
+        return GetUnicodeInfo(cur, index, param, info, isTVP);
 
     if (PyBool_Check(param))
         return GetBooleanInfo(cur, index, param, info);
@@ -1183,19 +1255,19 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
         return GetTimeInfo(cur, index, param, info);
 
     if (PyLong_Check(param))
-        return GetLongInfo(cur, index, param, info);
+        return GetLongInfo(cur, index, param, info, isTVP);
 
     if (PyFloat_Check(param))
         return GetFloatInfo(cur, index, param, info);
 
 #if PY_VERSION_HEX >= 0x02060000
     if (PyByteArray_Check(param))
-        return GetByteArrayInfo(cur, index, param, info);
+        return GetByteArrayInfo(cur, index, param, info, isTVP);
 #endif
 
 #if PY_MAJOR_VERSION < 3
     if (PyInt_Check(param))
-        return GetIntInfo(cur, index, param, info);
+        return GetIntInfo(cur, index, param, info, isTVP);
 
     if (PyBuffer_Check(param))
         return GetBufferInfo(cur, index, param, info);
@@ -1217,6 +1289,9 @@ static bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
 
     if (cls != 0)
         return GetUUIDInfo(cur, index, param, info, cls);
+
+    if (PySequence_Check(param))
+        return GetTableInfo(cur, index, param, info);
 
     RaiseErrorV("HY105", ProgrammingError, "Invalid parameter type.  param-index=%zd param-type=%s", index, Py_TYPE(param)->tp_name);
     return false;
@@ -1333,7 +1408,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
     SQLRETURN ret = -1;
     Py_BEGIN_ALLOW_THREADS
     ret = SQLBindParameter(cur->hstmt, (SQLUSMALLINT)(index + 1), SQL_PARAM_INPUT,
-        info.ValueType, sqltype, colsize, scale, info.ParameterValuePtr, info.BufferLength, &info.StrLen_or_Ind);
+        info.ValueType, sqltype, colsize, scale, sqltype == SQL_SS_TABLE ? 0 : info.ParameterValuePtr, info.BufferLength, &info.StrLen_or_Ind);
     Py_END_ALLOW_THREADS;
 
     if (GetConnection(cur)->hdbc == SQL_NULL_HANDLE)
@@ -1347,6 +1422,96 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
     {
         RaiseErrorFromHandle(cur->cnxn, "SQLBindParameter", GetConnection(cur)->hdbc, cur->hstmt);
         return false;
+    }
+
+    // This is a TVP. Enter and bind its parameters, allocate descriptors for its columns (all as DAE)
+    if (sqltype == SQL_SS_TABLE)
+    {
+        SQLHDESC desc;
+        SQLGetStmtAttr(cur->hstmt, SQL_ATTR_APP_PARAM_DESC, &desc, 0, 0);
+        SQLSetDescField(desc, index + 1, SQL_DESC_DATA_PTR, (SQLPOINTER)info.ParameterValuePtr, 0);
+
+        int err = 0;
+        ret = SQLSetStmtAttr(cur->hstmt, SQL_SOPT_SS_PARAM_FOCUS, (SQLPOINTER)(index + 1), SQL_IS_INTEGER);
+        if (!SQL_SUCCEEDED(ret))
+        {
+            RaiseErrorFromHandle(cur->cnxn, "SQLSetStmtAttr", GetConnection(cur)->hdbc, cur->hstmt);
+            return false;
+        }
+
+        Py_ssize_t i = PySequence_Size(info.pObject) - info.ColumnSize;
+        Py_ssize_t ncols = 0;
+        while (i < PySequence_Size(info.pObject))
+        {
+            PyObject *row = PySequence_GetItem(info.pObject, i);
+            Py_XDECREF(row);
+            if (!PySequence_Check(row))
+            {
+                RaiseErrorV(0, ProgrammingError, "A TVP's rows must be Sequence objects.");
+                err = 1;
+                break;
+            }
+            if(ncols && ncols != PySequence_Size(row))
+            {
+                RaiseErrorV(0, ProgrammingError, "A TVP's rows must all be the same size.");
+                err = 1;
+                break;
+            }
+            ncols = PySequence_Size(row);
+            i++;
+        }
+        if (!ncols)
+        {
+            // TVP has no columns --- is null
+            info.nested = 0;
+        }
+        else
+        {
+            PyObject *row = PySequence_GetItem(info.pObject, PySequence_Size(info.pObject) - info.ColumnSize);
+            Py_XDECREF(row);
+
+            info.nested = (ParamInfo*)pyodbc_malloc(ncols * sizeof(ParamInfo));
+            info.maxlength = ncols;
+            memset(info.nested, 0, ncols * sizeof(ParamInfo));
+
+            for(i=0;i<ncols;i++)
+            {
+                // Bind the TVP's columns --- all need to use DAE
+                PyObject *param = PySequence_GetItem(row, i);
+                GetParameterInfo(cur, i, param, info.nested[i], true);
+                info.nested[i].BufferLength = info.nested[i].StrLen_or_Ind;
+                info.nested[i].StrLen_or_Ind = SQL_DATA_AT_EXEC;
+
+                Py_BEGIN_ALLOW_THREADS
+                ret = SQLBindParameter(cur->hstmt, (SQLUSMALLINT)(i + 1), SQL_PARAM_INPUT,
+                    info.nested[i].ValueType, info.nested[i].ParameterType,
+                    info.nested[i].ColumnSize, info.nested[i].DecimalDigits,
+                    info.nested + i, info.nested[i].BufferLength, &info.nested[i].StrLen_or_Ind);
+                Py_END_ALLOW_THREADS;
+                if (GetConnection(cur)->hdbc == SQL_NULL_HANDLE)
+                {
+                    // The connection was closed by another thread in the ALLOW_THREADS block above.
+                    RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
+                    return false;
+                }
+
+                if (!SQL_SUCCEEDED(ret))
+                {
+                    RaiseErrorFromHandle(cur->cnxn, "SQLBindParameter", GetConnection(cur)->hdbc, cur->hstmt);
+                    return false;
+                }
+            }
+        }
+
+        ret = SQLSetStmtAttr(cur->hstmt, SQL_SOPT_SS_PARAM_FOCUS, 0, SQL_IS_INTEGER);
+        if (!SQL_SUCCEEDED(ret))
+        {
+            RaiseErrorFromHandle(cur->cnxn, "SQLSetStmtAttr", GetConnection(cur)->hdbc, cur->hstmt);
+            return false;
+        }
+
+        if (err)
+            return false;
     }
 
     return true;
@@ -1498,7 +1663,7 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
     for (Py_ssize_t i = 0; i < cParams; i++)
     {
         Object param(PySequence_GetItem(original_params, i + params_offset));
-        if (!GetParameterInfo(cur, i, param, cur->paramInfos[i]))
+        if (!GetParameterInfo(cur, i, param, cur->paramInfos[i], false))
         {
             FreeInfos(cur->paramInfos, cParams);
             cur->paramInfos = 0;
@@ -1648,12 +1813,14 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                     // "schema change" or conversion error. Try again on next batch.
                     rowptr--;
                     Py_XDECREF(colseq);
+                    colseq = 0;
                     // Finish this batch of rows and attempt to execute before starting another.
                     goto DoExecute;
                 }
             }
             rows_converted++;
             Py_XDECREF(colseq);
+            colseq = 0;
             r++;
             if ( r >= rowcount )
             {
@@ -1677,7 +1844,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             cells = PySequence_Fast_ITEMS(colseq);
         }
     DoExecute:
-        if (!rows_converted)
+        if (!rows_converted || PyErr_Occurred())
         {
             if (!PyErr_Occurred())
                 RaiseErrorV(0, ProgrammingError, "No suitable conversion for one or more parameters.");

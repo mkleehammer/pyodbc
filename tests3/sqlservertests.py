@@ -36,6 +36,12 @@ from os.path import join, getsize, dirname, abspath
 from warnings import warn
 from testutils import *
 
+# Some tests have fallback code for known driver issues.
+# Change this value to False to bypass the fallback code, e.g., to see
+#   if a newer version of the driver has fixed the underlying issue.
+#
+handle_known_issues = True
+
 _TESTSTR = '0123456789-abcdefghijklmnopqrstuvwxyz-'
 
 def _generate_test_string(length):
@@ -80,6 +86,41 @@ class SqlServerTestCase(unittest.TestCase):
             return ('msodbcsql' in driver_name) or ('sqlncli' in driver_name) or ('sqlsrv32.dll' == driver_name)
         elif type_name == 'freetds':
             return ('tdsodbc' in driver_name)
+
+    def handle_known_issues_for(self, type_name, print_reminder=False):
+        """
+        Checks driver `type_name` and "killswitch" variable `handle_known_issues` to see if
+        known issue handling should be bypassed. Optionally prints a reminder message to
+        help identify tests that previously had issues but may have been fixed by a newer
+        version of the driver.
+
+        Usage examples:
+
+        # 1. print reminder at beginning of test (before any errors can occur)
+        #
+        def test_some_feature(self):
+            self.handle_known_issues_for('freetds', print_reminder=True)
+            # (continue with test code)
+
+        # 2. conditional execution of fallback code
+        #
+        try:
+            # (some test code)
+        except pyodbc.DataError:
+            if self.handle_known_issues_for('freetds'):
+                # FREETDS_KNOWN_ISSUE
+                #
+                # (fallback code to work around exception)
+            else:
+                raise
+        """
+        if self.driver_type_is(type_name):
+            if handle_known_issues:
+                return True
+            else:
+                if print_reminder:
+                    print("Known issue handling is disabled. Does this test still fail?")
+        return False
 
     def get_sqlserver_version(self):
         """
@@ -224,10 +265,11 @@ class SqlServerTestCase(unittest.TestCase):
             self.assertEqual(i + 2, row.i)
 
     def test_nextset_with_raiserror(self):
+        self.handle_known_issues_for('freetds', print_reminder=True)
         self.cursor.execute("select i = 1; RAISERROR('c', 16, 1);")
         row = next(self.cursor)
         self.assertEqual(1, row.i)
-        if self.driver_type_is('freetds'):
+        if self.handle_known_issues_for('freetds'):
             warn('FREETDS_KNOWN_ISSUE - test_nextset_with_raiserror: test cancelled.')
             # AssertionError: ProgrammingError not raised by nextset
             # https://github.com/FreeTDS/freetds/issues/230
@@ -264,7 +306,7 @@ class SqlServerTestCase(unittest.TestCase):
         try:
             self.cursor.execute(sql, value)
         except pyodbc.DataError:
-            if self.driver_type_is('freetds'):
+            if self.handle_known_issues_for('freetds'):
                 # FREETDS_KNOWN_ISSUE
                 #
                 # cnxn.getinfo(pyodbc.SQL_DESCRIBE_PARAMETER) returns False for FreeTDS, so
@@ -396,7 +438,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(rows[0][0], v)
 
     def test_fast_executemany_to_local_temp_table(self):
-        if self.driver_type_is('freetds'):
+        if self.handle_known_issues_for('freetds', print_reminder=True):
             warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_to_local_temp_table: test cancelled.')
             return 
         v = 'Ώπα'
@@ -413,6 +455,7 @@ class SqlServerTestCase(unittest.TestCase):
     #
 
     def test_binary_null(self):
+        self.handle_known_issues_for('freetds', print_reminder=True)
         self._test_strtype('varbinary', None, colsize=100)
 
     # bytearray
@@ -720,6 +763,13 @@ class SqlServerTestCase(unittest.TestCase):
 
     def test_float(self):
         value = 1234.567
+        self.cursor.execute("create table t1(n float)")
+        self.cursor.execute("insert into t1 values (?)", value)
+        result = self.cursor.execute("select n from t1").fetchone()[0]
+        self.assertEqual(result, value)
+
+    def test_denorm_float(self):
+        value = 0.00012345
         self.cursor.execute("create table t1(n float)")
         self.cursor.execute("insert into t1 values (?)", value)
         result = self.cursor.execute("select n from t1").fetchone()[0]
@@ -1265,6 +1315,8 @@ class SqlServerTestCase(unittest.TestCase):
         # If SQLDescribeParam doesn't work, pyodbc would use VARCHAR which almost always worked.  However,
         # binary/varbinary won't allow an implicit conversion.
 
+        self.handle_known_issues_for('freetds', print_reminder=True)
+
         self.cursor.execute("create table t1(n int, blob varbinary(max))")
         self.cursor.execute("insert into t1 values (1, newid())")
         row = self.cursor.execute("select * from t1").fetchone()
@@ -1275,7 +1327,7 @@ class SqlServerTestCase(unittest.TestCase):
         try:
             self.cursor.execute(sql, 2, None)
         except pyodbc.DataError:
-            if self.driver_type_is('freetds'):
+            if self.handle_known_issues_for('freetds'):
                 # FREETDS_KNOWN_ISSUE
                 #
                 # cnxn.getinfo(pyodbc.SQL_DESCRIBE_PARAMETER) returns False for FreeTDS, so
@@ -1294,15 +1346,19 @@ class SqlServerTestCase(unittest.TestCase):
 
 
     def test_output_conversion(self):
-        def convert(value):
+        def convert1(value):
             # The value is the raw bytes (as a bytes object) read from the
             # database.  We'll simply add an X at the beginning at the end.
             return 'X' + value.decode('latin1') + 'X'
 
+        def convert2(value):
+            # Same as above, but add a Y at the beginning at the end.
+            return 'Y' + value.decode('latin1') + 'Y'
+
         self.cursor.execute("create table t1(n int, v varchar(10))")
         self.cursor.execute("insert into t1 values (1, '123.45')")
 
-        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert)
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert1)
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, 'X123.45X')
 
@@ -1312,7 +1368,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(value, '123.45')
 
         # Same but clear using remove_output_converter.
-        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert)
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert1)
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, 'X123.45X')
 
@@ -1320,15 +1376,44 @@ class SqlServerTestCase(unittest.TestCase):
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, '123.45')
 
-        # And lastly, clear by passing None for the converter.
-        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert)
+        # Clear via add_output_converter, passing None for the converter function.
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert1)
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, 'X123.45X')
 
         self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, None)
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, '123.45')
-
+        
+        # retrieve and temporarily replace converter (get_output_converter)
+        #
+        #   case_1: converter already registered
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert1)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'X123.45X')
+        prev_converter = self.cnxn.get_output_converter(pyodbc.SQL_VARCHAR)
+        self.assertNotEqual(prev_converter, None)
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert2)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'Y123.45Y')
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, prev_converter)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'X123.45X')
+        #
+        #   case_2: no converter already registered
+        self.cnxn.clear_output_converters()
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, '123.45')
+        prev_converter = self.cnxn.get_output_converter(pyodbc.SQL_VARCHAR)
+        self.assertEqual(prev_converter, None)
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert2)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'Y123.45Y')
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, prev_converter)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, '123.45')
+        
+        
     def test_too_large(self):
         """Ensure error raised if insert fails due to truncation"""
         value = 'x' * 1000
@@ -1519,6 +1604,115 @@ class SqlServerTestCase(unittest.TestCase):
         result = self.cursor.execute("select s from t1").fetchone()[0]
 
         self.assertEqual(result, v)
+        
+    def test_tvp(self):
+        # https://github.com/mkleehammer/pyodbc/issues/290
+        #
+        # pyodbc supports queries with table valued parameters in sql server
+        #
+
+        # (Don't use "if exists" since older SQL Servers don't support it.)
+        try:
+            self.cursor.execute("drop procedure SelectTVP")
+        except:
+            pass
+        try:
+            self.cursor.execute("drop type TestTVP")
+        except:
+            pass
+        self.cursor.commit()
+        
+        query = "CREATE TYPE TestTVP AS TABLE("\
+                "c01 VARCHAR(255),"\
+                "c02 VARCHAR(MAX),"\
+                "c03 VARBINARY(255),"\
+                "c04 VARBINARY(MAX),"\
+                "c05 BIT,"\
+                "c06 DATE,"\
+                "c07 TIME,"\
+                "c08 DATETIME2(5),"\
+                "c09 BIGINT,"\
+                "c10 FLOAT,"\
+                "c11 NUMERIC(38, 24),"\
+                "c12 UNIQUEIDENTIFIER)"
+
+        self.cursor.execute(query)
+        self.cursor.commit()
+        self.cursor.execute("CREATE PROCEDURE SelectTVP @TVP TestTVP READONLY AS SELECT * FROM @TVP;")
+        self.cursor.commit()
+
+        long_string = ''
+        long_bytearray = []
+        for i in range(255):
+            long_string += chr((i % 95) + 32)
+            long_bytearray.append(i % 255)
+            
+        very_long_string = ''
+        very_long_bytearray = []
+        for i in range(2000000):
+            very_long_string += chr((i % 95) + 32)
+            very_long_bytearray.append(i % 255)
+            
+        c01 = ['abc', '', long_string]
+
+        c02 = ['abc', '', very_long_string]
+
+        c03 = [bytearray([0xD1, 0xCE, 0xFA, 0xCE]),
+               bytearray([0x00, 0x01, 0x02, 0x03, 0x04]),
+               bytearray(long_bytearray)]
+               
+        c04 = [bytearray([0x0F, 0xF1, 0xCE, 0xCA, 0xFE]),
+               bytearray([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]),
+               bytearray(very_long_bytearray)]
+
+        c05 = [1, 0, 1]
+
+        c06 = [date(1997, 8, 29),
+               date(1, 1, 1),
+               date(9999, 12, 31)]
+               
+        c07 = [time(9, 13, 39),
+               time(0, 0, 0),
+               time(23, 59, 59)]
+               
+        c08 = [datetime(2018, 11, 13, 13, 33, 26, 298420),
+               datetime(1, 1, 1, 0, 0, 0, 0),
+               datetime(9999, 12, 31, 23, 59, 59, 999990)]
+               
+        c09 = [1234567, -9223372036854775808, 9223372036854775807]
+
+        c10 = [3.14, -1.79E+308, 1.79E+308]
+
+        c11 = [Decimal('31234567890123.141243449787580175325274'),
+               Decimal(             '0.000000000000000000000001'),
+               Decimal('99999999999999.999999999999999999999999')]
+
+        c12 = ['4FE34A93-E574-04CC-200A-353F0D1770B1',
+               '33F7504C-2BAC-1B83-01D1-7434A7BA6A17',
+               'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF']
+
+        param_array = []
+
+        for i in range (3):
+            param_array.append([c01[i], c02[i], c03[i], c04[i], c05[i], c06[i], c07[i], c08[i], c09[i], c10[i], c11[i], c12[i]])
+
+        success = True
+
+        try:
+            result_array = self.cursor.execute("exec SelectTVP ?",[param_array]).fetchall()
+        except Exception as ex:
+            print("Failed to execute SelectTVP")
+            print("Exception: [" + type(ex).__name__ + "]" , ex.args)
+            
+            success = False
+        else:
+            for r in range(len(result_array)):
+                for c in range(len(result_array[r])):
+                    if(result_array[r][c] != param_array[r][c]):
+                        print("Mismatch at row " + str(r+1) + ", column " + str(c+1) + "; expected:", param_array[r][c] , " received:", result_array[r][c])
+                        success = False
+
+        self.assertEqual(success, True)
         
 def main():
     from optparse import OptionParser
