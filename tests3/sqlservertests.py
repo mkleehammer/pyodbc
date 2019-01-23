@@ -1346,15 +1346,19 @@ class SqlServerTestCase(unittest.TestCase):
 
 
     def test_output_conversion(self):
-        def convert(value):
+        def convert1(value):
             # The value is the raw bytes (as a bytes object) read from the
             # database.  We'll simply add an X at the beginning at the end.
             return 'X' + value.decode('latin1') + 'X'
 
+        def convert2(value):
+            # Same as above, but add a Y at the beginning at the end.
+            return 'Y' + value.decode('latin1') + 'Y'
+
         self.cursor.execute("create table t1(n int, v varchar(10))")
         self.cursor.execute("insert into t1 values (1, '123.45')")
 
-        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert)
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert1)
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, 'X123.45X')
 
@@ -1364,7 +1368,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(value, '123.45')
 
         # Same but clear using remove_output_converter.
-        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert)
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert1)
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, 'X123.45X')
 
@@ -1372,15 +1376,44 @@ class SqlServerTestCase(unittest.TestCase):
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, '123.45')
 
-        # And lastly, clear by passing None for the converter.
-        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert)
+        # Clear via add_output_converter, passing None for the converter function.
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert1)
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, 'X123.45X')
 
         self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, None)
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, '123.45')
-
+        
+        # retrieve and temporarily replace converter (get_output_converter)
+        #
+        #   case_1: converter already registered
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert1)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'X123.45X')
+        prev_converter = self.cnxn.get_output_converter(pyodbc.SQL_VARCHAR)
+        self.assertNotEqual(prev_converter, None)
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert2)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'Y123.45Y')
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, prev_converter)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'X123.45X')
+        #
+        #   case_2: no converter already registered
+        self.cnxn.clear_output_converters()
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, '123.45')
+        prev_converter = self.cnxn.get_output_converter(pyodbc.SQL_VARCHAR)
+        self.assertEqual(prev_converter, None)
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, convert2)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, 'Y123.45Y')
+        self.cnxn.add_output_converter(pyodbc.SQL_VARCHAR, prev_converter)
+        value = self.cursor.execute("select v from t1").fetchone()[0]
+        self.assertEqual(value, '123.45')
+        
+        
     def test_too_large(self):
         """Ensure error raised if insert fails due to truncation"""
         value = 'x' * 1000
