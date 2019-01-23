@@ -1813,12 +1813,14 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                     // "schema change" or conversion error. Try again on next batch.
                     rowptr--;
                     Py_XDECREF(colseq);
+                    colseq = 0;
                     // Finish this batch of rows and attempt to execute before starting another.
                     goto DoExecute;
                 }
             }
             rows_converted++;
             Py_XDECREF(colseq);
+            colseq = 0;
             r++;
             if ( r >= rowcount )
             {
