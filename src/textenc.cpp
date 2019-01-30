@@ -3,6 +3,66 @@
 #include "wrapper.h"
 #include "textenc.h"
 
+
+static PyObject* nulls = PyBytes_FromStringAndSize("\0\0\0\0", 4);
+
+
+void SQLWChar::init(PyObject* src, const TextEnc& enc)
+{
+    // Initialization code common to all of the constructors.
+
+    if (src == 0 || src == Py_None)
+    {
+        psz = 0;
+        isNone = true;
+        return;
+    }
+
+    isNone = false;
+
+    // If there are optimized encodings that don't require a temporary object, use them.
+#if PY_MAJOR_VERSION < 3
+    if (enc.optenc == OPTENC_RAW && PyString_Check(src))
+    {
+        psz = (SQLWCHAR*)PyString_AS_STRING(src);
+        return;
+    }
+#endif
+
+#if PY_MAJOR_VERSION >= 3
+    if (enc.optenc == OPTENC_UTF8 && PyUnicode_Check(src))
+    {
+        psz = (SQLWCHAR*)PyUnicode_AsUTF8(src);
+        return;
+    }
+#endif
+
+    PyObject* pb = PyUnicode_AsEncodedString(src, enc.name, "strict");
+    if (pb)
+    {
+        // Careful: Some encodings don't return bytes.
+
+        if (!PyBytes_Check(pb))
+        {
+            // REVIEW: Error or just return null?
+            psz = 0;
+            Py_DECREF(pb);
+            return;
+        }
+
+        PyBytes_Concat(&pb, nulls);
+        if (!pb)
+        {
+            psz = 0;
+            return;
+        }
+
+        psz = (SQLWCHAR*)PyBytes_AS_STRING(pb);
+        bytes.Attach(pb);
+    }
+}
+
+
 PyObject* TextEnc::Encode(PyObject* obj) const
 {
 #if PY_MAJOR_VERSION < 3

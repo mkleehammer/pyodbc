@@ -83,8 +83,20 @@ struct SQLWChar
     //
     // Note: This does *not* increment the refcount!
 
+    // IMPORTANT: I've made the conscious decision *not* to determine the character count.  If
+    // we only had to follow the ODBC specification, it would simply be the number of
+    // characters in the string and would be the bytelen / 2.  The problem is drivers that
+    // don't follow the specification and expect things like UTF-8.  What length do these
+    // drivers expect?  Very, very likely they want the number of *bytes*, not the actual
+    // number of characters.  I'm simply going to null terminate and pass SQL_NTS.
+    //
+    // This is a performance penalty when using utf16 since we have to copy the string just to
+    // add the null terminator bytes, but we don't use it very often.  If this becomes a
+    // bottleneck, we'll have to revisit this design.
+
     SQLWCHAR* psz;
     bool isNone;
+
     Object bytes;
     // A temporary object holding the decoded bytes if we can't use a pointer into the original
     // object.
@@ -108,42 +120,6 @@ struct SQLWChar
         init(src, enc);
     }
 
-    void init(PyObject* src, const TextEnc& enc)
-    {
-        if (src == 0 || src == Py_None)
-        {
-            psz = 0;
-            isNone = true;
-            return;
-        }
-
-        isNone = false;
-
-        // If there are optimized encodings that don't require a temporary object, use them.
-        #if PY_MAJOR_VERSION < 3
-        if (enc.optenc == OPTENC_RAW && PyString_Check(src))
-        {
-            psz = (SQLWCHAR*)PyString_AS_STRING(src);
-            return;
-        }
-        #endif
-
-        #if PY_MAJOR_VERSION >= 3
-        if (enc.optenc == OPTENC_UTF8 && PyUnicode_Check(src))
-        {
-            psz = (SQLWCHAR*)PyUnicode_AsUTF8(src);
-            return;
-        }
-        #endif
-
-        bytes.Attach(PyUnicode_AsEncodedString(src, enc.name, "strict"));
-        if (bytes)
-        {
-            // Careful: Some encodings don't return bytes.  Don't use AS_STRING macro.
-            psz = (SQLWCHAR*)PyBytes_AsString(bytes.Get());
-        }
-    }
-
     bool isValidOrNone()
     {
         // Returns true if this object is a valid string *or* None.
@@ -156,6 +132,8 @@ struct SQLWChar
     }
 
 private:
+    void init(PyObject* src, const TextEnc& enc);
+
     SQLWChar(const SQLWChar&) {}
     void operator=(const SQLWChar&) {}
 };
