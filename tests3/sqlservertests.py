@@ -1631,6 +1631,10 @@ class SqlServerTestCase(unittest.TestCase):
         # pyodbc supports queries with table valued parameters in sql server
         #
 
+        if self.handle_known_issues_for('freetds', print_reminder=True):
+            warn('FREETDS_KNOWN_ISSUE - test_tvp: test cancelled.')
+            return
+
         # (Don't use "if exists" since older SQL Servers don't support it.)
         try:
             self.cursor.execute("drop procedure SelectTVP")
