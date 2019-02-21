@@ -36,6 +36,12 @@ from os.path import join, getsize, dirname, abspath
 from warnings import warn
 from testutils import *
 
+# Some tests have fallback code for known driver issues.
+# Change this value to False to bypass the fallback code, e.g., to see
+#   if a newer version of the driver has fixed the underlying issue.
+#
+handle_known_issues = True
+
 _TESTSTR = '0123456789-abcdefghijklmnopqrstuvwxyz-'
 
 def _generate_test_string(length):
@@ -73,6 +79,54 @@ class SqlServerTestCase(unittest.TestCase):
     def __init__(self, method_name, connection_string):
         unittest.TestCase.__init__(self, method_name)
         self.connection_string = connection_string
+
+    def driver_type_is(self, type_name):
+        recognized_types = {
+            'msodbcsql': '(Microsoft) ODBC Driver xx for SQL Server',
+            'freetds': 'FreeTDS ODBC',
+        }
+        if not type_name in recognized_types.keys():
+            raise KeyError('"{0}" is not a recognized driver type: {1}'.format(type_name, list(recognized_types.keys())))
+        driver_name = self.cnxn.getinfo(pyodbc.SQL_DRIVER_NAME).lower()
+        if type_name == 'msodbcsql':
+            return ('msodbcsql' in driver_name) or ('sqlncli' in driver_name) or ('sqlsrv32.dll' == driver_name)
+        elif type_name == 'freetds':
+            return ('tdsodbc' in driver_name)
+
+    def handle_known_issues_for(self, type_name, print_reminder=False):
+        """
+        Checks driver `type_name` and "killswitch" variable `handle_known_issues` to see if
+        known issue handling should be bypassed. Optionally prints a reminder message to
+        help identify tests that previously had issues but may have been fixed by a newer
+        version of the driver.
+
+        Usage examples:
+
+        # 1. print reminder at beginning of test (before any errors can occur)
+        #
+        def test_some_feature(self):
+            self.handle_known_issues_for('freetds', print_reminder=True)
+            # (continue with test code)
+
+        # 2. conditional execution of fallback code
+        #
+        try:
+            # (some test code)
+        except pyodbc.DataError:
+            if self.handle_known_issues_for('freetds'):
+                # FREETDS_KNOWN_ISSUE
+                #
+                # (fallback code to work around exception)
+            else:
+                raise
+        """
+        if self.driver_type_is(type_name):
+            if handle_known_issues:
+                return True
+            else:
+                if print_reminder:
+                    print("Known issue handling is disabled. Does this test still fail?")
+        return False
 
     def driver_type_is(self, type_name):
         recognized_types = {
@@ -1650,6 +1704,10 @@ class SqlServerTestCase(unittest.TestCase):
         #
         # pyodbc supports queries with table valued parameters in sql server
         #
+
+        if self.handle_known_issues_for('freetds', print_reminder=True):
+            warn('FREETDS_KNOWN_ISSUE - test_tvp: test cancelled.')
+            return
 
         # (Don't use "if exists" since older SQL Servers don't support it.)
         try:
