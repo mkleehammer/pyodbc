@@ -428,10 +428,7 @@ class AccessTestCase(unittest.TestCase):
         self.assertEqual(False, result)
 
     def test_guid(self):
-        # REVIEW: Python doesn't (yet) have a UUID type so the value is returned as a string.  Access, however, only
-        # really supports Unicode.  For now, we'll have to live with this difference.  All strings in Python 3.x will
-        # be Unicode -- pyodbc 3.x will have different defaults.
-        value = "de2ac9c6-8676-4b0b-b8a6-217a8580cbee"
+        value = u"de2ac9c6-8676-4b0b-b8a6-217a8580cbee"
         self.cursor.execute("create table t1(g1 uniqueidentifier)")
         self.cursor.execute("insert into t1 values (?)", value)
         v = self.cursor.execute("select * from t1").fetchone()[0]
