@@ -855,8 +855,10 @@ static bool GetTimeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
 
 inline bool NeedsBigInt(PyObject* p)
 {
+    // NOTE: Smallest 32-bit int should be -214748368 but the MS compiler v.1900 AMD64
+    // says that (10 < -2147483648).  Perhaps I miscalculated the minimum?
     long long ll = PyLong_AsLongLong(p);
-    return ll < -2147483648 || ll > 2147483647;
+    return ll < -2147483647 || ll > 2147483647;
 }
 
 #if PY_MAJOR_VERSION < 3
@@ -879,7 +881,6 @@ static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
         info.ParameterType     = SQL_INTEGER;
         info.ParameterValuePtr = &info.Data.l;
         info.StrLen_or_Ind     = 4;
-
     }
 
     return true;
