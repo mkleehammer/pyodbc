@@ -635,7 +635,7 @@ static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
     Py_ssize_t cb = PyBytes_GET_SIZE(param);
 
     info.ValueType  = SQL_C_BINARY;
-    info.ColumnSize = isTVP?0:(SQLUINTEGER)max(cb, 1);
+    info.ColumnSize = isTVP ? 0 : (SQLUINTEGER)max(cb, 1);
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
 
@@ -671,7 +671,7 @@ static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
 
     Py_ssize_t cch = PyString_GET_SIZE(param);
 
-    info.ColumnSize = isTVP?0:(SQLUINTEGER)max(cch, 1);
+    info.ColumnSize = isTVP ? 0 : (SQLUINTEGER)max(cch, 1);
 
     Object encoded;
 
@@ -744,16 +744,16 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
 
     int denom = 1;
 
-    if(enc.optenc == OPTENC_UTF16)
+    if (enc.optenc == OPTENC_UTF16)
     {
         denom = 2;
     }
-    else if(enc.optenc == OPTENC_UTF32)
+    else if (enc.optenc == OPTENC_UTF32)
     {
         denom = 4;
     }
 
-    info.ColumnSize = isTVP?0:(SQLUINTEGER)max(cb / denom, 1);
+    info.ColumnSize = isTVP ? 0 : (SQLUINTEGER)max(cb / denom, 1);
 
     info.pObject = encoded.Detach();
 
@@ -1434,7 +1434,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
                 err = 1;
                 break;
             }
-            if(ncols && ncols != PySequence_Size(row))
+            if (ncols && ncols != PySequence_Size(row))
             {
                 RaiseErrorV(0, ProgrammingError, "A TVP's rows must all be the same size.");
                 err = 1;
@@ -1685,8 +1685,8 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
   // Describe each parameter (SQL type) in preparation for allocation of paramset array
     for (Py_ssize_t i = 0; i < cur->paramcount; i++)
     {
-    SQLSMALLINT nullable;
-        if(!SQL_SUCCEEDED(SQLDescribeParam(cur->hstmt, i + 1, &(cur->paramInfos[i].ParameterType),
+        SQLSMALLINT nullable;
+        if (!SQL_SUCCEEDED(SQLDescribeParam(cur->hstmt, i + 1, &(cur->paramInfos[i].ParameterType),
             &cur->paramInfos[i].ColumnSize, &cur->paramInfos[i].DecimalDigits,
             &nullable)))
         {

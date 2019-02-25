@@ -78,6 +78,11 @@ class AccessTestCase(unittest.TestCase):
         self.cnxn   = pyodbc.connect(CNXNSTRING)
         self.cursor = self.cnxn.cursor()
 
+        # https://docs.microsoft.com/en-us/sql/odbc/microsoft/desktop-database-driver-performance-issues?view=sql-server-2017
+        #
+        # As of the 4.0 drivers, you have to send as Unicode?
+        self.cnxn.setencoding(str, encoding='utf-16le')
+
         for i in range(3):
             try:
                 self.cursor.execute("drop table t%d" % i)
