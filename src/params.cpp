@@ -20,6 +20,7 @@
 #include "row.h"
 #include <datetime.h>
 
+
 inline Connection* GetConnection(Cursor* cursor)
 {
     return (Connection*)cursor->cnxn;
@@ -740,9 +741,9 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     }
 
     Py_ssize_t cb = PyBytes_GET_SIZE(encoded);
-    
+
     int denom = 1;
-    
+
     if(enc.optenc == OPTENC_UTF16)
     {
         denom = 2;
@@ -751,9 +752,9 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     {
         denom = 4;
     }
-    
+
     info.ColumnSize = isTVP?0:(SQLUINTEGER)max(cb / denom, 1);
-    
+
     info.pObject = encoded.Detach();
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(enc.ctype);
@@ -851,85 +852,65 @@ static bool GetTimeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     return true;
 }
 
+
+inline bool NeedsBigInt(PyObject* p)
+{
+#if LONG_BIT == 32
+    return false;
+#else
+    long long ll = PyLong_AsLongLong(p);
+    return ll < -2147483648 || ll <= 2147483647;
+#endif
+}
+
 #if PY_MAJOR_VERSION < 3
 static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
-    if(isTVP)
+    if (isTVP || NeedsBigInt(param))
     {
-        PyErr_Clear();
         info.Data.i64 = (INT64)PyLong_AsLongLong(param);
-        if (!PyErr_Occurred())
-        {
-            info.ValueType         = SQL_C_SBIGINT;
-            info.ParameterType     = SQL_BIGINT;
-            info.ParameterValuePtr = &info.Data.i64;
-            info.StrLen_or_Ind     = 8;
-            
-            return true;
-        }
-        
-        return false;
+
+        info.ValueType         = SQL_C_SBIGINT;
+        info.ParameterType     = SQL_BIGINT;
+        info.ParameterValuePtr = &info.Data.i64;
+        info.StrLen_or_Ind     = 8;
+    }
+    else
+    {
+        info.ParameterValuePtr = &info.Data.l;
+
+        info.ValueType         = SQL_C_LONG;
+        info.ParameterType     = SQL_INTEGER;
+        info.ParameterValuePtr = &info.Data.l;
+        info.StrLen_or_Ind     = 4;
     }
 
-    info.Data.i64 = (INT64)PyLong_AsLongLong(param);
-    
-#if LONG_BIT == 64
-    info.ValueType     = SQL_C_SBIGINT;
-    // info.ValueType     = SQL_C_LONG;
-    info.ParameterType = SQL_BIGINT;
-    info.StrLen_or_Ind = 8;
-#elif LONG_BIT == 32
-    info.ValueType     = SQL_C_LONG;
-    info.ParameterType = SQL_INTEGER;
-    info.StrLen_or_Ind = 4;
-#else
-    #error Unexpected LONG_BIT value
-#endif
-    info.ParameterValuePtr = &info.Data.l;
     return true;
 }
 #endif
 
 static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
-    // Try to use integer when possible.  BIGINT is not always supported and is a "special
-    // case" for some drivers.
-
-    // REVIEW: C & C++ now have constants for max sizes, but I'm not sure if they will be
-    // available on all platforms Python supports right now.  It would be more performant when
-    // a lot of 64-bit values are used since we could avoid the AsLong call.
-
-    // It's not clear what the maximum SQL_INTEGER should be.  The Microsoft documentation says
-    // it is a 'long int', but some drivers run into trouble at high values.  We'll use
-    // SQL_INTEGER as an optimization for smaller values and rely on BIGINT
-
-    INT64 val = (INT64)PyLong_AsLongLong(param);
-    
-    if (!PyErr_Occurred() && !isTVP && (val >= -2147483648 && val <= 2147483647))
+    if (isTVP || NeedsBigInt(param))
     {
-        info.Data.l = PyLong_AsLong(param);
-        if (!PyErr_Occurred())
-        {
-            info.ValueType         = SQL_C_LONG;
-            info.ParameterType     = SQL_INTEGER;
-            info.ParameterValuePtr = &info.Data.l;
-            info.StrLen_or_Ind     = 4;
-        }
+        info.Data.i64 = (INT64)PyLong_AsLongLong(param);
+
+        info.ValueType         = SQL_C_SBIGINT;
+        info.ParameterType     = SQL_BIGINT;
+        info.ParameterValuePtr = &info.Data.i64;
+        info.StrLen_or_Ind     = 8;
     }
     else
     {
-        PyErr_Clear();
-        info.Data.i64 = (INT64)PyLong_AsLongLong(param);
-        if (!PyErr_Occurred())
-        {
-            info.ValueType         = SQL_C_SBIGINT;
-            info.ParameterType     = SQL_BIGINT;
-            info.ParameterValuePtr = &info.Data.i64;
-            info.StrLen_or_Ind     = 8;
-        }
+        info.ParameterValuePtr = &info.Data.l;
+
+        info.ValueType         = SQL_C_LONG;
+        info.ParameterType     = SQL_INTEGER;
+        info.ParameterValuePtr = &info.Data.l;
+        info.StrLen_or_Ind     = 4;
     }
 
-    return !PyErr_Occurred();
+    return true;
 }
 
 static bool GetFloatInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
@@ -1153,7 +1134,7 @@ static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     Py_ssize_t cb = PyByteArray_Size(param);
 
     SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-    
+
     if (maxlength == 0 || cb <= maxlength || isTVP)
     {
         info.ParameterType     = SQL_VARBINARY;
@@ -1299,40 +1280,40 @@ bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo&
 
 static bool getObjectValue(PyObject *pObject, long& nValue)
 {
-	if (pObject == NULL)
-		return false;
+  if (pObject == NULL)
+    return false;
 
 #if PY_MAJOR_VERSION < 3
-	if (PyInt_Check(pObject))
-	{
-		nValue = PyInt_AS_LONG(pObject);
-		return true;
-	}
+  if (PyInt_Check(pObject))
+  {
+    nValue = PyInt_AS_LONG(pObject);
+    return true;
+  }
 
 #endif
-	if (PyLong_Check(pObject))
-	{
-		nValue = PyLong_AsLong(pObject);
-		return true;
-	}
+  if (PyLong_Check(pObject))
+  {
+    nValue = PyLong_AsLong(pObject);
+    return true;
+  }
 
-	return false;
+  return false;
 }
 
 static long getSequenceValue(PyObject *pSequence, Py_ssize_t nIndex, long nDefault, bool &bChanged)
 {
-	PyObject *obj;
-	long v = nDefault;
+  PyObject *obj;
+  long v = nDefault;
 
-	obj = PySequence_GetItem(pSequence, nIndex);
-	if (obj != NULL)
-	{
-		if (getObjectValue(obj, v))
-			bChanged = true;
-	}
-	Py_CLEAR(obj);
+  obj = PySequence_GetItem(pSequence, nIndex);
+  if (obj != NULL)
+  {
+    if (getObjectValue(obj, v))
+      bChanged = true;
+  }
+  Py_CLEAR(obj);
 
-	return v;
+  return v;
 }
 
 /**
@@ -1344,47 +1325,47 @@ static long getSequenceValue(PyObject *pSequence, Py_ssize_t nIndex, long nDefau
  */
 static bool UpdateParamInfo(Cursor* pCursor, Py_ssize_t nIndex, ParamInfo *pInfo)
 {
-	if (pCursor->inputsizes == NULL || nIndex >= PySequence_Length(pCursor->inputsizes))
-		return false;
+  if (pCursor->inputsizes == NULL || nIndex >= PySequence_Length(pCursor->inputsizes))
+    return false;
 
-	PyObject *desc = PySequence_GetItem(pCursor->inputsizes, nIndex);
-	if (desc == NULL)
-		return false;
+  PyObject *desc = PySequence_GetItem(pCursor->inputsizes, nIndex);
+  if (desc == NULL)
+    return false;
 
-	bool rc = false;
-	long v;
-	bool clearError = true;
+  bool rc = false;
+  long v;
+  bool clearError = true;
 
-	// If the error was already set before we entered here, it is not from us, so we leave it alone.
-	if (PyErr_Occurred())
-		clearError = false;
+  // If the error was already set before we entered here, it is not from us, so we leave it alone.
+  if (PyErr_Occurred())
+    clearError = false;
 
-	// integer - sets colsize
-	// type object - sets sqltype (mapping between Python and SQL types is not 1:1 so it may not always work)
-	// Consider: sequence of (colsize, sqltype, scale)
-	if (getObjectValue(desc, v))
-	{
-		pInfo->ColumnSize = (SQLULEN)v;
-		rc = true;
-	}
-	else if (PySequence_Check(desc))
-	{
-		pInfo->ParameterType = (SQLSMALLINT)getSequenceValue(desc, 0, (long)pInfo->ParameterType, rc);
-		pInfo->ColumnSize = (SQLUINTEGER)getSequenceValue(desc, 1, (long)pInfo->ColumnSize, rc);
-		pInfo->DecimalDigits = (SQLSMALLINT)getSequenceValue(desc, 2, (long)pInfo->ColumnSize, rc);
-	}
+  // integer - sets colsize
+  // type object - sets sqltype (mapping between Python and SQL types is not 1:1 so it may not always work)
+  // Consider: sequence of (colsize, sqltype, scale)
+  if (getObjectValue(desc, v))
+  {
+    pInfo->ColumnSize = (SQLULEN)v;
+    rc = true;
+  }
+  else if (PySequence_Check(desc))
+  {
+    pInfo->ParameterType = (SQLSMALLINT)getSequenceValue(desc, 0, (long)pInfo->ParameterType, rc);
+    pInfo->ColumnSize = (SQLUINTEGER)getSequenceValue(desc, 1, (long)pInfo->ColumnSize, rc);
+    pInfo->DecimalDigits = (SQLSMALLINT)getSequenceValue(desc, 2, (long)pInfo->ColumnSize, rc);
+  }
 
-	Py_CLEAR(desc);
+  Py_CLEAR(desc);
 
-	// If the user didn't provide the full array (in case he gave us an array), the above code would
-	// set an internal error on the cursor object, as we try to read three values from an array
-	// which may not have as many. This is ok, because we don't really care if the array is not completly
-	// specified, so we clear the error in case it comes from this. If the error was already present before that
-	// we keep it, so the user can handle it.
-	if (clearError)
-		PyErr_Clear();
+  // If the user didn't provide the full array (in case he gave us an array), the above code would
+  // set an internal error on the cursor object, as we try to read three values from an array
+  // which may not have as many. This is ok, because we don't really care if the array is not completly
+  // specified, so we clear the error in case it comes from this. If the error was already present before that
+  // we keep it, so the user can handle it.
+  if (clearError)
+    PyErr_Clear();
 
-	return rc;
+  return rc;
 }
 
 bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
@@ -1395,13 +1376,13 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 
     if (UpdateParamInfo(cur, index, &info))
     {
-		// Reload in case it has changed.
-		colsize = info.ColumnSize;
-		sqltype = info.ParameterType;
-		scale = info.DecimalDigits;
+    // Reload in case it has changed.
+    colsize = info.ColumnSize;
+    sqltype = info.ParameterType;
+    scale = info.DecimalDigits;
     }
 
-	TRACE("BIND: param=%ld ValueType=%d (%s) ParameterType=%d (%s) ColumnSize=%ld DecimalDigits=%d BufferLength=%ld *pcb=%ld\n",
+  TRACE("BIND: param=%ld ValueType=%d (%s) ParameterType=%d (%s) ColumnSize=%ld DecimalDigits=%d BufferLength=%ld *pcb=%ld\n",
           (index+1), info.ValueType, CTypeName(info.ValueType), sqltype, SqlTypeName(sqltype), colsize,
           scale, info.BufferLength, info.StrLen_or_Ind);
 
@@ -1699,10 +1680,10 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
     }
     memset(cur->paramInfos, 0, sizeof(ParamInfo) * cur->paramcount);
 
-	// Describe each parameter (SQL type) in preparation for allocation of paramset array
+  // Describe each parameter (SQL type) in preparation for allocation of paramset array
     for (Py_ssize_t i = 0; i < cur->paramcount; i++)
     {
-		SQLSMALLINT nullable;
+    SQLSMALLINT nullable;
         if(!SQL_SUCCEEDED(SQLDescribeParam(cur->hstmt, i + 1, &(cur->paramInfos[i].ParameterType),
             &cur->paramInfos[i].ColumnSize, &cur->paramInfos[i].DecimalDigits,
             &nullable)))
@@ -1713,11 +1694,11 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             cur->paramInfos[i].DecimalDigits = 0;
         }
 
-		// This supports overriding of input sizes via setinputsizes
-		// See issue 380
-		// The logic is duplicated from BindParameter
-		UpdateParamInfo(cur, i, &cur->paramInfos[i]);
-	}
+    // This supports overriding of input sizes via setinputsizes
+    // See issue 380
+    // The logic is duplicated from BindParameter
+    UpdateParamInfo(cur, i, &cur->paramInfos[i]);
+  }
 
     PyObject *rowseq = PySequence_Fast(paramArrayObj, "Parameter array must be a sequence.");
     if (!rowseq)
@@ -2030,7 +2011,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
 
     Py_XDECREF(rowseq);
     FreeParameterData(cur);
-	return ret;
+  return ret;
 }
 
 static bool GetParamType(Cursor* cur, Py_ssize_t index, SQLSMALLINT& type)
