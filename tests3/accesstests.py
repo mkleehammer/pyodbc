@@ -9,25 +9,25 @@ These run using the version from the 'build' directory, not the version
 installed into the Python directories.  You must run python setup.py build
 before running the tests.
 
-To run, pass the filename of an Access database on the command line:
+To run, pass the file EXTENSION of an Access database on the command line:
 
-  accesstests test.accdb
+  accesstests accdb
 
-An empty Access 2000 database (empty.mdb) and an empty Access 2007 database
-(empty.accdb), are provided.
+An empty Access 2000 database (empty.mdb) or an empty Access 2007 database
+(empty.accdb), are automatically created for the tests.
 
 To run a single test, use the -t option:
 
-  accesstests test.accdb -t unicode_null
+  accesstests -t unicode_null accdb
 
 If you want to report an error, it would be helpful to include the driver information
 by using the verbose flag and redirecting the output to a file:
 
- accesstests test.accdb -v >& results.txt
+ accesstests -v accdb >& results.txt
 
 You can pass the verbose flag twice for more verbose output:
 
- accesstests test.accdb -vv
+ accesstests -vv accdb
 """
 
 # Access SQL data types: http://msdn2.microsoft.com/en-us/library/bb208866.aspx
