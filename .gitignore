@@ -10,3 +10,7 @@ TAGS
 pyodbc.egg-info
 pyodbc.conf
 /venv*
+
+# The Access unit tests copy empty.accdb and empty.mdb to these names and use them.
+test.accdb
+test.mdb
