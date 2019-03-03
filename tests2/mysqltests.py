@@ -693,9 +693,9 @@ class MySqlTestCase(unittest.TestCase):
         #
         # http://www.fileformat.info/info/unicode/char/1f31c/index.htm
 
-        v = "x \U0001F31C z"
+        v = u"x \U0001F31C z"
 
-        self.cursor.execute("create table t1(s varchar(100))")
+        self.cursor.execute("CREATE TABLE t1(s varchar(100)) DEFAULT CHARSET=utf8mb4")
         self.cursor.execute("insert into t1 values (?)", v)
 
         result = self.cursor.execute("select s from t1").fetchone()[0]
