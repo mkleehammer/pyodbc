@@ -9,25 +9,25 @@ These run using the version from the 'build' directory, not the version
 installed into the Python directories.  You must run python setup.py build
 before running the tests.
 
-To run, pass the filename of an Access database on the command line:
+To run, pass the file EXTENSION of an Access database on the command line:
 
-  accesstests test.accdb
+  accesstests accdb
 
-An empty Access 2000 database (empty.mdb) and an empty Access 2007 database
-(empty.accdb), are provided.
+An empty Access 2000 database (empty.mdb) or an empty Access 2007 database
+(empty.accdb), are automatically created for the tests.
 
 To run a single test, use the -t option:
 
-  accesstests test.accdb -t unicode_null
+  accesstests -t unicode_null accdb
 
 If you want to report an error, it would be helpful to include the driver information
 by using the verbose flag and redirecting the output to a file:
 
- accesstests test.accdb -v >& results.txt
+ accesstests -v accdb >& results.txt
 
 You can pass the verbose flag twice for more verbose output:
 
- accesstests test.accdb -vv
+ accesstests -vv accdb
 """
 
 # Access SQL data types: http://msdn2.microsoft.com/en-us/library/bb208866.aspx
@@ -36,7 +36,8 @@ import sys, os, re
 import unittest
 from decimal import Decimal
 from datetime import datetime, date, time
-from os.path import abspath
+from os.path import abspath, dirname, join
+import shutil
 from testutils import *
 
 CNXNSTRING = None
@@ -76,6 +77,11 @@ class AccessTestCase(unittest.TestCase):
     def setUp(self):
         self.cnxn   = pyodbc.connect(CNXNSTRING)
         self.cursor = self.cnxn.cursor()
+
+        # https://docs.microsoft.com/en-us/sql/odbc/microsoft/desktop-database-driver-performance-issues?view=sql-server-2017
+        #
+        # As of the 4.0 drivers, you have to send as Unicode?
+        self.cnxn.setencoding(str, encoding='utf-16le')
 
         for i in range(3):
             try:
@@ -428,10 +434,7 @@ class AccessTestCase(unittest.TestCase):
         self.assertEqual(False, result)
 
     def test_guid(self):
-        # REVIEW: Python doesn't (yet) have a UUID type so the value is returned as a string.  Access, however, only
-        # really supports Unicode.  For now, we'll have to live with this difference.  All strings in Python 3.x will
-        # be Unicode -- pyodbc 3.x will have different defaults.
-        value = "de2ac9c6-8676-4b0b-b8a6-217a8580cbee"
+        value = u"de2ac9c6-8676-4b0b-b8a6-217a8580cbee"
         self.cursor.execute("create table t1(g1 uniqueidentifier)")
         self.cursor.execute("insert into t1 values (?)", value)
         v = self.cursor.execute("select * from t1").fetchone()[0]
@@ -620,32 +623,36 @@ class AccessTestCase(unittest.TestCase):
 
 
 def main():
-    from optparse import OptionParser
-    parser = OptionParser(usage=usage)
-    parser.add_option("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
-    parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
-    parser.add_option("-t", "--test", help="Run only the named test")
+    from argparse import ArgumentParser
+    parser = ArgumentParser(usage=usage)
+    parser.add_argument("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
+    parser.add_argument("-d", "--debug", action="store_true", default=False, help="Print debugging items")
+    parser.add_argument("-t", "--test", help="Run only the named test")
+    parser.add_argument('type', choices=['accdb', 'mdb'], help='Which type of file to test')
 
-    (options, args) = parser.parse_args()
+    args = parser.parse_args()
 
-    if len(args) != 1:
-        parser.error('dbfile argument required')
+    DRIVERS = {
+        'accdb': 'Microsoft Access Driver (*.mdb, *.accdb)',
+        'mdb': 'Microsoft Access Driver (*.mdb)'
+    }
 
-    if args[0].endswith('.accdb'):
-        driver = 'Microsoft Access Driver (*.mdb, *.accdb)'
-    else:
-        driver = 'Microsoft Access Driver (*.mdb)'
+    here = dirname(abspath(__file__))
+    src = join(here, 'empty.' + args.type)
+    dest = join(here, 'test.' + args.type)
+    shutil.copy(src, dest)
 
     global CNXNSTRING
-    CNXNSTRING = 'DRIVER={%s};DBQ=%s;ExtendedAnsiSQL=1' % (driver, abspath(args[0]))
+    CNXNSTRING = 'DRIVER={%s};DBQ=%s;ExtendedAnsiSQL=1' % (DRIVERS[args.type], dest)
+    print(CNXNSTRING)
 
     cnxn = pyodbc.connect(CNXNSTRING)
     print_library_info(cnxn)
     cnxn.close()
 
-    suite = load_tests(AccessTestCase, options.test)
+    suite = load_tests(AccessTestCase, args.test)
 
-    testRunner = unittest.TextTestRunner(verbosity=options.verbose)
+    testRunner = unittest.TextTestRunner(verbosity=args.verbose)
     result = testRunner.run(suite)
 
 
