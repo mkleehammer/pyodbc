@@ -400,7 +400,12 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         pts->hour = PyDateTime_DATE_GET_HOUR(cell);
         pts->minute = PyDateTime_DATE_GET_MINUTE(cell);
         pts->second = PyDateTime_DATE_GET_SECOND(cell);
-        pts->fraction = PyDateTime_DATE_GET_MICROSECOND(cell) * 1000;
+
+        // Truncate the fraction according to precision
+        long fast_pow10[] = {1,10,100,1000,10000,100000,1000000,10000000,100000000,1000000000};
+        SQLUINTEGER milliseconds = PyDateTime_DATE_GET_MICROSECOND(cell) * 1000;
+        pts->fraction = milliseconds - (milliseconds % fast_pow10[9 - pi->DecimalDigits]);
+
         *outbuf += sizeof(SQL_TIMESTAMP_STRUCT);
         ind = sizeof(SQL_TIMESTAMP_STRUCT);
     }
