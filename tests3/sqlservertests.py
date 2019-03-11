@@ -1583,6 +1583,26 @@ class SqlServerTestCase(unittest.TestCase):
         assert row.type_name == 'varchar'
         assert row.column_size == 4, row.column_size
 
+        # <test null termination fix (issue #506)>
+        for i in range(8, 16):
+            table_name = 'pyodbc_89abcdef'[:i]
+
+            self.cursor.execute("""\
+            BEGIN TRY
+                DROP TABLE {0};
+            END TRY
+            BEGIN CATCH
+            END CATCH
+            CREATE TABLE {0} (id INT PRIMARY KEY);
+            """.format(table_name))
+
+            col_count = len([col.column_name for col in self.cursor.columns(table_name)])
+            # print('table [{}] ({} characters): {} columns{}'.format(table_name, i, col_count, ' <-' if col_count == 0 else ''))
+            self.assertEqual(col_count, 1)
+
+            self.cursor.execute("DROP TABLE {};".format(table_name))
+        # </test null termination fix (issue #506)>
+
     def test_cancel(self):
         # I'm not sure how to reliably cause a hang to cancel, so for now we'll settle with
         # making sure SQLCancel is called correctly.
@@ -1610,6 +1630,10 @@ class SqlServerTestCase(unittest.TestCase):
         #
         # pyodbc supports queries with table valued parameters in sql server
         #
+
+        if self.handle_known_issues_for('freetds', print_reminder=True):
+            warn('FREETDS_KNOWN_ISSUE - test_tvp: test cancelled.')
+            return
 
         # (Don't use "if exists" since older SQL Servers don't support it.)
         try:
