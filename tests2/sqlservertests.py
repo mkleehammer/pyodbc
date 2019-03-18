@@ -458,6 +458,18 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.executemany(sql, params)
         self.assertEqual(self.cursor.execute("SELECT txt FROM #issue295").fetchval(), v)
 
+    def test_fast_executemany_to_datetime2(self):
+        if self.handle_known_issues_for('freetds', print_reminder=True):
+            warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_to_datetime2: test cancelled.')
+            return
+        v = datetime(2019, 3, 12, 10, 0, 0, 123456)
+        self.cursor.execute("CREATE TABLE ##issue540 (dt2 DATETIME2(2))")
+        sql = "INSERT INTO ##issue540 (dt2) VALUES (?)"
+        params = [(v,)]
+        self.cursor.fast_executemany = True
+        self.cursor.executemany(sql, params)
+        self.assertEqual(self.cursor.execute("SELECT CAST(dt2 AS VARCHAR) FROM ##issue540").fetchval(), '2019-03-12 10:00:00.12')
+
     #
     # binary
     #
