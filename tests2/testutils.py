@@ -50,9 +50,13 @@ def print_library_info(cnxn):
     cursor = cnxn.cursor()
     for typename in ['VARCHAR', 'WVARCHAR', 'BINARY']:
         t = getattr(pyodbc, 'SQL_' + typename)
-        cursor.getTypeInfo(t)
-        row = cursor.fetchone()
-        print('Max %s = %s' % (typename, row and row[2] or '(not supported)'))
+        try:
+            cursor.getTypeInfo(t)
+        except pyodbc.Error as e:
+            print('Max %s = (not supported)' % (typename, ))
+        else:
+            row = cursor.fetchone()
+            print('Max %s = %s' % (typename, row and row[2] or '(not supported)'))
 
     if platform.system() == 'Windows':
         print('         %s' % ' '.join([s for s in platform.win32_ver() if s]))
