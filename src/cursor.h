@@ -72,7 +72,7 @@ struct ParamInfo
     union
     {
         unsigned char ch;
-        long l;
+        int i32;
         INT64 i64;
         double dbl;
         TIMESTAMP_STRUCT timestamp;
