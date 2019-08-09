@@ -4,14 +4,18 @@
 usage = """\
 usage: %prog [options] connection_string
 
-Unit tests for MySQL.  To use, pass a connection string as the parameter.  The tests will create and drop tables t1 and
-t2 as necessary.  The default installation of mysql allows you to connect locally with no password and already contains
-a 'test' database, so you can probably use the following.  (Update the driver name as appropriate.)
-
-  ./mysqltests DRIVER={MySQL};DATABASE=test
+Unit tests for MySQL.  To use, pass a connection string as the parameter.
+The tests will create and drop tables t1 and t2 as necessary.
 
 These tests use the pyodbc library from the build directory, not the version installed in your
 Python directories.  You must run `python setup.py build` before running these tests.
+
+You can also put the connection string into a tmp/setup.cfg file like so:
+
+  [mysqltests]
+  connection-string=DRIVER=MySQL ODBC 8.0 Unicode Driver;charset=utf8mb4;SERVER=localhost;DATABASE=pyodbc;UID=root;PWD=rootpw
+
+Note: Include charset=utf8mb4 in the connection string so the high-Unicode tests won't fail.
 """
 
 import sys, os, re
@@ -689,9 +693,9 @@ class MySqlTestCase(unittest.TestCase):
         #
         # http://www.fileformat.info/info/unicode/char/1f31c/index.htm
 
-        v = "x \U0001F31C z"
+        v = u"x \U0001F31C z"
 
-        self.cursor.execute("create table t1(s varchar(100))")
+        self.cursor.execute("CREATE TABLE t1(s varchar(100)) DEFAULT CHARSET=utf8mb4")
         self.cursor.execute("insert into t1 values (?)", v)
 
         result = self.cursor.execute("select s from t1").fetchone()[0]
