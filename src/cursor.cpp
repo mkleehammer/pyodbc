@@ -764,14 +764,12 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                             return NULL;
                         }
 
-                        if(newParam.ValueType != SQL_C_DEFAULT && prevParam->ValueType != SQL_C_DEFAULT)
+                        if((newParam.ValueType != SQL_C_DEFAULT && prevParam->ValueType != SQL_C_DEFAULT) &&
+                           (newParam.ValueType != prevParam->ValueType ||
+                            newParam.ParameterType != prevParam->ParameterType))
                         {
-                            if (newParam.ValueType != prevParam->ValueType ||
-                                newParam.ParameterType != prevParam->ParameterType)
-                            {
-                                FreeParameterData(cur);
-                                return RaiseErrorV(0, ProgrammingError, "Type mismatch between TVP row values");
-                            }
+                            FreeParameterData(cur);
+                            return RaiseErrorV(0, ProgrammingError, "Type mismatch between TVP row values");
                         }
 
                         if (prevParam->allocated)
