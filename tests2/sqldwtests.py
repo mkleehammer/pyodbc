@@ -6,7 +6,7 @@ from __future__ import print_function
 usage = """\
 usage: %prog [options] connection_string
 
-Unit tests for SQL Server.  To use, pass a connection string as the parameter.
+Unit tests for Azure SQL DW.  To use, pass a connection string as the parameter.
 The tests will create and drop tables t1 and t2 as necessary.
 
 These run using the version from the 'build' directory, not the version
@@ -15,7 +15,7 @@ before running the tests.
 
 You can also put the connection string into a tmp/setup.cfg file like so:
 
-  [sqlservertests]
+  [sqldwtests]
   connection-string=DRIVER={SQL Server};SERVER=localhost;UID=uid;PWD=pwd;DATABASE=db
 
 The connection string above will use the 2000/2005 driver, even if SQL Server 2008
@@ -1468,7 +1468,7 @@ def main():
         parser.error('Only one argument is allowed.  Do you need quotes around the connection string?')
 
     if not args:
-        connection_string = load_setup_connection_string('sqlservertests')
+        connection_string = load_setup_connection_string('sqldwtests')
 
         if not connection_string:
             parser.print_help()
