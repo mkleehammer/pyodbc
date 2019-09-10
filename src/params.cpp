@@ -1915,7 +1915,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                 if (PyUnicode_Check(objCell))
                 {
                     const TextEnc& enc = cur->cnxn->sqlwchar_enc;
-                    int cb = PyUnicode_GET_LENGTH(objCell);
+                    int cb = PyUnicode_GET_DATA_SIZE(objCell) / 2;
 
                     PyObject* bytes = NULL;
                     const Py_UNICODE* source = PyUnicode_AS_UNICODE(objCell);

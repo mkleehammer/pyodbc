@@ -462,6 +462,13 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.executemany(sql, params)
         self.assertEqual(self.cursor.execute("SELECT CAST(dt2 AS VARCHAR) FROM ##issue540").fetchval(), '2019-03-12 10:00:00.12')
 
+    def test_high_unicode(self):
+        v = "🎥"
+        self.cursor.fast_executemany = True
+        self.cursor.execute("CREATE TABLE test_high_unicode (col1 nvarchar(max) null)")
+        self.cursor.executemany("INSERT INTO test_high_unicode (col1) VALUES (?)", [[v,]])
+        self.assertEqual(self.cursor.execute("SELECT * FROM test_high_unicode").fetchone()[0], v)
+
     #
     # binary
     #
