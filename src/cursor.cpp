@@ -1883,6 +1883,9 @@ static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
 
         if (!create_name_map(cur, cCols, lowercase()))
             return 0;
+        
+        if (!expose_column_sql_types(cur, cCols))
+            return 0;
     }
 
     SQLLEN cRows;
