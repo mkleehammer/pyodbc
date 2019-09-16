@@ -2129,7 +2129,7 @@ static char description_doc[] =
     "STRING, BINARY, NUMBER, and DATETIME.";
 
 static char coldescription_doc[] =
-    "This read-only attribute decsribe columns returned by SQLDescribeCol.\n"
+    "This read-only attribute describe columns returned by SQLDescribeCol.\n"
     "Returns a tuple:\n"
     "0 - sql_type\n"
     "1 - column_width\n"
