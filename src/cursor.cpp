@@ -570,28 +570,16 @@ static bool expose_column_sql_types(Cursor* cur, int cCols)
 
     I(cur->coldescription == Py_None);
 
-    PyObject *colinfo=0, *coldesc=0, *isunsigned=0;
+    PyObject *colinfo=0, *coldesc=0;
     coldesc = PyTuple_New((Py_ssize_t)cCols);
     int i;
     for (i = 0; i < cCols; i++)
     {
         ColumnInfo *ci = &cur->colinfos[i];
-        switch (ci->is_unsigned)
-        {
-        case SQL_TRUE:
-            isunsigned = Py_True;
-            break;
-        case SQL_FALSE:
-            isunsigned = Py_False;
-            break;
-        default:
-            isunsigned = Py_None;
-            break;
-        }
         colinfo = Py_BuildValue("(iiO)",
           (int)ci->sql_type,
           (int)ci->column_size,
-          isunsigned
+          (ci->is_unsigned ? Py_True : Py_False)
           );
         PyTuple_SET_ITEM(coldesc, i, colinfo);
         colinfo=0;
