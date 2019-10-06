@@ -617,8 +617,10 @@ class MySqlTestCase(unittest.TestCase):
 
     def test_fast_executemany(self):
         driver_name = self.cnxn.getinfo(pyodbc.SQL_DRIVER_NAME)
-        if driver_name.lower().endswith('a.dll'):
-            # skip this test for the ANSI driver on Windows; it crashes CPython
+        if driver_name.lower().endswith('a.dll') or driver_name.lower().endswith('a.so'):
+            # skip this test for the ANSI driver
+            #   on Windows, it crashes CPython
+            #   on Linux, it simply fails
             return
 
         self.cursor.fast_executemany = True
