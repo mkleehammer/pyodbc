@@ -1910,12 +1910,11 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             {
                 PyObject* objCell = pInfo->cell;
 
-#if PY_MAJOR_VERSION >= 3
                 // If the object is Unicode it needs to be converted into bytes before it can be used by SQLPutData
                 if (PyUnicode_Check(objCell))
                 {
                     const TextEnc& enc = cur->cnxn->sqlwchar_enc;
-                    int cb = PyUnicode_GET_LENGTH(objCell);
+                    int cb = PyUnicode_GET_DATA_SIZE(objCell) / 2;
 
                     PyObject* bytes = NULL;
                     const Py_UNICODE* source = PyUnicode_AS_UNICODE(objCell);
@@ -1941,7 +1940,6 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         objCell = bytes;
                     }
                 }
-#endif
 
                 szLastFunction = "SQLPutData";
                 if (PyBytes_Check(objCell)
