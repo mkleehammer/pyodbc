@@ -1,9 +1,22 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Unit tests for PostgreSQL on OS X and Linux.
+usage = """\
+usage: %prog [options] connection_string
 
-from __future__ import print_function
+Unit tests for PostgreSQL.  To use, pass a connection string as the parameter.
+The tests will create and drop tables t1 and t2 as necessary.
+
+These run using the version from the 'build' directory, not the version
+installed into the Python directories.  You must run python setup.py build
+before running the tests.
+
+You can also put the connection string into a tmp/setup.cfg file like so:
+
+  [pgtests]
+  connection-string=DSN=PostgreSQL35W
+
+"""
 
 import uuid
 import unittest
