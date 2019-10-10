@@ -465,9 +465,9 @@ class SqlServerTestCase(unittest.TestCase):
     def test_high_unicode(self):
         v = "🎥"
         self.cursor.fast_executemany = True
-        self.cursor.execute("CREATE TABLE test_high_unicode (col1 nvarchar(max) null)")
-        self.cursor.executemany("INSERT INTO test_high_unicode (col1) VALUES (?)", [[v,]])
-        self.assertEqual(self.cursor.execute("SELECT * FROM test_high_unicode").fetchone()[0], v)
+        self.cursor.execute("CREATE TABLE t1 (col1 nvarchar(max) null)")
+        self.cursor.executemany("INSERT INTO t1 (col1) VALUES (?)", [[v,]])
+        self.assertEqual(self.cursor.execute("SELECT * FROM t1").fetchone()[0], v)
 
     #
     # binary
