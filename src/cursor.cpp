@@ -763,12 +763,15 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                             FreeParameterData(cur);
                             return NULL;
                         }
-                        if (newParam.ValueType != prevParam->ValueType ||
-                            newParam.ParameterType != prevParam->ParameterType)
+
+                        if((newParam.ValueType != SQL_C_DEFAULT && prevParam->ValueType != SQL_C_DEFAULT) &&
+                           (newParam.ValueType != prevParam->ValueType ||
+                            newParam.ParameterType != prevParam->ParameterType))
                         {
                             FreeParameterData(cur);
                             return RaiseErrorV(0, ProgrammingError, "Type mismatch between TVP row values");
                         }
+
                         if (prevParam->allocated)
                             pyodbc_free(prevParam->ParameterValuePtr);
                         Py_XDECREF(prevParam->pObject);
