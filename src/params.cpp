@@ -880,7 +880,7 @@ static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
     }
     else
     {
-        info.Data.i32 = PyLong_AsLong(param);
+        info.Data.i32 = (int)PyLong_AsLong(param);
 
         info.ValueType         = SQL_C_LONG;
         info.ParameterType     = SQL_INTEGER;
@@ -909,7 +909,7 @@ static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     }
     else
     {
-        info.Data.i32 = PyLong_AsLong(param);
+        info.Data.i32 = (int)PyLong_AsLong(param);
 
         info.ValueType         = SQL_C_LONG;
         info.ParameterType     = SQL_INTEGER;
