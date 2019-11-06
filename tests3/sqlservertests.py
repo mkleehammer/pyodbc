@@ -1635,6 +1635,7 @@ class SqlServerTestCase(unittest.TestCase):
         # of characters.  Ensure it works even with 4-byte characters.
         #
         # http://www.fileformat.info/info/unicode/char/1f31c/index.htm
+
         v = "x \U0001F31C z"
 
         self.cursor.execute("create table t1(s nvarchar(100))")
@@ -1645,12 +1646,10 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(result, v)
 
     def test_emoticons_as_literal(self):
-        # https://github.com/mkleehammer/pyodbc/issues/423
-        #
-        # When sending a varchar parameter, pyodbc is supposed to set ColumnSize to the number
-        # of characters.  Ensure it works even with 4-byte characters.
+        # similar to `test_emoticons_as_parameter`, above, except for Unicode literal
         #
         # http://www.fileformat.info/info/unicode/char/1f31c/index.htm
+
         v = "x \U0001F31C z"
 
         self.cursor.execute("create table t1(s nvarchar(100))")
