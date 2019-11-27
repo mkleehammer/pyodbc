@@ -462,7 +462,10 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.executemany(sql, params)
         self.assertEqual(self.cursor.execute("SELECT CAST(dt2 AS VARCHAR) FROM ##issue540").fetchval(), '2019-03-12 10:00:00.12')
 
-    def test_high_unicode(self):
+    def test_fast_executemany_high_unicode(self):
+        if self.handle_known_issues_for('freetds', print_reminder=True):
+            warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_high_unicode: test cancelled.')
+            return
         v = "🎥"
         self.cursor.fast_executemany = True
         self.cursor.execute("CREATE TABLE t1 (col1 nvarchar(max) null)")
@@ -1649,6 +1652,11 @@ class SqlServerTestCase(unittest.TestCase):
         # similar to `test_emoticons_as_parameter`, above, except for Unicode literal
         #
         # http://www.fileformat.info/info/unicode/char/1f31c/index.htm
+
+        if self.handle_known_issues_for('freetds', print_reminder=True):
+            warn('FREETDS_KNOWN_ISSUE - test_emoticons_as_literal: test cancelled.')
+            # https://github.com/FreeTDS/freetds/issues/317
+            return
 
         v = "x \U0001F31C z"
 

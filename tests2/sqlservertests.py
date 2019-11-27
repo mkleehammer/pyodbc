@@ -470,7 +470,10 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.executemany(sql, params)
         self.assertEqual(self.cursor.execute("SELECT CAST(dt2 AS VARCHAR) FROM ##issue540").fetchval(), '2019-03-12 10:00:00.12')
 
-    def test_high_unicode(self):
+    def test_fast_executemany_high_unicode(self):
+        if self.handle_known_issues_for('freetds', print_reminder=True):
+            warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_high_unicode: test cancelled.')
+            return
         v = u"🎥"
         self.cursor.fast_executemany = True
         self.cursor.execute("CREATE TABLE t1 (col1 nvarchar(max) null)")
