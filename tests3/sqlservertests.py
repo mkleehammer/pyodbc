@@ -87,7 +87,7 @@ class SqlServerTestCase(unittest.TestCase):
         elif type_name == 'freetds':
             return ('tdsodbc' in driver_name)
 
-    def handle_known_issues_for(self, type_name, print_reminder=False):
+    def handle_known_issues_for(self, type_name, print_reminder=False, failure_crashes_python=False):
         """
         Checks driver `type_name` and "killswitch" variable `handle_known_issues` to see if
         known issue handling should be bypassed. Optionally prints a reminder message to
@@ -115,7 +115,7 @@ class SqlServerTestCase(unittest.TestCase):
                 raise
         """
         if self.driver_type_is(type_name):
-            if handle_known_issues:
+            if handle_known_issues or failure_crashes_python:
                 return True
             else:
                 if print_reminder:
@@ -438,7 +438,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(rows[0][0], v)
 
     def test_fast_executemany_to_local_temp_table(self):
-        if self.handle_known_issues_for('freetds', print_reminder=True):
+        if self.handle_known_issues_for('freetds', print_reminder=True, failure_crashes_python=True):
             warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_to_local_temp_table: test cancelled.')
             return 
         v = 'Ώπα'
@@ -451,7 +451,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(self.cursor.execute("SELECT txt FROM #issue295").fetchval(), v)
 
     def test_fast_executemany_to_datetime2(self):
-        if self.handle_known_issues_for('freetds', print_reminder=True):
+        if self.handle_known_issues_for('freetds', print_reminder=True, failure_crashes_python=True):
             warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_to_datetime2: test cancelled.')
             return
         v = datetime(2019, 3, 12, 10, 0, 0, 123456)
@@ -463,7 +463,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(self.cursor.execute("SELECT CAST(dt2 AS VARCHAR) FROM ##issue540").fetchval(), '2019-03-12 10:00:00.12')
 
     def test_fast_executemany_high_unicode(self):
-        if self.handle_known_issues_for('freetds', print_reminder=True):
+        if self.handle_known_issues_for('freetds', print_reminder=True, failure_crashes_python=True):
             warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_high_unicode: test cancelled.')
             return
         v = "🎥"
