@@ -25,7 +25,7 @@ is installed:
   2005: DRIVER={SQL Server}
   2008: DRIVER={SQL Server Native Client 10.0}
   
-If using FreeTDS ODBC, be sure to use version 1.00.97 or newer.
+If using FreeTDS ODBC, be sure to use version 1.1.23 or newer.
 """
 
 import sys, os, re, uuid
@@ -1653,10 +1653,8 @@ class SqlServerTestCase(unittest.TestCase):
         #
         # http://www.fileformat.info/info/unicode/char/1f31c/index.htm
 
-        if self.handle_known_issues_for('freetds', print_reminder=True):
-            warn('FREETDS_KNOWN_ISSUE - test_emoticons_as_literal: test cancelled.')
-            # https://github.com/FreeTDS/freetds/issues/317
-            return
+        # FreeTDS ODBC issue fixed in version 1.1.23
+        # https://github.com/FreeTDS/freetds/issues/317
 
         v = "x \U0001F31C z"
 
