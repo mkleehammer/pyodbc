@@ -25,6 +25,10 @@
 #include "dbspecific.h"
 #include <datetime.h>
 
+#ifdef WITH_NUMPY
+#include "npcontainer.h"
+#endif
+
 enum
 {
     CURSOR_REQUIRE_CNXN    = 0x00000001,
@@ -1349,7 +1353,6 @@ static PyObject* Cursor_fetchmany(PyObject* self, PyObject* args)
     return result;
 }
 
-
 static char tables_doc[] =
     "C.tables(table=None, catalog=None, schema=None, tableType=None) --> self\n"
     "\n"
@@ -2396,6 +2399,9 @@ static PyMethodDef Cursor_methods[] =
     { "fetchone",         (PyCFunction)Cursor_fetchone,         METH_NOARGS,                fetchone_doc         },
     { "fetchall",         (PyCFunction)Cursor_fetchall,         METH_NOARGS,                fetchall_doc         },
     { "fetchmany",        (PyCFunction)Cursor_fetchmany,        METH_VARARGS,               fetchmany_doc        },
+#ifdef WITH_NUMPY
+    { "fetchdictarray",   (PyCFunction)Cursor_fetchdictarray,   METH_VARARGS|METH_KEYWORDS, fetchdictarray_doc   },
+#endif
     { "nextset",          (PyCFunction)Cursor_nextset,          METH_NOARGS,                nextset_doc          },
     { "tables",           (PyCFunction)Cursor_tables,           METH_VARARGS|METH_KEYWORDS, tables_doc           },
     { "columns",          (PyCFunction)Cursor_columns,          METH_VARARGS|METH_KEYWORDS, columns_doc          },
