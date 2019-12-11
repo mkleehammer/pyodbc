@@ -8,6 +8,7 @@
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 
 #include "pyodbc.h"
+#include "textenc.h"
 #include "cursor.h"
 #include "pyodbcmodule.h"
 #include "connection.h"
