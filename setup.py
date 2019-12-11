@@ -81,7 +81,8 @@ def main():
 
     settings = get_compiler_settings(version_str)
 
-    files = [ relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
+    files = [ relpath(join('src', f)) for f in os.listdir('src')
+              if f.endswith('.cpp') and (f != 'npcontainer.cpp' or numpy) ]
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
