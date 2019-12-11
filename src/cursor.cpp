@@ -29,14 +29,6 @@
 #include "npcontainer.h"
 #endif
 
-enum
-{
-    CURSOR_REQUIRE_CNXN    = 0x00000001,
-    CURSOR_REQUIRE_OPEN    = 0x00000003, // includes _CNXN
-    CURSOR_REQUIRE_RESULTS = 0x00000007, // includes _OPEN
-    CURSOR_RAISE_ERROR     = 0x00000010,
-};
-
 inline bool StatementIsValid(Cursor* cursor)
 {
     return cursor->cnxn != 0 && ((Connection*)cursor->cnxn)->hdbc != SQL_NULL_HANDLE && cursor->hstmt != SQL_NULL_HANDLE;
@@ -49,7 +41,7 @@ inline bool Cursor_Check(PyObject* o)
     return o != 0 && Py_TYPE(o) == &CursorType;
 }
 
-static Cursor* Cursor_Validate(PyObject* obj, DWORD flags)
+Cursor* Cursor_Validate(PyObject* obj, DWORD flags)
 {
     //  Validates that a PyObject is a Cursor (like Cursor_Check) and optionally some other requirements controlled by
     //  `flags`.  If valid and all requirements (from the flags) are met, the cursor is returned, cast to Cursor*.

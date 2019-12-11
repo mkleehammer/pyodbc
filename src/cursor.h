@@ -13,6 +13,15 @@
 #ifndef CURSOR_H
 #define CURSOR_H
 
+enum
+{
+    CURSOR_REQUIRE_CNXN    = 0x00000001,
+    CURSOR_REQUIRE_OPEN    = 0x00000003, // includes _CNXN
+    CURSOR_REQUIRE_RESULTS = 0x00000007, // includes _OPEN
+    CURSOR_RAISE_ERROR     = 0x00000010,
+};
+
+
 struct Connection;
 
 struct ColumnInfo
@@ -160,5 +169,6 @@ void Cursor_init();
 
 Cursor* Cursor_New(Connection* cnxn);
 PyObject* Cursor_execute(PyObject* self, PyObject* args);
+Cursor* Cursor_Validate(PyObject* obj, DWORD flags);
 
 #endif
