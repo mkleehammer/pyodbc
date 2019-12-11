@@ -8,8 +8,6 @@ int NpContainer_init();
 void NpContainer_init();
 #endif
 
-PyObject* Cursor_fetchsarray(PyObject* self, PyObject* args, PyObject *kwargs);
-
 PyObject* Cursor_fetchdictarray(PyObject* self, PyObject* args, PyObject *kwargs);
 
 extern char *fetchdictarray_doc;
