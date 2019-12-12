@@ -1347,7 +1347,9 @@ static int
 perform_array_query(query_desc& result, Cursor* cur, npy_intp nrows, bool lower, bool want_nulls)
 {
     SQLRETURN rc;
-    bool use_unicode = true;  /*cur->cnxn->unicode_results;*/
+    /* XXX is true a good default?
+       was: bool use_unicode = cur->cnxn->unicode_results; */
+    bool use_unicode = true;
     size_t outsize, chunk_size;
 
     if (nrows < 0) {
