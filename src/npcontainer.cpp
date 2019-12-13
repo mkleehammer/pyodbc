@@ -64,8 +64,6 @@ namespace {
         return sz < sz_limit? sz : sz_limit;
     }
 
-
-
     class PyNoGIL
     /* a RAII class for Python GIL */
     {
@@ -1398,7 +1396,7 @@ perform_array_query(query_desc& result, Cursor* cur, npy_intp nrows, bool lower,
         return 0 == RaiseErrorFromHandle(cur->cnxn,
                                          "ODBC failed to describe the resulting columns",
                                          cur->cnxn->hdbc, cur->hstmt);
-   }
+    }
 
     if (lower)
         result.lowercase_fields();
