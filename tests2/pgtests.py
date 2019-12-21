@@ -16,6 +16,7 @@ You can also put the connection string into a tmp/setup.cfg file like so:
   [pgtests]
   connection-string=DSN=PostgreSQL35W
 
+Note: Be sure to use the "Unicode" (not the "ANSI") version of the PostgreSQL ODBC driver.
 """
 
 import sys, os, re
@@ -496,7 +497,7 @@ class PGTestCase(unittest.TestCase):
             v = self.cursor.execute("select a from t1").fetchone()[0]
             self.assertEqual(v, value)
             
-    def test_emoticons(self):
+    def test_emoticons_as_parameter(self):
         # https://github.com/mkleehammer/pyodbc/issues/423
         #
         # When sending a varchar parameter, pyodbc is supposed to set ColumnSize to the number
@@ -506,8 +507,20 @@ class PGTestCase(unittest.TestCase):
 
         v = "x \U0001F31C z"
 
-        self.cursor.execute("create table t1(s varchar(100))")
+        self.cursor.execute("CREATE TABLE t1(s varchar(100))")
         self.cursor.execute("insert into t1 values (?)", v)
+
+        result = self.cursor.execute("select s from t1").fetchone()[0]
+
+        self.assertEqual(result, v)
+
+    def test_emoticons_as_literal(self):
+        # https://github.com/mkleehammer/pyodbc/issues/630
+
+        v = "x \U0001F31C z"
+
+        self.cursor.execute("CREATE TABLE t1(s varchar(100))")
+        self.cursor.execute("insert into t1 values ('%s')" % v)
 
         result = self.cursor.execute("select s from t1").fetchone()[0]
 
