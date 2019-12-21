@@ -470,7 +470,10 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.executemany(sql, params)
         self.assertEqual(self.cursor.execute("SELECT CAST(dt2 AS VARCHAR) FROM ##issue540").fetchval(), '2019-03-12 10:00:00.12')
 
-    def test_high_unicode(self):
+    def test_fast_executemany_high_unicode(self):
+        if self.handle_known_issues_for('freetds', print_reminder=True):
+            warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_high_unicode: test cancelled.')
+            return
         v = u"🎥"
         self.cursor.fast_executemany = True
         self.cursor.execute("CREATE TABLE t1 (col1 nvarchar(max) null)")
@@ -1701,7 +1704,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values ('one')")
         self.assertRaises(pyodbc.IntegrityError, self.cursor.execute, "insert into t1 values ('one')")
 
-    def test_emoticons(self):
+    def test_emoticons_as_parameter(self):
         # https://github.com/mkleehammer/pyodbc/issues/423
         #
         # When sending a varchar parameter, pyodbc is supposed to set ColumnSize to the number
@@ -1713,6 +1716,20 @@ class SqlServerTestCase(unittest.TestCase):
 
         self.cursor.execute("create table t1(s varchar(100))")
         self.cursor.execute("insert into t1 values (?)", v)
+
+        result = self.cursor.execute("select s from t1").fetchone()[0]
+
+        self.assertEqual(result, v)
+
+    def test_emoticons_as_literal(self):
+        # similar to `test_emoticons_as_parameter`, above, except for Unicode literal
+        #
+        # http://www.fileformat.info/info/unicode/char/1f31c/index.htm
+
+        v = "x \U0001F31C z"
+
+        self.cursor.execute("create table t1(s varchar(100))")
+        self.cursor.execute("insert into t1 values (N'%s')" % v)
 
         result = self.cursor.execute("select s from t1").fetchone()[0]
 

@@ -25,7 +25,7 @@ is installed:
   2005: DRIVER={SQL Server}
   2008: DRIVER={SQL Server Native Client 10.0}
   
-If using FreeTDS ODBC, be sure to use version 1.00.97 or newer.
+If using FreeTDS ODBC, be sure to use version 1.1.23 or newer.
 """
 
 import sys, os, re, uuid
@@ -87,7 +87,7 @@ class SqlServerTestCase(unittest.TestCase):
         elif type_name == 'freetds':
             return ('tdsodbc' in driver_name)
 
-    def handle_known_issues_for(self, type_name, print_reminder=False):
+    def handle_known_issues_for(self, type_name, print_reminder=False, failure_crashes_python=False):
         """
         Checks driver `type_name` and "killswitch" variable `handle_known_issues` to see if
         known issue handling should be bypassed. Optionally prints a reminder message to
@@ -115,7 +115,7 @@ class SqlServerTestCase(unittest.TestCase):
                 raise
         """
         if self.driver_type_is(type_name):
-            if handle_known_issues:
+            if handle_known_issues or failure_crashes_python:
                 return True
             else:
                 if print_reminder:
@@ -438,7 +438,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(rows[0][0], v)
 
     def test_fast_executemany_to_local_temp_table(self):
-        if self.handle_known_issues_for('freetds', print_reminder=True):
+        if self.handle_known_issues_for('freetds', print_reminder=True, failure_crashes_python=True):
             warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_to_local_temp_table: test cancelled.')
             return 
         v = 'Ώπα'
@@ -451,7 +451,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(self.cursor.execute("SELECT txt FROM #issue295").fetchval(), v)
 
     def test_fast_executemany_to_datetime2(self):
-        if self.handle_known_issues_for('freetds', print_reminder=True):
+        if self.handle_known_issues_for('freetds', print_reminder=True, failure_crashes_python=True):
             warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_to_datetime2: test cancelled.')
             return
         v = datetime(2019, 3, 12, 10, 0, 0, 123456)
@@ -462,7 +462,10 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.executemany(sql, params)
         self.assertEqual(self.cursor.execute("SELECT CAST(dt2 AS VARCHAR) FROM ##issue540").fetchval(), '2019-03-12 10:00:00.12')
 
-    def test_high_unicode(self):
+    def test_fast_executemany_high_unicode(self):
+        if self.handle_known_issues_for('freetds', print_reminder=True, failure_crashes_python=True):
+            warn('FREETDS_KNOWN_ISSUE - test_fast_executemany_high_unicode: test cancelled.')
+            return
         v = "🎥"
         self.cursor.fast_executemany = True
         self.cursor.execute("CREATE TABLE t1 (col1 nvarchar(max) null)")
@@ -1628,17 +1631,35 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("select 1")
         self.cursor.cancel()
 
-    def test_emoticons(self):
+    def test_emoticons_as_parameter(self):
         # https://github.com/mkleehammer/pyodbc/issues/423
         #
         # When sending a varchar parameter, pyodbc is supposed to set ColumnSize to the number
         # of characters.  Ensure it works even with 4-byte characters.
         #
         # http://www.fileformat.info/info/unicode/char/1f31c/index.htm
+
         v = "x \U0001F31C z"
 
         self.cursor.execute("create table t1(s nvarchar(100))")
         self.cursor.execute("insert into t1 values (?)", v)
+
+        result = self.cursor.execute("select s from t1").fetchone()[0]
+
+        self.assertEqual(result, v)
+
+    def test_emoticons_as_literal(self):
+        # similar to `test_emoticons_as_parameter`, above, except for Unicode literal
+        #
+        # http://www.fileformat.info/info/unicode/char/1f31c/index.htm
+
+        # FreeTDS ODBC issue fixed in version 1.1.23
+        # https://github.com/FreeTDS/freetds/issues/317
+
+        v = "x \U0001F31C z"
+
+        self.cursor.execute("create table t1(s nvarchar(100))")
+        self.cursor.execute("insert into t1 values (N'%s')" % v)
 
         result = self.cursor.execute("select s from t1").fetchone()[0]
 
