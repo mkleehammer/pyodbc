@@ -1,5 +1,12 @@
 language: python
-sudo: false
+
+matrix:
+  include:
+  - sudo: required
+    services:
+      - docker
+    env: PIP=pip
+
 python:
   - "2.7"
   - "3.4"
@@ -15,7 +22,17 @@ addons:
     - g++-4.8
     - unixodbc-dev
 
+env:
+  global:
+  - CIBW_BEFORE_BUILD="yum -y install unixODBC-devel"
+
 install:
   - python setup.py install
 
-script: true
+script:
+  - $PIP install cibuildwheel==1.1.0
+  - cibuildwheel --output-dir wheelhouse
+  - python -m pip install twine
+
+after_success:
+  - python -m twine upload --skip-existing wheelhouse/*.whl
