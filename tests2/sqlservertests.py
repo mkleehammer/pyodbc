@@ -891,6 +891,14 @@ class SqlServerTestCase(unittest.TestCase):
         result = self.cursor.execute("select d from t1").fetchone()[0]
         self.assertEqual(result, input)
 
+    def test_overflow_int(self):
+        # python allows integers of any size
+        input = 9999999999999999999999999999999999999
+        self.cursor.execute("create table t1(d bigint)")
+        self.assertRaises(OverflowError, self.cursor.execute, "insert into t1 values (?)", input)
+        result = self.cursor.execute("select * from t1").fetchall()
+        self.assertEqual(result, [])
+
     def test_float(self):
         value = 1234.567
         self.cursor.execute("create table t1(n float)")
@@ -911,6 +919,13 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
         result  = self.cursor.execute("select n from t1").fetchone()[0]
         self.assertEqual(value, result)
+
+    def test_overflow_float(self):
+        input = float('infinity')
+        self.cursor.execute("create table t1(d float)")
+        self.assertRaises(pyodbc.ProgrammingError, self.cursor.execute, "insert into t1 values (?)", input)
+        result = self.cursor.execute("select * from t1").fetchall()
+        self.assertEqual(result, [])
 
 
     #
