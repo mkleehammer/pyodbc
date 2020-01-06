@@ -892,7 +892,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(result, input)
 
     def test_overflow_int(self):
-        # python allows integers of any size
+        # python allows integers of any size, bigger than an 8 byte int can contain
         input = 9999999999999999999999999999999999999
         self.cursor.execute("create table t1(d bigint)")
         self.cnxn.commit()
@@ -921,11 +921,11 @@ class SqlServerTestCase(unittest.TestCase):
         result  = self.cursor.execute("select n from t1").fetchone()[0]
         self.assertEqual(value, result)
 
-    def test_overflow_float(self):
-        input = float('infinity')
+    def test_non_numeric_float(self):
         self.cursor.execute("create table t1(d float)")
         self.cnxn.commit()
-        self.assertRaises(pyodbc.ProgrammingError, self.cursor.execute, "insert into t1 values (?)", input)
+        for input in (float('infinity'), float('-infinity'), float('nan'), float('-nan')):
+            self.assertRaises(pyodbc.ProgrammingError, self.cursor.execute, "insert into t1 values (?)", input)
         result = self.cursor.execute("select * from t1").fetchall()
         self.assertEqual(result, [])
 
