@@ -895,6 +895,7 @@ class SqlServerTestCase(unittest.TestCase):
         # python allows integers of any size
         input = 9999999999999999999999999999999999999
         self.cursor.execute("create table t1(d bigint)")
+        self.cnxn.commit()
         self.assertRaises(OverflowError, self.cursor.execute, "insert into t1 values (?)", input)
         result = self.cursor.execute("select * from t1").fetchall()
         self.assertEqual(result, [])
@@ -923,6 +924,7 @@ class SqlServerTestCase(unittest.TestCase):
     def test_overflow_float(self):
         input = float('infinity')
         self.cursor.execute("create table t1(d float)")
+        self.cnxn.commit()
         self.assertRaises(pyodbc.ProgrammingError, self.cursor.execute, "insert into t1 values (?)", input)
         result = self.cursor.execute("select * from t1").fetchall()
         self.assertEqual(result, [])
