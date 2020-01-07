@@ -816,7 +816,7 @@ class SqlServerTestCase(unittest.TestCase):
     def test_non_numeric_float(self):
         self.cursor.execute("create table t1(d float)")
         self.cnxn.commit()
-        for input in (float('infinity'), float('-infinity'), float('nan'), float('-nan')):
+        for input in (float('+Infinity'), float('-Infinity'), float('NaN')):
             self.assertRaises(pyodbc.ProgrammingError, self.cursor.execute, "insert into t1 values (?)", input)
         result = self.cursor.execute("select * from t1").fetchall()
         self.assertEqual(result, [])
