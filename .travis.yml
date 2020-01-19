@@ -8,11 +8,7 @@ python:
 
 addons:
   apt:
-    sources:
-    - ubuntu-toolchain-r-test
     packages:
-    - gcc-4.8
-    - g++-4.8
     - unixodbc-dev
 
 script:
@@ -27,6 +23,6 @@ jobs:
       script:
         - python -m pip install twine cibuildwheel
         - cibuildwheel --output-dir wheelhouse
-      after_success:
-        - python -m twine upload --skip-existing wheelhouse/*.whl
+      #after_success:
+      #  - python -m twine upload --skip-existing wheelhouse/*.whl
 
