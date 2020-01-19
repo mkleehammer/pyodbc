@@ -27,6 +27,9 @@ jobs:
       script:
         - python -m pip install twine cibuildwheel
         - cibuildwheel --output-dir wheelhouse
-      #after_success:
-      #  - python -m twine upload --skip-existing wheelhouse/*.whl
+      deploy:
+        provider: script
+        script: python -m twine upload --skip-existing wheelhouse/*.whl
+        on:
+          tags: true
 
