@@ -1,12 +1,5 @@
 language: python
 
-matrix:
-  include:
-  - sudo: required
-    services:
-      - docker
-    env: PIP=pip
-
 python:
   - "2.7"
   - "3.4"
@@ -30,9 +23,8 @@ install:
   - python setup.py install
 
 script:
-  - $PIP install cibuildwheel==1.1.0
+  - python -m pip install twine cibuildwheel
   - cibuildwheel --output-dir wheelhouse
-  - python -m pip install twine
 
 after_success:
   - python -m twine upload --skip-existing wheelhouse/*.whl
