@@ -9,7 +9,7 @@ python:
 addons:
   apt:
     packages:
-    - unixodbc-dev
+      - unixodbc-dev
 
 script:
   - python setup.py install
@@ -19,6 +19,10 @@ jobs:
     - stage: wheel
       env:
         - CIBW_BEFORE_BUILD="yum -y install unixODBC-devel"
+        # set TWINE_PASSWORD in Travis preferences
+        # https://packaging.python.org/tutorials/packaging-projects/#uploading-the-distribution-archives
+        - TWINE_NON_INTERACTIVE=true
+        - TWINE_USERNAME=__token__
       install: pip install twine cibuildwheel
       script:
         - python -m pip install twine cibuildwheel
