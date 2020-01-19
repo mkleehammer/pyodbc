@@ -15,16 +15,18 @@ addons:
     - g++-4.8
     - unixodbc-dev
 
-env:
-  global:
-  - CIBW_BEFORE_BUILD="yum -y install unixODBC-devel"
-
-install:
+script:
   - python setup.py install
 
-script:
-  - python -m pip install twine cibuildwheel
-  - cibuildwheel --output-dir wheelhouse
+jobs:
+  include:
+    - stage: wheel
+      env:
+        - CIBW_BEFORE_BUILD="yum -y install unixODBC-devel"
+      install: pip install twine cubuildwheel
+      script:
+        - python -m pip install twine cibuildwheel
+        - cibuildwheel --output-dir wheelhouse
+      after_success:
+        - python -m twine upload --skip-existing wheelhouse/*.whl
 
-after_success:
-  - python -m twine upload --skip-existing wheelhouse/*.whl
