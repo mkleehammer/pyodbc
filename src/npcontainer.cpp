@@ -7,6 +7,9 @@
 
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 
+#include <vector>
+#include <stdio.h>
+
 #include "pyodbc.h"
 #include "cursor.h"
 #include "pyodbcmodule.h"
@@ -16,9 +19,6 @@
 
 #include "numpy/ndarrayobject.h"
 #include "numpy/npy_math.h"
-
-#include <vector>
-#include <stdio.h>
 
 // exported variables ----------------------------------------------------------
 
