@@ -10,11 +10,12 @@ packed with even more Pythonic convenience.
 The easiest way to install is to use pip:
 
     pip install pyodbc
-    
+
 Precompiled binary wheels are provided for most Python versions on Windows and macOS.  On other
-operating systems this will build from source.
+operating systems this will build from source.  Note, pyodbc contains C++ extensions so you will
+need a suitable C++ compiler on your computer to install pyodbc, on all operating systems.  See
+the [documentation](https://github.com/mkleehammer/pyodbc/wiki/Install) for details.
 
 [Documentation](https://github.com/mkleehammer/pyodbc/wiki)
 
 [Release Notes](https://github.com/mkleehammer/pyodbc/releases)
-
