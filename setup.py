@@ -193,6 +193,11 @@ def get_compiler_settings(version_str):
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].append('-Wno-write-strings')
 
+        # For VENV to locate headers
+        dirs = [item.path for item in os.scandir('/usr/include')
+                if item.name.startswith('python') and item.is_dir()]
+        settings['include_dirs'].extend(dirs)
+        
         cflags = os.popen('odbc_config --cflags 2>/dev/null').read().strip()
         if cflags:
             settings['extra_compile_args'].extend(cflags.split())
