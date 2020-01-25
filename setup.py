@@ -197,7 +197,7 @@ def get_compiler_settings(version_str):
         dirs = [item.path for item in os.scandir('/usr/include')
                 if item.name.startswith('python') and item.is_dir()]
         settings['include_dirs'].extend(dirs)
-        
+
         cflags = os.popen('odbc_config --cflags 2>/dev/null').read().strip()
         if cflags:
             settings['extra_compile_args'].extend(cflags.split())
