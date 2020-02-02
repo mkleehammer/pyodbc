@@ -193,7 +193,7 @@ class SqliteTestCase(unittest.TestCase):
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strtype('varchar', 'á')
+        self._test_strtype('varchar', 'ï¿½')
 
     #
     # blob
@@ -679,7 +679,7 @@ def main():
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
     result = testRunner.run(suite)
 
-    sys.exit(result.errors and 1 or 0)
+    return result
 
 
 if __name__ == '__main__':
@@ -689,4 +689,4 @@ if __name__ == '__main__':
     add_to_path()
 
     import pyodbc
-    main()
+    sys.exit(0 if main().wasSuccessful() else 1)

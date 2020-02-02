@@ -254,7 +254,7 @@ class InformixTestCase(unittest.TestCase):
         self.assertEqual(v3, row.c3)
 
     def test_varchar_upperlatin(self):
-        self._test_strtype('varchar', 'á')
+        self._test_strtype('varchar', 'ï¿½')
 
     #
     # unicode
@@ -272,7 +272,7 @@ class InformixTestCase(unittest.TestCase):
         locals()['test_unicode_%s' % len(value)] = _maketest(value)
 
     def test_unicode_upperlatin(self):
-        self._test_strtype('varchar', 'á')
+        self._test_strtype('varchar', 'ï¿½')
 
     #
     # binary
@@ -309,7 +309,7 @@ class InformixTestCase(unittest.TestCase):
         locals()['test_image_%s' % len(value)] = _maketest(value)
 
     def test_image_upperlatin(self):
-        self._test_strliketype('image', buffer('á'))
+        self._test_strliketype('image', buffer('ï¿½'))
 
     #
     # text
@@ -330,7 +330,7 @@ class InformixTestCase(unittest.TestCase):
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strliketype('text', 'á')
+        self._test_strliketype('text', 'ï¿½')
 
     #
     # bit
@@ -1250,6 +1250,8 @@ def main():
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
     result = testRunner.run(suite)
 
+    return result
+
 
 if __name__ == '__main__':
 
@@ -1258,4 +1260,4 @@ if __name__ == '__main__':
     add_to_path()
 
     import pyodbc
-    main()
+    sys.exit(0 if main().wasSuccessful() else 1)

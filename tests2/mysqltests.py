@@ -222,7 +222,7 @@ class MySqlTestCase(unittest.TestCase):
         self.assertEqual(v3, row.c3)
 
     def test_varchar_upperlatin(self):
-        self._test_strtype('varchar', u'á', colsize=3)
+        self._test_strtype('varchar', u'ï¿½', colsize=3)
 
     #
     # binary
@@ -259,7 +259,7 @@ class MySqlTestCase(unittest.TestCase):
         locals()['test_blob_%s' % len(value)] = _maketest(value)
 
     def test_blob_upperlatin(self):
-        self._test_strtype('blob', bytearray('á'))
+        self._test_strtype('blob', bytearray('ï¿½'))
 
     #
     # text
@@ -277,7 +277,7 @@ class MySqlTestCase(unittest.TestCase):
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strtype('text', u'á')
+        self._test_strtype('text', u'ï¿½')
 
     #
     # unicode
@@ -748,6 +748,8 @@ def main():
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
     result = testRunner.run(suite)
 
+    return result
+
 
 if __name__ == '__main__':
 
@@ -756,4 +758,4 @@ if __name__ == '__main__':
     add_to_path()
 
     import pyodbc
-    main()
+    sys.exit(0 if main().wasSuccessful() else 1)
