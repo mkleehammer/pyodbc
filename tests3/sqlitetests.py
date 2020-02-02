@@ -193,7 +193,7 @@ class SqliteTestCase(unittest.TestCase):
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strtype('varchar', '�')
+        self._test_strtype('varchar', 'á')
 
     #
     # blob

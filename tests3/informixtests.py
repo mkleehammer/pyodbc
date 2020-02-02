@@ -254,7 +254,7 @@ class InformixTestCase(unittest.TestCase):
         self.assertEqual(v3, row.c3)
 
     def test_varchar_upperlatin(self):
-        self._test_strtype('varchar', '�')
+        self._test_strtype('varchar', 'á')
 
     #
     # unicode
@@ -272,7 +272,7 @@ class InformixTestCase(unittest.TestCase):
         locals()['test_unicode_%s' % len(value)] = _maketest(value)
 
     def test_unicode_upperlatin(self):
-        self._test_strtype('varchar', '�')
+        self._test_strtype('varchar', 'á')
 
     #
     # binary
@@ -309,7 +309,7 @@ class InformixTestCase(unittest.TestCase):
         locals()['test_image_%s' % len(value)] = _maketest(value)
 
     def test_image_upperlatin(self):
-        self._test_strliketype('image', buffer('�'))
+        self._test_strliketype('image', buffer('á'))
 
     #
     # text
@@ -330,7 +330,7 @@ class InformixTestCase(unittest.TestCase):
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strliketype('text', '�')
+        self._test_strliketype('text', 'á')
 
     #
     # bit
