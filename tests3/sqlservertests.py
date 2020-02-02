@@ -1610,11 +1610,7 @@ class SqlServerTestCase(unittest.TestCase):
             table_name = 'pyodbc_89abcdef'[:i]
 
             self.cursor.execute("""\
-            BEGIN TRY
-                DROP TABLE {0};
-            END TRY
-            BEGIN CATCH
-            END CATCH
+            IF OBJECT_ID (N'{0}', N'U') IS NOT NULL DROP TABLE {0};
             CREATE TABLE {0} (id INT PRIMARY KEY);
             """.format(table_name))
 
