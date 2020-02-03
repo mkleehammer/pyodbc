@@ -197,7 +197,7 @@ class MySqlTestCase(unittest.TestCase):
         self.assertEqual(v3, row.c3)
 
     def test_varchar_upperlatin(self):
-        self._test_strtype('varchar', u'รก', colsize=3)
+        self._test_strtype('varchar', u'แ', colsize=3)
 
     def test_utf16(self):
         self.cursor.execute("create table t1(c1 varchar(100) character set utf16, c2 varchar(100))")
@@ -243,7 +243,7 @@ class MySqlTestCase(unittest.TestCase):
         locals()['test_blob_%s' % len(value)] = _maketest(value)
 
     def test_blob_upperlatin(self):
-        self._test_strtype('blob', bytes('รก', 'utf-8'))
+        self._test_strtype('blob', bytes('แ', 'utf-8'))
 
     #
     # text
@@ -261,7 +261,7 @@ class MySqlTestCase(unittest.TestCase):
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strtype('text', 'รก')
+        self._test_strtype('text', 'แ')
 
     #
     # unicode

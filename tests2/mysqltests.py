@@ -222,7 +222,7 @@ class MySqlTestCase(unittest.TestCase):
         self.assertEqual(v3, row.c3)
 
     def test_varchar_upperlatin(self):
-        self._test_strtype('varchar', u'รก', colsize=3)
+        self._test_strtype('varchar', u'แ', colsize=3)
 
     #
     # binary
@@ -259,7 +259,7 @@ class MySqlTestCase(unittest.TestCase):
         locals()['test_blob_%s' % len(value)] = _maketest(value)
 
     def test_blob_upperlatin(self):
-        self._test_strtype('blob', bytearray('รก'))
+        self._test_strtype('blob', bytearray('แ'))
 
     #
     # text
@@ -277,7 +277,7 @@ class MySqlTestCase(unittest.TestCase):
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strtype('text', u'รก')
+        self._test_strtype('text', u'แ')
 
     #
     # unicode
