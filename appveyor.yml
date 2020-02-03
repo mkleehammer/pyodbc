@@ -46,61 +46,61 @@ environment:
     # ref: https://www.appveyor.com/docs/windows-images-software/#python
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2013
-      PYTHON: "C:\\Python27"
+      PYTHON_HOME: "C:\\Python27"
       TESTS_DIR: tests2
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2013
-      PYTHON: "C:\\Python27-x64"
+      PYTHON_HOME: "C:\\Python27-x64"
       TESTS_DIR: tests2
 
     # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-    #   PYTHON: "C:\\Python33"
+    #   PYTHON_HOME: "C:\\Python33"
     #   TESTS_DIR: tests3
 
     # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-    #   PYTHON: "C:\\Python33-x64"
+    #   PYTHON_HOME: "C:\\Python33-x64"
     #   TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON: "C:\\Python34"
+      PYTHON_HOME: "C:\\Python34"
       TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON: "C:\\Python34-x64"
+      PYTHON_HOME: "C:\\Python34-x64"
       TESTS_DIR: tests3
 
     # Python 3.5 needs at least the VS2015 image
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON: "C:\\Python35"
+      PYTHON_HOME: "C:\\Python35"
       TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON: "C:\\Python35-x64"
+      PYTHON_HOME: "C:\\Python35-x64"
       TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON: "C:\\Python36"
+      PYTHON_HOME: "C:\\Python36"
       TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON: "C:\\Python36-x64"
+      PYTHON_HOME: "C:\\Python36-x64"
       TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON: "C:\\Python37"
+      PYTHON_HOME: "C:\\Python37"
       TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON: "C:\\Python37-x64"
+      PYTHON_HOME: "C:\\Python37-x64"
       TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON: "C:\\Python38"
+      PYTHON_HOME: "C:\\Python38"
       TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON: "C:\\Python38-x64"
+      PYTHON_HOME: "C:\\Python38-x64"
       TESTS_DIR: tests3
 
 # ref: https://www.appveyor.com/docs/services-databases/
