@@ -1,5 +1,6 @@
 REM Output a list of the available ODBC drivers
-"%PYTHON%\python" -c "import pyodbc; print('Available ODBC Drivers:'); print('\n'.join(sorted(pyodbc.drivers())))"
+ECHO *** Available ODBC Drivers:
+"%PYTHON%\python" -c "import pyodbc; print('\n'.join(sorted(pyodbc.drivers())))"
 
 
 REM 0 = success, 1 = failure
