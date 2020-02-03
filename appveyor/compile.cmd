@@ -38,7 +38,7 @@ SET MINOR_PYTHON_VERSION=%%F
 FOR /F "tokens=* USEBACKQ" %%F IN (`%PYTHON_HOME%\python -c "import sys; sys.stdout.write('64' if sys.maxsize > 2**32 else '32')"`) DO (
 SET PYTHON_ARCH=%%F
 )
-ECHO Python version (major, minor, arch): %MAJOR_PYTHON_VERSION% %MINOR_PYTHON_VERSION% %PYTHON_ARCH%
+ECHO Inferred Python version (major, minor, arch): %MAJOR_PYTHON_VERSION% %MINOR_PYTHON_VERSION% %PYTHON_ARCH%
 
 :: Based on the Python version, determine what SDK version to use, and whether
 :: to set the SDK for 64-bit.
