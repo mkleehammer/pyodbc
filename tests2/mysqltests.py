@@ -1,21 +1,21 @@
 #!/usr/bin/python
 # -*- coding: latin-1 -*-
 
-usage = """\
-usage: %prog [options] connection_string
-
+"""
 Unit tests for MySQL.  To use, pass a connection string as the parameter.
 The tests will create and drop tables t1 and t2 as necessary.
 
-These tests use the pyodbc library from the build directory, not the version installed in your
-Python directories.  You must run `python setup.py build` before running these tests.
+These tests use the pyodbc library from the build directory, not the version
+installed in your Python directories.  You must run "python setup.py build"
+before running these tests.
 
 You can also put the connection string into a tmp/setup.cfg file like so:
 
   [mysqltests]
   connection-string=DRIVER=MySQL ODBC 8.0 ANSI Driver;charset=utf8mb4;SERVER=localhost;DATABASE=pyodbc;UID=root;PWD=rootpw
 
-Note: Use the "ANSI" (not the "Unicode") driver and include charset=utf8mb4 in the connection string so the high-Unicode tests won't fail.
+Note: Use the "ANSI" (not the "Unicode") driver and include charset=utf8mb4 in
+      the connection string so the high-Unicode tests won't fail.
 """
 
 import sys, os, re
@@ -717,18 +717,17 @@ class MySqlTestCase(unittest.TestCase):
 
 
 def main():
-    from optparse import OptionParser
-    parser = OptionParser(usage=usage)
-    parser.add_option("-v", "--verbose", action="count", help="Increment test verbosity (can be used multiple times)")
-    parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
-    parser.add_option("-t", "--test", help="Run only the named test")
+    from argparse import ArgumentParser, RawDescriptionHelpFormatter
+    parser = ArgumentParser(formatter_class=RawDescriptionHelpFormatter, description=__doc__)
+    parser.add_argument("connection_string", nargs="?")
+    parser.add_argument("-v", "--verbose", action="count", default=0, help="Increment test verbosity (can be used multiple times)")
+    parser.add_argument("-d", "--debug", action="store_true", default=False, help="Print debugging items")
+    parser.add_argument("-t", "--test", help="Run only the named test")
 
-    (options, args) = parser.parse_args()
-
-    if len(args) > 1:
-        parser.error('Only one argument is allowed.  Do you need quotes around the connection string?')
-
-    if not args:
+    args = parser.parse_args()
+    if args.connection_string:
+        connection_string = args.connection_string
+    else:
         filename = basename(sys.argv[0])
         assert filename.endswith('.py')
         connection_string = load_setup_connection_string(filename[:-3])
@@ -736,16 +735,14 @@ def main():
         if not connection_string:
             parser.print_help()
             raise SystemExit()
-    else:
-        connection_string = args[0]
 
     cnxn = pyodbc.connect(connection_string)
     print_library_info(cnxn)
     cnxn.close()
 
-    suite = load_tests(MySqlTestCase, options.test, connection_string)
+    suite = load_tests(MySqlTestCase, args.test, connection_string)
 
-    testRunner = unittest.TextTestRunner(verbosity=options.verbose)
+    testRunner = unittest.TextTestRunner(verbosity=args.verbose)
     result = testRunner.run(suite)
 
 

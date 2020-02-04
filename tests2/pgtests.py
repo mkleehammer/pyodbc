@@ -1,14 +1,12 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-usage = """\
-usage: %prog [options] connection_string
-
+"""
 Unit tests for PostgreSQL.  To use, pass a connection string as the parameter.
 The tests will create and drop tables t1 and t2 as necessary.
 
 These run using the version from the 'build' directory, not the version
-installed into the Python directories.  You must run python setup.py build
+installed into the Python directories.  You must run "python setup.py build"
 before running the tests.
 
 You can also put the connection string into a tmp/setup.cfg file like so:
@@ -528,47 +526,43 @@ class PGTestCase(unittest.TestCase):
 
 
 def main():
-    from optparse import OptionParser
-    parser = OptionParser(usage="usage: %prog [options] connection_string")
-    parser.add_option("-v", "--verbose", action="count", help="Increment test verbosity (can be used multiple times)")
-    parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
-    parser.add_option("-t", "--test", help="Run only the named test")
-    parser.add_option('-a', '--ansi', help='ANSI only', default=False, action='store_true')
-    parser.add_option('-u', '--unicode', help='Expect results in Unicode', default=False, action='store_true')
+    from argparse import ArgumentParser, RawDescriptionHelpFormatter
+    parser = ArgumentParser(formatter_class=RawDescriptionHelpFormatter, description=__doc__)
+    parser.add_argument("connection_string", nargs="?")
+    parser.add_argument("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
+    parser.add_argument("-d", "--debug", action="store_true", default=False, help="Print debugging items")
+    parser.add_argument("-t", "--test", help="Run only the named test")
+    parser.add_argument("-a", "--ansi", help="ANSI only", default=False, action="store_true")
+    parser.add_argument("-u", "--unicode", help="Expect results in Unicode", default=False, action="store_true")
 
-    (options, args) = parser.parse_args()
-
-    if len(args) > 1:
-        parser.error('Only one argument is allowed.  Do you need quotes around the connection string?')
-
-    if not args:
+    args = parser.parse_args()
+    if args.connection_string:
+        connection_string = args.connection_string
+    else:
         connection_string = load_setup_connection_string('pgtests')
-
         if not connection_string:
             parser.print_help()
             raise SystemExit()
-    else:
-        connection_string = args[0]
 
-    if options.verbose:
-        cnxn = pyodbc.connect(connection_string, ansi=options.ansi)
+    if args.verbose:
+        cnxn = pyodbc.connect(connection_string, ansi=args.ansi)
         print_library_info(cnxn)
         cnxn.close()
 
-    if options.test:
+    if args.test:
         # Run a single test
-        if not options.test.startswith('test_'):
-            options.test = 'test_%s' % (options.test)
+        if not args.test.startswith('test_'):
+            args.test = 'test_%s' % (args.test)
 
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.unicode, options.test) ])
+        s = unittest.TestSuite([ PGTestCase(connection_string, args.ansi, args.unicode, args.test) ])
     else:
         # Run all tests in the class
 
         methods = [ m for m in dir(PGTestCase) if m.startswith('test_') ]
         methods.sort()
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.unicode, m) for m in methods ])
+        s = unittest.TestSuite([ PGTestCase(connection_string, args.ansi, args.unicode, m) for m in methods ])
 
-    testRunner = unittest.TextTestRunner(verbosity=options.verbose)
+    testRunner = unittest.TextTestRunner(verbosity=args.verbose)
     result = testRunner.run(s)
 
 if __name__ == '__main__':

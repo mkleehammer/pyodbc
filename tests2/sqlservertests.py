@@ -3,14 +3,12 @@
 
 from __future__ import print_function
 
-usage = """\
-usage: %prog [options] connection_string
-
+"""
 Unit tests for SQL Server.  To use, pass a connection string as the parameter.
 The tests will create and drop tables t1 and t2 as necessary.
 
 These run using the version from the 'build' directory, not the version
-installed into the Python directories.  You must run python setup.py build
+installed into the Python directories.  You must run "python setup.py build"
 before running the tests.
 
 You can also put the connection string into a tmp/setup.cfg file like so:
@@ -24,7 +22,11 @@ is installed:
   2000: DRIVER={SQL Server}
   2005: DRIVER={SQL Server}
   2008: DRIVER={SQL Server Native Client 10.0}
-  
+  2012: DRIVER={SQL Server Native Client 11.0}
+  2014: DRIVER={ODBC Driver 11 for SQL Server}
+  2016: DRIVER={ODBC Driver 13 for SQL Server}
+  2017: DRIVER={ODBC Driver 17 for SQL Server}
+
 If using FreeTDS ODBC, be sure to use version 1.00.97 or newer.
 """
 
@@ -1850,33 +1852,29 @@ class SqlServerTestCase(unittest.TestCase):
 
 
 def main():
-    from optparse import OptionParser
-    parser = OptionParser(usage=usage)
-    parser.add_option("-v", "--verbose", action="count", help="Increment test verbosity (can be used multiple times)")
-    parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
-    parser.add_option("-t", "--test", help="Run only the named test")
+    from argparse import ArgumentParser, RawDescriptionHelpFormatter
+    parser = ArgumentParser(formatter_class=RawDescriptionHelpFormatter, description=__doc__)
+    parser.add_argument("connection_string", nargs="?")
+    parser.add_argument("-v", "--verbose", action="count", default=0, help="Increment test verbosity (can be used multiple times)")
+    parser.add_argument("-d", "--debug", action="store_true", default=False, help="Print debugging items")
+    parser.add_argument("-t", "--test", help="Run only the named test")
 
-    (options, args) = parser.parse_args()
-
-    if len(args) > 1:
-        parser.error('Only one argument is allowed.  Do you need quotes around the connection string?')
-
-    if not args:
+    args = parser.parse_args()
+    if args.connection_string:
+        connection_string = args.connection_string
+    else:
         connection_string = load_setup_connection_string('sqlservertests')
-
         if not connection_string:
             parser.print_help()
             raise SystemExit()
-    else:
-        connection_string = args[0]
 
     cnxn = pyodbc.connect(connection_string)
     print_library_info(cnxn)
     cnxn.close()
 
-    suite = load_tests(SqlServerTestCase, options.test, connection_string)
+    suite = load_tests(SqlServerTestCase, args.test, connection_string)
 
-    testRunner = unittest.TextTestRunner(verbosity=options.verbose)
+    testRunner = unittest.TextTestRunner(verbosity=args.verbose)
     result = testRunner.run(suite)
 
 
