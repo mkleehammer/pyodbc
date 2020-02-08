@@ -767,9 +767,15 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         ret = SQLParamData(cur->hstmt, (SQLPOINTER*)&pInfo);
         Py_END_ALLOW_THREADS
 
-        if (ret != SQL_NEED_DATA && ret != SQL_NO_DATA && !SQL_SUCCEEDED(ret))
-            return RaiseErrorFromHandle(cur->cnxn, "SQLParamData", cur->cnxn->hdbc, cur->hstmt);
+		if (ret != SQL_NEED_DATA && ret != SQL_NO_DATA && !SQL_SUCCEEDED(ret))
+		{
+			if (pInfo->allocated)
+				pyodbc_free(pInfo->ParameterValuePtr);
+			Py_XDECREF(pInfo->pObject);
 
+			return RaiseErrorFromHandle(cur->cnxn, "SQLParamData", cur->cnxn->hdbc, cur->hstmt);
+		}
+    	
         TRACE("SQLParamData() --> %d\n", ret);
 
         if (ret == SQL_NEED_DATA)
