@@ -618,8 +618,10 @@ class MySqlTestCase(unittest.TestCase):
 
     def test_fast_executemany(self):
         driver_name = self.cnxn.getinfo(pyodbc.SQL_DRIVER_NAME)
-        if driver_name.lower().endswith('a.dll'):
-            # skip this test for the ANSI driver on Windows; it crashes CPython
+        if driver_name.lower().endswith('a.dll') or driver_name.lower().endswith('a.so'):
+            # skip this test for the ANSI driver
+            #   on Windows, it crashes CPython
+            #   on Linux, it simply fails
             return
 
         self.cursor.fast_executemany = True
@@ -776,6 +778,8 @@ def main():
     testRunner = unittest.TextTestRunner(verbosity=args.verbose)
     result = testRunner.run(suite)
 
+    return result
+
 
 if __name__ == '__main__':
 
@@ -784,4 +788,4 @@ if __name__ == '__main__':
     add_to_path()
 
     import pyodbc
-    main()
+    sys.exit(0 if main().wasSuccessful() else 1)
