@@ -18,6 +18,7 @@ This test should be tested against a table that has no space at all or no space 
 transaction log in order to get -1 value on the second call to SQLParamData.
 The name of the table is stored in `TABLE_NAME`, change it to be your table's name.
 """
+import gc
 import os
 import unittest
 
@@ -68,15 +69,19 @@ class MemoryLeakSQLParamDataTestCase(unittest.TestCase):
         with pyodbc.connect(self.connection_string) as conn:
             cursor = conn.cursor()
 
-            current_memory_usage = current_total_memory_usage()
-
             query = "INSERT INTO {table_name} VALUES (?)".format(table_name=TABLE_NAME)
+
+            current_memory_usage = current_total_memory_usage()
 
             try:
                 cur = cursor.execute(query, "a" * 10 * MB)
             except self.driver.ProgrammingError as e:
                 self.assertEqual("42000", e.args[0])
                 self.assertIn("SQLParamData", e.args[1])
+            finally:
+                cursor.close()
+                cursor = None
+                gc.collect()
 
             after_excpetion_memory_usage = current_total_memory_usage()
 
