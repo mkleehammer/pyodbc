@@ -9,6 +9,7 @@ Note that In my case, 'too big' means pGetLen(pInfo->pObject) was more than 4000
 In order to execute the INSERT INTO query, SQLExecute is used.
 SQLExecute will return SQL_NEED_DATA (SQL_NEED_DATA = 99),
 then SQLParamData will be used to create a SQL parameter and will return SQL_NEED_DATA.
+This call will create the pObject (PyObject) that should be freed.
 After that SQLPutData will be used in a loop to save the data in this SQL parameter.
 Then SQLParamData is called again, and if there is an error (-1), the data of newly
 created SQL Parameter should be freed.
