@@ -66,10 +66,10 @@ class MemoryLeakSQLParamDataTestCase(unittest.TestCase):
             return ValueError(CONNECTION_STRING_ERROR_MESSAGE)
 
     def test_memory_leak(self):
+        query = "INSERT INTO {table_name} VALUES (?)".format(table_name=TABLE_NAME)
+
         with pyodbc.connect(self.connection_string) as conn:
             cursor = conn.cursor()
-
-            query = "INSERT INTO {table_name} VALUES (?)".format(table_name=TABLE_NAME)
 
             current_memory_usage = current_total_memory_usage()
 
