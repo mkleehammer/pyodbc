@@ -95,7 +95,7 @@ If (-Not (Test-Path $temp_dir)) {
 }
 
 
-If (${env:APVYR_VERBOSE} == "true") {
+If (${env:APVYR_VERBOSE} -eq "true") {
     Write-Output ""
     Write-Output "*** Installed ODBC drivers:"
     Get-OdbcDriver
@@ -191,7 +191,7 @@ if ($python_arch -eq "64") {
 }
 
 
-If (${env:APVYR_VERBOSE} == "true") {
+If (${env:APVYR_VERBOSE} -eq "true") {
     Write-Output ""
     Write-Output "*** Contents of the cache directory: $cache_dir"
     Get-ChildItem $cache_dir
