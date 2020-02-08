@@ -769,7 +769,6 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
 
 		if (ret != SQL_NEED_DATA && ret != SQL_NO_DATA && !SQL_SUCCEEDED(ret))
 			return RaiseErrorFromHandle(cur->cnxn, "SQLParamData", cur->cnxn->hdbc, cur->hstmt);
-		
     	
         TRACE("SQLParamData() --> %d\n", ret);
 
