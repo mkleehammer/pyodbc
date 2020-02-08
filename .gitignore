@@ -54,3 +54,14 @@ tags
 # The Access unit tests copy empty.accdb and empty.mdb to these names and use them.
 test.accdb
 test.mdb
+
+# JetBrain's IDE
+.idea/
+
+# Visual Studio IDE
+.vs/
+*.sln
+*.vcxproj*
+
+# Visual Studio build folder
+x64/
