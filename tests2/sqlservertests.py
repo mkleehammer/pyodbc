@@ -1868,9 +1868,10 @@ def main():
             parser.print_help()
             raise SystemExit()
 
-    cnxn = pyodbc.connect(connection_string)
-    print_library_info(cnxn)
-    cnxn.close()
+    if args.verbose:
+        cnxn = pyodbc.connect(connection_string)
+        print_library_info(cnxn)
+        cnxn.close()
 
     suite = load_tests(SqlServerTestCase, args.test, connection_string)
 
