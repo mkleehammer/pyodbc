@@ -80,8 +80,6 @@ class MemoryLeakSQLParamDataTestCase(unittest.TestCase):
                 self.assertIn("SQLParamData", e.args[1])
             finally:
                 cursor.close()
-                cursor = None
-                gc.collect()
 
             after_excpetion_memory_usage = current_total_memory_usage()
 

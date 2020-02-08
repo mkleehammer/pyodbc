@@ -386,8 +386,8 @@ static void closeimpl(Cursor* cur)
 
     free_results(cur, FREE_STATEMENT | FREE_PREPARED);
 
-    FreeParameterInfo(cur);
-    FreeParameterData(cur);
+	FreeParameterData(cur);
+	FreeParameterInfo(cur);
 
     if (StatementIsValid(cur))
     {
@@ -768,13 +768,8 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         Py_END_ALLOW_THREADS
 
 		if (ret != SQL_NEED_DATA && ret != SQL_NO_DATA && !SQL_SUCCEEDED(ret))
-		{
-			if (pInfo->allocated)
-				pyodbc_free(pInfo->ParameterValuePtr);
-			Py_XDECREF(pInfo->pObject);
-
 			return RaiseErrorFromHandle(cur->cnxn, "SQLParamData", cur->cnxn->hdbc, cur->hstmt);
-		}
+		
     	
         TRACE("SQLParamData() --> %d\n", ret);
 
