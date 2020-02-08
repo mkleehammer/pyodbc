@@ -67,6 +67,9 @@ def main():
 
     version_str, version = get_version()
 
+    with open(join(dirname(abspath(__file__)), 'README.md')) as f:
+        long_description = f.read()
+
     settings = get_compiler_settings(version_str)
 
     files = [ relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
@@ -79,8 +82,8 @@ def main():
         'version': version_str,
         'description': "DB API Module for ODBC",
 
-        'long_description': ('A Python DB API 2 module for ODBC. This project provides an up-to-date, '
-                            'convenient interface to ODBC using native data types like datetime and decimal.'),
+        'long_description': long_description,
+        'long_description_content_type': 'text/markdown',
 
         'maintainer':       "Michael Kleehammer",
         'maintainer_email': "michael@kleehammer.com",
@@ -296,7 +299,7 @@ def _get_version_git():
         n, result = getoutput('git rev-parse --short HEAD')
         name = name + '+commit' + result
     else:
-        if result != 'master' and not re.match('^v\d+$', result):
+        if result != 'master' and not re.match(r'^v\d+$', result):
             name = name + '+' + result.replace('-', '')
 
     return name, numbers
