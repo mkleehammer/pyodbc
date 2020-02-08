@@ -1988,6 +1988,11 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         offset += remaining;
                     }
                     while (offset < cb);
+
+                    if (PyUnicode_Check(pInfo->cell) && PyBytes_Check(objCell))
+                    {
+                        Py_XDECREF(objCell);
+                    }
                 }
     #if PY_MAJOR_VERSION < 3
                 else if (PyBuffer_Check(objCell))
