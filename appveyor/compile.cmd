@@ -30,25 +30,25 @@ SET WIN_WDK=C:\Program Files (x86)\Windows Kits\10\Include\wdf
 
 :: Extract the major and minor versions of the current Python interpreter, and bitness
 FOR /F "tokens=* USEBACKQ" %%F IN (`%PYTHON_HOME%\python -c "import sys; sys.stdout.write(str(sys.version_info.major))"`) DO (
-SET MAJOR_PYTHON_VERSION=%%F
+SET PYTHON_MAJOR_VERSION=%%F
 )
 FOR /F "tokens=* USEBACKQ" %%F IN (`%PYTHON_HOME%\python -c "import sys; sys.stdout.write(str(sys.version_info.minor))"`) DO (
-SET MINOR_PYTHON_VERSION=%%F
+SET PYTHON_MINOR_VERSION=%%F
 )
 FOR /F "tokens=* USEBACKQ" %%F IN (`%PYTHON_HOME%\python -c "import sys; sys.stdout.write('64' if sys.maxsize > 2**32 else '32')"`) DO (
 SET PYTHON_ARCH=%%F
 )
-ECHO Inferred Python version (major, minor, arch): %MAJOR_PYTHON_VERSION% %MINOR_PYTHON_VERSION% %PYTHON_ARCH%
+ECHO Inferred Python version (major, minor, arch): %PYTHON_MAJOR_VERSION% %PYTHON_MINOR_VERSION% %PYTHON_ARCH%
 
 :: Based on the Python version, determine what SDK version to use, and whether
 :: to set the SDK for 64-bit.
-IF %MAJOR_PYTHON_VERSION% EQU 2 (
+IF %PYTHON_MAJOR_VERSION% EQU 2 (
     SET WINDOWS_SDK_VERSION="v7.0"
     SET SET_SDK_64=Y
 ) ELSE (
-    IF %MAJOR_PYTHON_VERSION% EQU 3 (
+    IF %PYTHON_MAJOR_VERSION% EQU 3 (
         SET WINDOWS_SDK_VERSION="v7.1"
-        IF %MINOR_PYTHON_VERSION% LEQ 4 (
+        IF %PYTHON_MINOR_VERSION% LEQ 4 (
             SET SET_SDK_64=Y
         ) ELSE (
             SET SET_SDK_64=N
@@ -58,14 +58,14 @@ IF %MAJOR_PYTHON_VERSION% EQU 2 (
             )
         )
     ) ELSE (
-        ECHO Unsupported Python version: "%MAJOR_PYTHON_VERSION%"
+        ECHO Unsupported Python version: "%PYTHON_MAJOR_VERSION%"
         EXIT 1
     )
 )
 
 IF %PYTHON_ARCH% EQU 64 (
     IF %SET_SDK_64% == Y (
-        ECHO Configuring Windows SDK %WINDOWS_SDK_VERSION% for Python %MAJOR_PYTHON_VERSION% on a 64 bit architecture
+        ECHO Configuring Windows SDK %WINDOWS_SDK_VERSION% for Python %PYTHON_MAJOR_VERSION% on a 64 bit architecture
         SET DISTUTILS_USE_SDK=1
         SET MSSdk=1
         "%WIN_SDK_ROOT%\%WINDOWS_SDK_VERSION%\Setup\WindowsSdkVer.exe" -q -version:%WINDOWS_SDK_VERSION%
