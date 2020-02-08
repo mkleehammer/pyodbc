@@ -1,34 +1,40 @@
-# This Appveyor CI configuration file:
-#   - builds pyodbc in multiple (major) versions of Python
+# This AppVeyor CI configuration file:
+#   - builds pyodbc in multiple versions of Python
 #   - tests the generated pyodbc module against various databases and drivers
-#   - creates distributable "wheel" files, and stores them as appveyor artifacts
-#     which can be downloaded from the Appveyor UI
+#   - creates "wheel" files for distribution, and stores them as appveyor
+#     artifacts which can be downloaded from the AppVeyor UI
 #
 # Various aspects of this file's behavior can be controlled by setting environment
-# variables in the Appveyor UI (see the Settings tab -> Environment ->
-# Environment variables).  You will need an Appveyor account for this. Here are
+# variables in the AppVeyor UI.  You will need an AppVeyor account for this (see
+# the Settings tab -> Environment -> Environment variables).  Here are
 # the control variables and their possible values.  Note, "*" indicates the
-# default values:
+# defaults:
 #   - APVYR_RUN_TESTS - run the unit tests, overall control (true*/false)
 #   - APVYR_RUN_MSSQL_TESTS - run the MS SQL Server unit tests (true*/false)
 #   - APVYR_RUN_POSTGRES_TESTS - run the PostgreSQL unit tests (true*/false)
 #   - APVYR_RUN_MYSQL_TESTS - run the MySQL unit tests (true*/false)
 #   - APVYR_GENERATE_WHEELS - generate distributable wheel files (true/false*)
+#   - APVYR_VERBOSE - output more information to the logs (true/false*)
 #
 # For information about appveyor.yml files, see: https://www.appveyor.com/docs/appveyor-yml/
 
-# the default Windows image for the jobs, but the images are individually set in the matrix
+
+# the AppVeyor cache is used to carry files between jobs, so make sure the jobs are serialized
+max_jobs: 1
+
+# the default AppVeyor image for the jobs, but the images are also set in the matrix
 image: Visual Studio 2015
 
 environment:
 
   global:
-    # the following variables can be overridden as necessary through the Appveyor UI
+    # the following variables can be overridden as necessary through the AppVeyor UI
     APVYR_RUN_TESTS: "true"
     APVYR_RUN_MSSQL_TESTS: "true"
     APVYR_RUN_POSTGRES_TESTS: "true"
     APVYR_RUN_MYSQL_TESTS: "true"
     APVYR_GENERATE_WHEELS: "false"
+    APVYR_VERBOSE: "false"
     # SDK v7.0 MSVC Express 2008's SetEnv.cmd script will fail if the
     # /E:ON and /V:ON options are not enabled in the batch script intepreter
     # http://stackoverflow.com/a/13751649/163740
@@ -47,61 +53,53 @@ environment:
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2013
       PYTHON_HOME: "C:\\Python27"
-      TESTS_DIR: tests2
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2013
       PYTHON_HOME: "C:\\Python27-x64"
-      TESTS_DIR: tests2
 
     # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
     #   PYTHON_HOME: "C:\\Python33"
-    #   TESTS_DIR: tests3
 
     # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
     #   PYTHON_HOME: "C:\\Python33-x64"
-    #   TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python34"
-      TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python34-x64"
-      TESTS_DIR: tests3
 
     # Python 3.5 needs at least the VS2015 image
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python35"
-      TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python35-x64"
-      TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python36"
-      TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python36-x64"
-      TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python37"
-      TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python37-x64"
-      TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python38"
-      TESTS_DIR: tests3
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python38-x64"
-      TESTS_DIR: tests3
+
+cache:
+  - apvyr_cache -> appveyor\install.ps1
+
+install:
+  - ps: .\appveyor\install.ps1
 
 # ref: https://www.appveyor.com/docs/services-databases/
 services:
