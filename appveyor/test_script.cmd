@@ -58,7 +58,7 @@ ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
 "%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
 IF ERRORLEVEL 1 (
-  REM Don't fail the tests
+  REM Don't fail the tests if the driver can't be found
   ECHO *** INFO: Could not connect using the connection string:
   ECHO "%CONN_STR%"
   GOTO :mssql2
@@ -78,7 +78,7 @@ ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
 "%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
 IF ERRORLEVEL 1 (
-  REM Don't fail the tests
+  REM Don't fail the tests if the driver can't be found
   ECHO *** INFO: Could not connect using the connection string:
   ECHO "%CONN_STR%"
   GOTO :mssql3
@@ -201,7 +201,7 @@ ECHO *** Get MySQL version
 "%MYSQL_PATH%\bin\mysql" -u root -pPassword12! -e "STATUS"
 
 :mysql1
-REM MySQL 8.0 drivers apparently don't work on Python 2.7 ("system error 126").
+REM MySQL 8.0 drivers apparently don't work on Python 2.7 ("system error 126") so use 5.3 instead.
 IF %PYTHON_MAJOR_VERSION% EQU 2 (
   SET DRIVER={MySQL ODBC 5.3 ANSI Driver}
 ) ELSE (

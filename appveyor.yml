@@ -1,5 +1,5 @@
 # This AppVeyor CI configuration file:
-#   - builds pyodbc in multiple versions of Python
+#   - builds pyodbc with multiple versions of Python
 #   - tests the generated pyodbc module against various databases and drivers
 #   - creates "wheel" files for distribution, and stores them as appveyor
 #     artifacts which can be downloaded from the AppVeyor UI
@@ -7,7 +7,7 @@
 # Various aspects of this file's behavior can be controlled by setting environment
 # variables in the AppVeyor UI.  You will need an AppVeyor account for this (see
 # the Settings tab -> Environment -> Environment variables).  Here are
-# the relevant variables and their possible values.  Note, "*" indicates the
+# the relevant variables and their possible string values.  Note, "*" indicates the
 # defaults:
 #   - APVYR_RUN_TESTS - run the unit tests, overall control (true*/false)
 #   - APVYR_RUN_MSSQL_TESTS - run the MS SQL Server unit tests (true*/false)
@@ -16,14 +16,14 @@
 #   - APVYR_GENERATE_WHEELS - generate distributable wheel files (true/false*)
 #   - APVYR_VERBOSE - output more information to the logs (true/false*)
 #
-# For information about appveyor.yml files, see: https://www.appveyor.com/docs/appveyor-yml/
+# For more information about appveyor.yml files, see: https://www.appveyor.com/docs/appveyor-yml/
 
 
 # the AppVeyor cache is used to carry files between jobs, so make sure the jobs are serialized
 max_jobs: 1
 
 # the default AppVeyor image for the jobs, but the images are also set in the matrix
-image: Visual Studio 2015
+image: Visual Studio 2019
 
 environment:
 
@@ -51,6 +51,9 @@ environment:
     # all the Python versions to be tested, both 32-bit and 64-bit
     # ref: https://www.appveyor.com/docs/windows-images-software/#python
 
+    # Python 2.7 must be built with Visual Studio 9.0, which is available only
+    # on AppVeyor Windows images Visual Studio 2013 and Visual Studio 2015
+
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python27"
 
@@ -69,7 +72,7 @@ environment:
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python34-x64"
 
-    # Python 3.5+ need at least the VS2015 image
+    # Python 3.5+ need at least the Visual Studio 2015 image
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
       PYTHON_HOME: "C:\\Python35"
