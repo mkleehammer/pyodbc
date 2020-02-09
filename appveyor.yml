@@ -51,10 +51,10 @@ environment:
     # all the Python versions to be tested, both 32-bit and 64-bit
     # ref: https://www.appveyor.com/docs/windows-images-software/#python
 
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2013
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python27"
 
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2013
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python27-x64"
 
     # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
