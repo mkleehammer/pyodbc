@@ -1,4 +1,4 @@
-# check that all the required ODBC drivers are available, and install them if they are missing
+# check that all the required ODBC drivers are available, and install any that are missing
 
 Function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, $msifile_path, $msiexec_paras) {
     Write-Output ""
@@ -75,7 +75,7 @@ Function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver
 }
 
 
-# get python version and bitness
+# get Python version and bitness
 $python_major_version = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write(str(sys.version_info.major))"
 $python_minor_version = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write(str(sys.version_info.minor))"
 $python_arch = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write('64' if sys.maxsize > 2**32 else '32')"
@@ -97,6 +97,7 @@ If (-Not (Test-Path $temp_dir)) {
 }
 
 
+# output the already available ODBC drivers before installation
 If (${env:APVYR_VERBOSE} -eq "true") {
     Write-Output ""
     Write-Output "*** Installed ODBC drivers:"
@@ -105,12 +106,12 @@ If (${env:APVYR_VERBOSE} -eq "true") {
 
 
 # Microsoft SQL Server
-# AppVeyor build servers are always 64-bit and only the 64-bit SQL Server ODBC
-# driver msi files can be installed on them.  However, the 64-bit msi files include
-# both 32-bit and 64-bit drivers anyway.
+# AppVeyor build servers are always 64-bit and therefore only the 64-bit
+# SQL Server ODBC driver msi files can be installed on them.  However,
+# the 64-bit msi files include both 32-bit and 64-bit drivers anyway.
 
 # The "SQL Server Native Client 10.0" and "SQL Server Native Client 11.0" driver
-# downloads do not appear to be available.
+# downloads do not appear to be available, hence cannot be installed.
 
 CheckAndInstallMsiFromUrl `
     -driver_name "ODBC Driver 11 for SQL Server" `
@@ -119,7 +120,7 @@ CheckAndInstallMsiFromUrl `
     -msifile_path "$cache_dir\msodbcsql_11.0.0.0_x64.msi" `
     -msiexec_paras @("IACCEPTMSODBCSQLLICENSETERMS=YES", "ADDLOCAL=ALL");
 
-# With the 13.0 driver, some tests fail for Python 2.7 so using version 13.1.
+# with the 13.0 driver, some tests fail for Python 2.7 so using version 13.1
 # 13.0: https://download.microsoft.com/download/1/E/7/1E7B1181-3974-4B29-9A47-CC857B271AA2/English/X64/msodbcsql.msi
 # 13.1: https://download.microsoft.com/download/D/5/E/D5EEF288-A277-45C8-855B-8E2CB7E25B96/x64/msodbcsql.msi
 CheckAndInstallMsiFromUrl `
@@ -135,7 +136,8 @@ CheckAndInstallMsiFromUrl `
     -driver_url "https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/msodbcsql_17.5.1.1_x64.msi" `
     -msifile_path "$cache_dir\msodbcsql_17.5.1.1_x64.msi" `
     -msiexec_paras @("IACCEPTMSODBCSQLLICENSETERMS=YES", "ADDLOCAL=ALL");
-    
+
+# some drivers must be installed in alignment with Python's bitness
 if ($python_arch -eq "64") {
 
     CheckAndInstallZippedMsiFromUrl `
@@ -172,7 +174,7 @@ if ($python_arch -eq "64") {
         -zip_internal_msi_file "psqlodbc_x86.msi" `
         -msifile_path "$cache_dir\psqlodbc_09_06_0500-x86.msi";
 
-    # MySQL 8.0 drivers apparently don't work on Python 2.7 ("system error 126").
+    # MySQL 8.0 drivers apparently don't work on Python 2.7 ("system error 126") so install 5.3 instead.
     # Note, installing MySQL 8.0 ODBC drivers causes the 5.3 drivers to be uninstalled.
     if ($python_major_version -eq 2) {
         CheckAndInstallMsiFromUrl `
@@ -193,6 +195,8 @@ if ($python_arch -eq "64") {
 }
 
 
+# output the contents of the temporary AppVeyor directories and
+# the ODBC drivers now available after installation
 If (${env:APVYR_VERBOSE} -eq "true") {
     Write-Output ""
     Write-Output "*** Contents of the cache directory: $cache_dir"
@@ -206,8 +210,8 @@ If (${env:APVYR_VERBOSE} -eq "true") {
 }
 
 
-# To compile Python 3.5 on VS 2019, we have to copy some files into Visual Studio 14.0
-# otherwise we get an error on the build as follows:
+# To compile Python 3.5 on VS 2019, we have to copy some files into the
+# Visual Studio 14.0 bin directory otherwise we get this error:
 #   LINK : fatal error LNK1158: cannot run 'rc.exe'
 # See: https://stackoverflow.com/a/52580041
 if ($python_major_version -eq "3" -And $python_minor_version -eq "5") {
