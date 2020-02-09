@@ -24,6 +24,9 @@ Function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, 
     }
 
     # install the driver's msi file
+    # Note, there is an alternate method of calling msiexec.exe using cmd:
+    #   cmd /c start /wait msiexec.exe /i "$msifile_path" /quiet /qn /norestart
+    #   if (!$?) {...}
     Write-Output "Installing the driver..."
     $msi_args = @("/quiet", "/passive", "/qn", "/norestart", "/i", ('"{0}"' -f $msifile_path))
     if ($msiexec_paras) {
@@ -36,9 +39,6 @@ Function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, 
         return
 
     }
-    # Note, here is an alternate method of calling msiexec.exe using cmd:
-    # cmd /c start /wait msiexec.exe /i "$msifile_path" /quiet /qn /norestart
-    # if (!$?) {...}
     Write-Output "...driver installed successfully"
 }
 
@@ -79,7 +79,8 @@ Function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver
 $python_version = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write(str(sys.version_info.major))"
 $python_arch = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write('64' if sys.maxsize > 2**32 else '32')"
 
-# directories exclusively for AppVeyor
+
+# directories used exclusively by AppVeyor
 $cache_dir = "$env:APPVEYOR_BUILD_FOLDER\apvyr_cache"
 If (Test-Path $cache_dir) {
     Write-Output "*** Contents of the cache directory: $cache_dir"

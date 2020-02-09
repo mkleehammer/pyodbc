@@ -7,7 +7,7 @@
 # Various aspects of this file's behavior can be controlled by setting environment
 # variables in the AppVeyor UI.  You will need an AppVeyor account for this (see
 # the Settings tab -> Environment -> Environment variables).  Here are
-# the control variables and their possible values.  Note, "*" indicates the
+# the relevant variables and their possible values.  Note, "*" indicates the
 # defaults:
 #   - APVYR_RUN_TESTS - run the unit tests, overall control (true*/false)
 #   - APVYR_RUN_MSSQL_TESTS - run the MS SQL Server unit tests (true*/false)
@@ -69,7 +69,7 @@ environment:
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
       PYTHON_HOME: "C:\\Python34-x64"
 
-    # Python 3.5 needs at least the VS2015 image
+    # Python 3.5+ need at least the VS2015 image
 
     # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
     #   PYTHON_HOME: "C:\\Python35"
