@@ -76,7 +76,8 @@ Function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver
 
 
 # get python version and bitness
-$python_version = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write(str(sys.version_info.major))"
+$python_major_version = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write(str(sys.version_info.major))"
+$python_minor_version = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write(str(sys.version_info.minor))"
 $python_arch = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write('64' if sys.maxsize > 2**32 else '32')"
 
 
@@ -147,7 +148,7 @@ if ($python_arch -eq "64") {
 
     # MySQL 8.0 drivers apparently don't work on Python 2.7 ("system error 126").
     # Note, installing MySQL 8.0 ODBC drivers causes the 5.3 drivers to be uninstalled.
-    if ($python_version -eq "2") {
+    if ($python_major_version -eq "2") {
         CheckAndInstallMsiFromUrl `
             -driver_name "MySQL ODBC 5.3 ANSI Driver" `
             -driver_bitness "64-bit" `
@@ -173,7 +174,7 @@ if ($python_arch -eq "64") {
 
     # MySQL 8.0 drivers apparently don't work on Python 2.7 ("system error 126").
     # Note, installing MySQL 8.0 ODBC drivers causes the 5.3 drivers to be uninstalled.
-    if ($python_version -eq 2) {
+    if ($python_major_version -eq 2) {
         CheckAndInstallMsiFromUrl `
             -driver_name "MySQL ODBC 5.3 ANSI Driver" `
             -driver_bitness "32-bit" `
@@ -202,4 +203,17 @@ If (${env:APVYR_VERBOSE} -eq "true") {
     Write-Output ""
     Write-Output "*** Installed ODBC drivers:"
     Get-OdbcDriver
+}
+
+
+# To compile Python 3.5 on VS 2017/2019, we have to copy some files into Visual Studio 14.0
+# https://stackoverflow.com/a/52580041
+if ($python_major_version -eq "3" -And $python_minor_version -eq "5") {
+    if ("$env:APPVEYOR_BUILD_WORKER_IMAGE" -eq "Visual Studio 2017" -Or
+        "$env:APPVEYOR_BUILD_WORKER_IMAGE" -eq "Visual Studio 2019") {
+        Write-Output ""
+        Write-Output "*** Copy rc files from Windows Kits into Visual Studio 14.0"
+        Copy-Item "C:\Program Files (x86)\Windows Kits\10\bin\10.0.17134.0\x64\rc.exe"    "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\bin\"
+        Copy-Item "C:\Program Files (x86)\Windows Kits\10\bin\10.0.17134.0\x64\rcdll.dll" "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\bin\"
+    }
 }

@@ -71,11 +71,11 @@ environment:
 
     # Python 3.5+ need at least the VS2015 image
 
-    # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-    #   PYTHON_HOME: "C:\\Python35"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python35"
 
-    # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-    #   PYTHON_HOME: "C:\\Python35-x64"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python35-x64"
 
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
       PYTHON_HOME: "C:\\Python36"
