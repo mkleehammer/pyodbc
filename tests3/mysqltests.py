@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: latin-1 -*-
 
-# Dummy line. Otherwise, for Python 3.4/3.5/3.6, "latin-1" + unix line endings = SyntaxError here.
+# Dummy line, do not remove. Otherwise, for Python 3.4/3.5/3.6, latin-1 coding + unix line endings = SyntaxError here.
 """
 Unit tests for MySQL.  To use, pass a connection string as the parameter.
 The tests will create and drop tables t1 and t2 as necessary.

@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: latin-1 -*-
 
+# Dummy line, do not remove. Otherwise, for Python 3.4/3.5/3.6, latin-1 coding + unix line endings = SyntaxError here.
 usage = """\
 usage: %prog [options] connection_string
 
