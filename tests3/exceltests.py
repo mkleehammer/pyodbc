@@ -122,9 +122,10 @@ def main():
     assert os.path.exists(filename)
     CNXNSTRING = 'Driver={Microsoft Excel Driver (*.xls)};DBQ=%s;READONLY=FALSE' % filename
 
-    cnxn = pyodbc.connect(CNXNSTRING, autocommit=True)
-    print_library_info(cnxn)
-    cnxn.close()
+    if options.verbose:
+        cnxn = pyodbc.connect(CNXNSTRING, autocommit=True)
+        print_library_info(cnxn)
+        cnxn.close()
 
     suite = load_tests(ExcelTestCase, options.test)
 
