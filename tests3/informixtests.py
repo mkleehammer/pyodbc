@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: latin-1 -*-
 
 usage = """\
 usage: %prog [options] connection_string
@@ -254,7 +253,7 @@ class InformixTestCase(unittest.TestCase):
         self.assertEqual(v3, row.c3)
 
     def test_varchar_upperlatin(self):
-        self._test_strtype('varchar', 'แ')
+        self._test_strtype('varchar', 'รก')
 
     #
     # unicode
@@ -272,7 +271,7 @@ class InformixTestCase(unittest.TestCase):
         locals()['test_unicode_%s' % len(value)] = _maketest(value)
 
     def test_unicode_upperlatin(self):
-        self._test_strtype('varchar', 'แ')
+        self._test_strtype('varchar', 'รก')
 
     #
     # binary
@@ -309,7 +308,7 @@ class InformixTestCase(unittest.TestCase):
         locals()['test_image_%s' % len(value)] = _maketest(value)
 
     def test_image_upperlatin(self):
-        self._test_strliketype('image', buffer('แ'))
+        self._test_strliketype('image', buffer('รก'))
 
     #
     # text
@@ -330,7 +329,7 @@ class InformixTestCase(unittest.TestCase):
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strliketype('text', 'แ')
+        self._test_strliketype('text', 'รก')
 
     #
     # bit
@@ -1241,9 +1240,10 @@ def main():
     else:
         connection_string = args[0]
 
-    cnxn = pyodbc.connect(connection_string)
-    print_library_info(cnxn)
-    cnxn.close()
+    if options.verbose:
+        cnxn = pyodbc.connect(connection_string)
+        print_library_info(cnxn)
+        cnxn.close()
 
     suite = load_tests(InformixTestCase, options.test, connection_string)
 

@@ -1418,9 +1418,10 @@ def main():
     else:
         connection_string = args[0]
 
-    cnxn = pyodbc.connect(connection_string)
-    print_library_info(cnxn)
-    cnxn.close()
+    if options.verbose:
+        cnxn = pyodbc.connect(connection_string)
+        print_library_info(cnxn)
+        cnxn.close()
 
     suite = load_tests(SqlServerTestCase, options.test, connection_string)
 

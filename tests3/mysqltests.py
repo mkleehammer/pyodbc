@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: latin-1 -*-
 
 usage = """\
 usage: %prog [options] connection_string
@@ -197,7 +196,7 @@ class MySqlTestCase(unittest.TestCase):
         self.assertEqual(v3, row.c3)
 
     def test_varchar_upperlatin(self):
-        self._test_strtype('varchar', u'แ', colsize=3)
+        self._test_strtype('varchar', u'รก', colsize=3)
 
     def test_utf16(self):
         self.cursor.execute("create table t1(c1 varchar(100) character set utf16, c2 varchar(100))")
@@ -243,7 +242,7 @@ class MySqlTestCase(unittest.TestCase):
         locals()['test_blob_%s' % len(value)] = _maketest(value)
 
     def test_blob_upperlatin(self):
-        self._test_strtype('blob', bytes('แ', 'utf-8'))
+        self._test_strtype('blob', bytes('รก', 'utf-8'))
 
     #
     # text
@@ -261,7 +260,7 @@ class MySqlTestCase(unittest.TestCase):
         locals()['test_text_%s' % len(value)] = _maketest(value)
 
     def test_text_upperlatin(self):
-        self._test_strtype('text', 'แ')
+        self._test_strtype('text', 'รก')
 
     #
     # unicode
@@ -770,9 +769,10 @@ def main():
     else:
         connection_string = args[0]
 
-    cnxn = pyodbc.connect(connection_string)
-    print_library_info(cnxn)
-    cnxn.close()
+    if options.verbose:
+        cnxn = pyodbc.connect(connection_string)
+        print_library_info(cnxn)
+        cnxn.close()
 
     suite = load_tests(MySqlTestCase, options.test, connection_string)
 

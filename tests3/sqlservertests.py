@@ -66,7 +66,9 @@ class SqlServerTestCase(unittest.TestCase):
     SMALL_FENCEPOST_SIZES = [ 0, 1, 255, 256, 510, 511, 512, 1023, 1024, 2047, 2048, 4000 ]
     LARGE_FENCEPOST_SIZES = [ 4095, 4096, 4097, 10 * 1024, 20 * 1024 ]
 
-    STR_FENCEPOSTS = [ _generate_test_string(size) for size in SMALL_FENCEPOST_SIZES ]
+    STR_FENCEPOSTS = [_generate_test_string(size) for size in SMALL_FENCEPOST_SIZES]
+    LARGE_STR_FENCEPOSTS = STR_FENCEPOSTS + [_generate_test_string(size) for size in LARGE_FENCEPOST_SIZES]
+
     BYTE_FENCEPOSTS    = [ bytes(s, 'ascii') for s in STR_FENCEPOSTS ]
     IMAGE_FENCEPOSTS   = BYTE_FENCEPOSTS + [ bytes(_generate_test_string(size), 'ascii') for size in LARGE_FENCEPOST_SIZES ]
 
@@ -290,10 +292,15 @@ class SqlServerTestCase(unittest.TestCase):
         """
         The implementation for string, Unicode, and binary tests.
         """
-        assert colsize is None or isinstance(colsize, int), colsize
-        assert colsize is None or (value is None or colsize >= len(value))
+        assert (
+            value is None
+            or
+            colsize == -1 or colsize is None or colsize >= len(value)
+        ), colsize
 
-        if colsize:
+        if colsize == -1:
+            sql = "create table t1(s %s(max))" % sqltype
+        elif colsize:
             sql = "create table t1(s %s(%s))" % (sqltype, colsize)
         else:
             sql = "create table t1(s %s)" % sqltype
@@ -383,6 +390,14 @@ class SqlServerTestCase(unittest.TestCase):
     for value in STR_FENCEPOSTS:
         locals()['test_varchar_%s' % len(value)] = _maketest(value)
 
+    # Generate a test for each fencepost size: test_varchar_0, etc.
+    def _maketest(value):
+        def t(self):
+            self._test_strtype('varchar', value, colsize=-1)
+        return t
+    for value in LARGE_STR_FENCEPOSTS:
+        locals()['test_varchar_max_%s' % len(value)] = _maketest(value)
+
     def test_varchar_many(self):
         self.cursor.execute("create table t1(c1 varchar(300), c2 varchar(300), c3 varchar(300))")
 
@@ -411,6 +426,13 @@ class SqlServerTestCase(unittest.TestCase):
         return t
     for value in STR_FENCEPOSTS:
         locals()['test_unicode_%s' % len(value)] = _maketest(value)
+
+    def _maketest(value):
+        def t(self):
+            self._test_strtype('nvarchar', value, colsize=-1)
+        return t
+    for value in LARGE_STR_FENCEPOSTS:
+        locals()['test_unicode_max_%s' % len(value)] = _maketest(value)
 
     def test_unicode_longmax(self):
         # Issue 188:	Segfault when fetching NVARCHAR(MAX) data over 511 bytes
@@ -1812,9 +1834,10 @@ def main():
     else:
         connection_string = args[0]
 
-    cnxn = pyodbc.connect(connection_string)
-    print_library_info(cnxn)
-    cnxn.close()
+    if options.verbose:
+        cnxn = pyodbc.connect(connection_string)
+        print_library_info(cnxn)
+        cnxn.close()
 
     suite = load_tests(SqlServerTestCase, options.test, connection_string)
 
