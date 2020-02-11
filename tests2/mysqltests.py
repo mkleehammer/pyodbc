@@ -13,9 +13,9 @@ Python directories.  You must run `python setup.py build` before running these t
 You can also put the connection string into a tmp/setup.cfg file like so:
 
   [mysqltests]
-  connection-string=DRIVER=MySQL ODBC 8.0 Unicode Driver;charset=utf8mb4;SERVER=localhost;DATABASE=pyodbc;UID=root;PWD=rootpw
+  connection-string=DRIVER=MySQL ODBC 8.0 ANSI Driver;charset=utf8mb4;SERVER=localhost;DATABASE=pyodbc;UID=root;PWD=rootpw
 
-Note: Include charset=utf8mb4 in the connection string so the high-Unicode tests won't fail.
+Note: Use the "ANSI" (not the "Unicode") driver and include charset=utf8mb4 in the connection string so the high-Unicode tests won't fail.
 """
 
 import sys, os, re
@@ -61,6 +61,7 @@ class MySqlTestCase(unittest.TestCase):
         self.cnxn   = pyodbc.connect(self.connection_string)
         self.cursor = self.cnxn.cursor()
 
+        self.cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='utf-8')
         self.cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
         self.cnxn.setencoding(str, encoding='utf-8')
         self.cnxn.setencoding(unicode, encoding='utf-8', ctype=pyodbc.SQL_CHAR)
@@ -684,8 +685,8 @@ class MySqlTestCase(unittest.TestCase):
 
         othercnxn.autocommit = False
         self.assertEqual(othercnxn.autocommit, False)
-        
-    def test_emoticons(self):
+
+    def test_emoticons_as_parameter(self):
         # https://github.com/mkleehammer/pyodbc/issues/423
         #
         # When sending a varchar parameter, pyodbc is supposed to set ColumnSize to the number
@@ -697,6 +698,18 @@ class MySqlTestCase(unittest.TestCase):
 
         self.cursor.execute("CREATE TABLE t1(s varchar(100)) DEFAULT CHARSET=utf8mb4")
         self.cursor.execute("insert into t1 values (?)", v)
+
+        result = self.cursor.execute("select s from t1").fetchone()[0]
+
+        self.assertEqual(result, v)
+
+    def test_emoticons_as_literal(self):
+        # https://github.com/mkleehammer/pyodbc/issues/630
+
+        v = u"x \U0001F31C z"
+
+        self.cursor.execute("CREATE TABLE t1(s varchar(100)) DEFAULT CHARSET=utf8mb4")
+        self.cursor.execute("insert into t1 values ('%s')" % v)
 
         result = self.cursor.execute("select s from t1").fetchone()[0]
 
@@ -735,6 +748,8 @@ def main():
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
     result = testRunner.run(suite)
 
+    return result
+
 
 if __name__ == '__main__':
 
@@ -743,4 +758,4 @@ if __name__ == '__main__':
     add_to_path()
 
     import pyodbc
-    main()
+    sys.exit(0 if main().wasSuccessful() else 1)

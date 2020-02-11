@@ -623,37 +623,43 @@ class AccessTestCase(unittest.TestCase):
 
 
 def main():
-    from argparse import ArgumentParser
-    parser = ArgumentParser(usage=usage)
-    parser.add_argument("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
-    parser.add_argument("-d", "--debug", action="store_true", default=False, help="Print debugging items")
-    parser.add_argument("-t", "--test", help="Run only the named test")
-    parser.add_argument('type', choices=['accdb', 'mdb'], help='Which type of file to test')
+    from optparse import OptionParser
+    parser = OptionParser(usage=usage)
+    parser.add_option("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
+    parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
+    parser.add_option("-t", "--test", help="Run only the named test")
 
-    args = parser.parse_args()
+    (options, args) = parser.parse_args()
 
-    DRIVERS = {
-        'accdb': 'Microsoft Access Driver (*.mdb, *.accdb)',
-        'mdb': 'Microsoft Access Driver (*.mdb)'
-    }
+    if len(args) != 1:
+        parser.error('dbfile argument required')
+
+    if args[0].endswith('.accdb'):
+        driver = 'Microsoft Access Driver (*.mdb, *.accdb)'
+        drvext = 'accdb'
+    else:
+        driver = 'Microsoft Access Driver (*.mdb)'
+        drvext = 'mdb'
 
     here = dirname(abspath(__file__))
-    src = join(here, 'empty.' + args.type)
-    dest = join(here, 'test.' + args.type)
+    src = join(here, 'empty.' + drvext)
+    dest = join(here, 'test.' + drvext)
     shutil.copy(src, dest)
 
     global CNXNSTRING
-    CNXNSTRING = 'DRIVER={%s};DBQ=%s;ExtendedAnsiSQL=1' % (DRIVERS[args.type], dest)
+    CNXNSTRING = 'DRIVER={%s};DBQ=%s;ExtendedAnsiSQL=1' % (driver, dest)
     print(CNXNSTRING)
 
     cnxn = pyodbc.connect(CNXNSTRING)
     print_library_info(cnxn)
     cnxn.close()
 
-    suite = load_tests(AccessTestCase, args.test)
+    suite = load_tests(AccessTestCase, options.test)
 
-    testRunner = unittest.TextTestRunner(verbosity=args.verbose)
+    testRunner = unittest.TextTestRunner(verbosity=options.verbose)
     result = testRunner.run(suite)
+
+    return result
 
 
 if __name__ == '__main__':
@@ -661,4 +667,4 @@ if __name__ == '__main__':
     # Add the build directory to the path so we're testing the latest build, not the installed version.
     add_to_path()
     import pyodbc
-    main()
+    sys.exit(0 if main().wasSuccessful() else 1)

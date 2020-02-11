@@ -858,21 +858,23 @@ static bool GetTimeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
 }
 
 
-inline bool NeedsBigInt(PyObject* p)
+inline bool NeedsBigInt(long long ll)
 {
     // NOTE: Smallest 32-bit int should be -214748368 but the MS compiler v.1900 AMD64
     // says that (10 < -2147483648).  Perhaps I miscalculated the minimum?
-    long long ll = PyLong_AsLongLong(p);
     return ll < -2147483647 || ll > 2147483647;
 }
 
 #if PY_MAJOR_VERSION < 3
 static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
-    if (isTVP || NeedsBigInt(param))
-    {
-        info.Data.i64 = (INT64)PyLong_AsLongLong(param);
+    long long value = PyLong_AsLongLong(param);
+    if (PyErr_Occurred())
+        return false;
 
+    if (isTVP || NeedsBigInt(value))
+    {
+        info.Data.i64          = (INT64)value;
         info.ValueType         = SQL_C_SBIGINT;
         info.ParameterType     = SQL_BIGINT;
         info.ParameterValuePtr = &info.Data.i64;
@@ -880,14 +882,12 @@ static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo
     }
     else
     {
-        info.Data.l = PyLong_AsLong(param);
-
+        info.Data.i32          = (int)value;
         info.ValueType         = SQL_C_LONG;
         info.ParameterType     = SQL_INTEGER;
-        info.ParameterValuePtr = &info.Data.l;
+        info.ParameterValuePtr = &info.Data.i32;
         info.StrLen_or_Ind     = 4;
     }
-
     return true;
 }
 #endif
@@ -898,10 +898,13 @@ static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     // Unfortunately this may mean that we end up with two execution plans for the same SQL.
     // We could use SQLDescribeParam but that's kind of expensive.
 
-    if (isTVP || NeedsBigInt(param))
-    {
-        info.Data.i64 = (INT64)PyLong_AsLongLong(param);
+    long long value = PyLong_AsLongLong(param);
+    if (PyErr_Occurred())
+        return false;
 
+    if (isTVP || NeedsBigInt(value))
+    {
+        info.Data.i64          = (INT64)value;
         info.ValueType         = SQL_C_SBIGINT;
         info.ParameterType     = SQL_BIGINT;
         info.ParameterValuePtr = &info.Data.i64;
@@ -909,22 +912,26 @@ static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     }
     else
     {
-        info.Data.l = PyLong_AsLong(param);
-
+        info.Data.i32          = (int)value;
         info.ValueType         = SQL_C_LONG;
         info.ParameterType     = SQL_INTEGER;
-        info.ParameterValuePtr = &info.Data.l;
+        info.ParameterValuePtr = &info.Data.i32;
         info.StrLen_or_Ind     = 4;
     }
-
     return true;
 }
 
 static bool GetFloatInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
 {
-    // TODO: Overflow?
-    info.Data.dbl = PyFloat_AsDouble(param);
+    // Python floats are usually numeric values, but can also be "Infinity" or "NaN".
+    // https://docs.python.org/3/library/functions.html#float
+    // PyFloat_AsDouble() does not generate an error for Infinity/NaN, and it is not
+    // easy to check for those values.  Typically, the database will reject them.
+    double value = PyFloat_AsDouble(param);
+    if (PyErr_Occurred())
+        return false;
 
+    info.Data.dbl          = value;
     info.ValueType         = SQL_C_DOUBLE;
     info.ParameterType     = SQL_DOUBLE;
     info.ParameterValuePtr = &info.Data.dbl;
@@ -1910,12 +1917,11 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             {
                 PyObject* objCell = pInfo->cell;
 
-#if PY_MAJOR_VERSION >= 3
                 // If the object is Unicode it needs to be converted into bytes before it can be used by SQLPutData
                 if (PyUnicode_Check(objCell))
                 {
                     const TextEnc& enc = cur->cnxn->sqlwchar_enc;
-                    int cb = PyUnicode_GET_LENGTH(objCell);
+                    int cb = PyUnicode_GET_DATA_SIZE(objCell) / 2;
 
                     PyObject* bytes = NULL;
                     const Py_UNICODE* source = PyUnicode_AS_UNICODE(objCell);
@@ -1941,7 +1947,6 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         objCell = bytes;
                     }
                 }
-#endif
 
                 szLastFunction = "SQLPutData";
                 if (PyBytes_Check(objCell)

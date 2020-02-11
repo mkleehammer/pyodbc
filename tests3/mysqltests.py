@@ -13,9 +13,9 @@ Python directories.  You must run `python setup.py build` before running these t
 You can also put the connection string into a tmp/setup.cfg file like so:
 
   [mysqltests]
-  connection-string=DRIVER=MySQL ODBC 8.0 Unicode Driver;charset=utf8mb4;SERVER=localhost;DATABASE=pyodbc;UID=root;PWD=rootpw
+  connection-string=DRIVER=MySQL ODBC 8.0 ANSI Driver;charset=utf8mb4;SERVER=localhost;DATABASE=pyodbc;UID=root;PWD=rootpw
 
-Note: Include charset=utf8mb4 in the connection string so the high-Unicode tests won't fail.
+Note: Use the "ANSI" (not the "Unicode") driver and include charset=utf8mb4 in the connection string so the high-Unicode tests won't fail.
 """
 
 import sys, os, re
@@ -70,6 +70,7 @@ class MySqlTestCase(unittest.TestCase):
         # My MySQL configuration (and I think the default) sends *everything*
         # in UTF-8.  The pyodbc default is to send Unicode as UTF-16 and to
         # decode WCHAR via UTF-16.  Change them both to UTF-8.
+        self.cnxn.setdecoding(pyodbc.SQL_CHAR, encoding='utf-8')
         self.cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
         self.cnxn.setencoding(encoding='utf-8')
 
@@ -615,6 +616,12 @@ class MySqlTestCase(unittest.TestCase):
             self.assertEqual(param[1], row[1])
 
     def test_fast_executemany(self):
+        driver_name = self.cnxn.getinfo(pyodbc.SQL_DRIVER_NAME)
+        if driver_name.lower().endswith('a.dll') or driver_name.lower().endswith('a.so'):
+            # skip this test for the ANSI driver
+            #   on Windows, it crashes CPython
+            #   on Linux, it simply fails
+            return
 
         self.cursor.fast_executemany = True
 
@@ -711,7 +718,7 @@ class MySqlTestCase(unittest.TestCase):
         othercnxn.autocommit = False
         self.assertEqual(othercnxn.autocommit, False)
 
-    def test_emoticons(self):
+    def test_emoticons_as_parameter(self):
         # https://github.com/mkleehammer/pyodbc/issues/423
         #
         # When sending a varchar parameter, pyodbc is supposed to set ColumnSize to the number
@@ -727,7 +734,19 @@ class MySqlTestCase(unittest.TestCase):
         result = self.cursor.execute("select s from t1").fetchone()[0]
 
         self.assertEqual(result, v)
-        
+
+    def test_emoticons_as_literal(self):
+        # https://github.com/mkleehammer/pyodbc/issues/630
+
+        v = "x \U0001F31C z"
+
+        self.cursor.execute("CREATE TABLE t1(s varchar(100)) DEFAULT CHARSET=utf8mb4")
+        self.cursor.execute("insert into t1 values ('%s')" % v)
+
+        result = self.cursor.execute("select s from t1").fetchone()[0]
+
+        self.assertEqual(result, v)
+
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage=usage)
@@ -760,6 +779,8 @@ def main():
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
     result = testRunner.run(suite)
 
+    return result
+
 
 if __name__ == '__main__':
 
@@ -768,4 +789,4 @@ if __name__ == '__main__':
     add_to_path()
 
     import pyodbc
-    main()
+    sys.exit(0 if main().wasSuccessful() else 1)
