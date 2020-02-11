@@ -9,14 +9,14 @@
 environment:
 
   matrix:
-    - PYTHON: "C:\\Python27"
-      PYTHON_ARCH: "32"
-    - PYTHON: "C:\\Python27"
-      PYTHON_ARCH: "64"
-    - PYTHON: "C:\\Python36"
-      PYTHON_ARCH: "32"
-    - PYTHON: "C:\\Python36"
-      PYTHON_ARCH: "64"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      PYTHON: "C:\\Python27"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      PYTHON: "C:\\Python27-x64"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON: "C:\\Python36"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON: "C:\\Python36-x64"
 
 build: off
 
