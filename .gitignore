@@ -4,7 +4,6 @@
 # Python
 __pycache__/
 *.py[cod]
-pyodbc.conf
 setup.cfg
 
 # C extensions
@@ -17,10 +16,11 @@ dist/
 MANIFEST
 lib/
 lib64/
+/PKG-INFO
 sdist/
+/wheelhouse/
 *.egg-info/
 *.egg
-MANIFEST
 
 # Unit test / coverage reports
 .tox/
@@ -47,6 +47,7 @@ x86/
 *.exe
 
 # Other
+pyodbc.conf
 tmp
 
 # The Access unit tests copy empty.accdb and empty.mdb to these names and use them.
