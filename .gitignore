@@ -13,12 +13,12 @@ setup.cfg
 # Distribution / packaging
 build/
 dist/
-MANIFEST
 lib/
 lib64/
+MANIFEST
 /PKG-INFO
 sdist/
-/wheelhouse/
+wheelhouse/
 *.egg-info/
 *.egg
 
@@ -27,9 +27,9 @@ sdist/
 .coverage
 
 # Virtual Environments
-/venv
-.env
-.venv
+venv/
+.env/
+.venv/
 
 # JetBrains
 .idea/
