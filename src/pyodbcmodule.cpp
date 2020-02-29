@@ -617,7 +617,7 @@ static PyObject* mod_datasources(PyObject* self)
     if (!result)
         return 0;
 
-    SQLCHAR szDSN[SQL_MAX_DSN_LENGTH];
+    SQLCHAR szDSN[SQL_MAX_DSN_LENGTH + 1];
     SWORD cbDSN;
     SQLCHAR szDesc[200];
     SWORD cbDesc;
