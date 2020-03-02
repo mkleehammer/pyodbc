@@ -617,9 +617,9 @@ static PyObject* mod_datasources(PyObject* self)
     if (!result)
         return 0;
 
-    SQLCHAR szDSN[SQL_MAX_DSN_LENGTH + 1];
+    SQLCHAR szDSN[500]; // Using a buffer larger than SQL_MAX_DSN_LENGTH + 1 for systems that ignore it
     SWORD cbDSN;
-    SQLCHAR szDesc[200];
+    SQLCHAR szDesc[500];
     SWORD cbDesc;
 
     SQLUSMALLINT nDirection = SQL_FETCH_FIRST;
