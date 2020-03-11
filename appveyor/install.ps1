@@ -157,7 +157,7 @@ CheckAndInstallMsiFromUrl `
 CheckAndInstallMsiFromUrl `
     -driver_name "ODBC Driver 17 for SQL Server" `
     -driver_bitness "64-bit" `
-    -driver_url "https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/msodbcsql_17.5.1.1_x64.msi" `
+    -driver_url "https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/17.5.2.1/x64/msodbcsql.msi" `
     -msifile_path "$cache_dir\msodbcsql_17.5.1.1_x64.msi" `
     -msiexec_paras @("IACCEPTMSODBCSQLLICENSETERMS=YES", "ADDLOCAL=ALL");
 
