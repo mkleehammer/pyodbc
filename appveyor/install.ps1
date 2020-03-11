@@ -232,17 +232,3 @@ If (${env:APVYR_VERBOSE} -eq "true") {
     Write-Output "*** Installed ODBC drivers:"
     Get-OdbcDriver
 }
-
-
-# To compile Python 3.5 on VS 2019, we have to copy some files into the
-# Visual Studio 14.0 bin directory otherwise we get this error:
-#   LINK : fatal error LNK1158: cannot run 'rc.exe'
-# See: https://stackoverflow.com/a/52580041
-if ($python_major_version -eq "3" -And $python_minor_version -eq "5") {
-    if ("$env:APPVEYOR_BUILD_WORKER_IMAGE" -eq "Visual Studio 2019") {
-        Write-Output ""
-        Write-Output "*** Copy rc files from Windows Kits into Visual Studio 14.0"
-        Copy-Item "C:\Program Files (x86)\Windows Kits\10\bin\10.0.17134.0\x64\rc.exe"    "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\bin\"
-        Copy-Item "C:\Program Files (x86)\Windows Kits\10\bin\10.0.17134.0\x64\rcdll.dll" "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\bin\"
-    }
-}
