@@ -168,7 +168,7 @@ def get_compiler_settings(version_str):
         # made the settings.
         # https://lectem.github.io/msvc/reverse-engineering/build/2019/01/21/MSVC-hidden-flags.html
 
-        if sys.hexversion >= 0x03060000:
+        if sys.hexversion >= 0x03050000:
             settings['extra_compile_args'].append('/d2FH4-')
             settings['extra_link_args'].append('/d2:-FH4-')
 
