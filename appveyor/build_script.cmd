@@ -26,6 +26,7 @@ IF ERRORLEVEL 1 (
   ECHO *** ERROR: pip/setuptools update failed
   EXIT 1
 )
+"%PYTHON_HOME%\python" -m pip freeze --all
 
 ECHO.
 ECHO *** Building the pyodbc module...
@@ -45,7 +46,7 @@ IF ERRORLEVEL 1 (
 
 ECHO.
 ECHO *** pip freeze...
-"%PYTHON_HOME%\Scripts\pip" freeze --all
+"%PYTHON_HOME%\python" -m pip freeze --all
 
 ECHO.
 ECHO *** Get version of the built pyodbc module:
