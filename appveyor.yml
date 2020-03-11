@@ -66,11 +66,11 @@ environment:
     # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
     #   PYTHON_HOME: "C:\\Python33-x64"
 
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON_HOME: "C:\\Python34"
+    # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+    #   PYTHON_HOME: "C:\\Python34"
 
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON_HOME: "C:\\Python34-x64"
+    # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+    #   PYTHON_HOME: "C:\\Python34-x64"
 
     # Python 3.5+ need at least the Visual Studio 2015 image
 
