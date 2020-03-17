@@ -618,6 +618,8 @@ static bool GetNullInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 
     info.ValueType     = SQL_C_DEFAULT;
     info.ColumnSize    = 1;
+    info.ParameterValuePtr = 0;
+    info.BufferLength = 0;
     info.StrLen_or_Ind = SQL_NULL_DATA;
     return true;
 }
@@ -1474,8 +1476,11 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
                 // Bind the TVP's columns --- all need to use DAE
                 PyObject *param = PySequence_GetItem(row, i);
                 GetParameterInfo(cur, i, param, info.nested[i], true);
-                info.nested[i].BufferLength = info.nested[i].StrLen_or_Ind;
-                info.nested[i].StrLen_or_Ind = SQL_DATA_AT_EXEC;
+                if (info.nested[i].StrLen_or_Ind != SQL_NULL_DATA)
+                {
+                    info.nested[i].BufferLength = info.nested[i].StrLen_or_Ind;
+                    info.nested[i].StrLen_or_Ind = SQL_DATA_AT_EXEC;
+                }
 
                 Py_BEGIN_ALLOW_THREADS
                 ret = SQLBindParameter(cur->hstmt, (SQLUSMALLINT)(i + 1), SQL_PARAM_INPUT,
