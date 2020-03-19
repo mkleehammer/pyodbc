@@ -617,8 +617,9 @@ static bool GetNullInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
         return false;
 
     info.ValueType     = SQL_C_DEFAULT;
+    info.ParameterType = SQL_VARCHAR;
     info.ColumnSize    = 1;
-    info.ParameterValuePtr = 0;
+    info.ParameterValuePtr = NULL;
     info.BufferLength = 0;
     info.StrLen_or_Ind = SQL_NULL_DATA;
     return true;
