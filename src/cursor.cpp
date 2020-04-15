@@ -1403,7 +1403,7 @@ static char statistics_doc[] =
     "Creates a results set of statistics about a single table and the indexes associated with \n"
     "the table by executing SQLStatistics.\n"
     "unique\n"
-    "  If True, only unique indexes are retured.  Otherwise all indexes are returned.\n"
+    "  If True, only unique indexes are returned.  Otherwise all indexes are returned.\n"
     "quick\n"
     "  If True, CARDINALITY and PAGES are returned  only if they are readily available\n"
     "  from the server\n"
