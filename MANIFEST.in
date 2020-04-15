@@ -1,3 +1,4 @@
+global-exclude *.py
 include src/*.h
 include src/*.cpp
 include tests2/*
