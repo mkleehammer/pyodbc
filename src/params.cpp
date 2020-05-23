@@ -134,7 +134,7 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
         pi->BufferLength = pi->ColumnSize && PyBuffer_GetMemory(cell, 0) >= 0 ? pi->ColumnSize : sizeof(DAEParam);
     }
 #endif
-    else if (cell == Py_None)
+    else if (cell == Py_None || cell == null_binary)
     {
         // Use the SQL type to guess what Nones should be inserted as here.
         switch (pi->ParameterType)
@@ -581,7 +581,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         *outbuf += pi->BufferLength;
         ind = sizeof(SQL_NUMERIC_STRUCT);
     }
-    else if (cell == Py_None)
+    else if (cell == Py_None || cell == null_binary)
     {
         *outbuf += pi->BufferLength;
         ind = SQL_NULL_DATA;
