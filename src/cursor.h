@@ -150,6 +150,10 @@ struct Cursor
     // Since this is shared by Row objects, it cannot be reused.  New dictionaries are created for every execute.  This
     // will be zero whenever there are no results.
     PyObject* map_name_to_index;
+
+    // The messages attribute described in the DB API 2.0 specification.
+    // Contains a list of all non-data messages provided by the driver, retrieved using SQLGetDiagRec.
+    PyObject* messages;
 };
 
 void Cursor_init();
