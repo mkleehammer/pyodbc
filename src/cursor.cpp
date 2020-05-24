@@ -369,7 +369,7 @@ static bool free_results(Cursor* self, int flags)
     if ((flags & KEEP_MESSAGES) == 0)
     {
         Py_XDECREF(self->messages);
-        self->messages = PyList_New(0);  // do I need to inc ref here????
+        self->messages = PyList_New(0);
     }
 
     self->rowcount = -1;
@@ -408,11 +408,13 @@ static void closeimpl(Cursor* cur)
     Py_XDECREF(cur->description);
     Py_XDECREF(cur->map_name_to_index);
     Py_XDECREF(cur->cnxn);
+    Py_XDECREF(cur->messages);
 
     cur->pPreparedSQL = 0;
     cur->description = 0;
     cur->map_name_to_index = 0;
     cur->cnxn = 0;
+    cur->messages = 0;
 }
 
 static char close_doc[] =
@@ -562,7 +564,7 @@ static bool PrepareResults(Cursor* cur, int cCols)
 }
 
 
-static void GetDiagRecs(Cursor* cur)
+static int GetDiagRecs(Cursor* cur)
 {
     // Retrieves all diagnostic records from the cursor and assigns them to the "messages" attribute.
 
@@ -572,13 +574,16 @@ static void GetDiagRecs(Cursor* cur)
 
     ODBCCHAR    cSQLState[6];  // five-character SQLSTATE code (plus terminating NULL)
     SQLINTEGER  iNativeError;
-    ODBCCHAR    cMessageText[1024];
+    ODBCCHAR    cMessageText[10240];  // PRINT statements can be large, hopefully 10K bytes will be enough
     SQLSMALLINT iTextLength;
 
     SQLRETURN ret;
     char sqlstate_ascii[6] = "";  //  ASCII version of the SQLState
 
-    msg_list = PyList_New(0);  // do I need to inc ref here????
+    msg_list = PyList_New(0);
+    if (!msg_list)
+        return 0;
+
     for (;;)
     {
         cSQLState[0]    = 0;
@@ -599,8 +604,7 @@ static void GetDiagRecs(Cursor* cur)
         CopySqlState(cSQLState, sqlstate_ascii);
         PyObject* msg_class = PyUnicode_FromFormat("[%s] (%ld)", sqlstate_ascii, (long)iNativeError);
 
-        // Default to UTF-16 if no connection.
-        // Note that this will not work if the DM is using a different wide encoding (e.g. UTF-32).
+        // Default to UTF-16, which may not work if the driver/manager is using some other encoding
         const char *unicode_enc = cur->cnxn ? cur->cnxn->metadata_enc.name : ENCSTR_UTF16NE;
         PyObject* msg_value = PyUnicode_Decode(
             (char*)cMessageText, iTextLength * sizeof(ODBCCHAR), unicode_enc, "strict"
@@ -608,24 +612,32 @@ static void GetDiagRecs(Cursor* cur)
         if (!msg_value)
         {
             // If the char cannot be decoded, return something rather than nothing.
-            msg_value = PyBytes_FromStringAndSize((char*)cMessageText, iTextLength * sizeof(ODBCCHAR));  // do I need to inc ref here????
+            Py_XDECREF(msg_value);
+            msg_value = PyBytes_FromStringAndSize((char*)cMessageText, iTextLength * sizeof(ODBCCHAR));
         }
 
-        if (msg_class && msg_value)
+        PyObject* msg_tuple = PyTuple_New(2);
+
+        if (msg_class && msg_value && msg_tuple)
         {
-            PyObject* msg_tuple = PyTuple_New(2);
             PyTuple_SetItem(msg_tuple, 0, msg_class);  // msg_tuple now owns the msg_class reference
             PyTuple_SetItem(msg_tuple, 1, msg_value);  // msg_tuple now owns the msg_value reference
 
             PyList_Append(msg_list, msg_tuple);
+            Py_XDECREF(msg_tuple);  // whether PyList_Append succeeds or not
+        }
+        else
+        {
+            Py_XDECREF(msg_class);
+            Py_XDECREF(msg_value);
+            Py_XDECREF(msg_tuple);
         }
 
         iRecNumber++;
     }
 
     Py_XDECREF(cur->messages);
-    Py_INCREF(msg_list);
-    cur->messages = msg_list;
+    cur->messages = msg_list;  // cur->messages now owns the msg_list reference
 }
 
 
@@ -1897,7 +1909,7 @@ static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
     else
     {
         Py_XDECREF(cur->messages);
-        cur->messages = PyList_New(0);  // do I need to inc ref here????
+        cur->messages = PyList_New(0);
     }
 
     SQLSMALLINT cCols;
@@ -2493,11 +2505,11 @@ Cursor_New(Connection* cnxn)
         cur->rowcount          = -1;
         cur->map_name_to_index = 0;
         cur->fastexecmany      = 0;
-        cur->messages          = PyList_New(0);
+        cur->messages          = Py_None;
 
         Py_INCREF(cnxn);
         Py_INCREF(cur->description);
-        Py_INCREF(cur->messages);  // is this needed????  or does PyList_New increment the ref count itself?
+        Py_INCREF(cur->messages);
 
         SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS

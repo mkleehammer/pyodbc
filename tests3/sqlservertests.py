@@ -1366,6 +1366,63 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertEqual(t[5], 2)       # scale
         self.assertEqual(t[6], True)    # nullable
 
+    def test_cursor_messages_with_print(self):
+        """
+        Ensure the Cursor.messages attribute is handled correctly with a simple PRINT statement.
+        """
+        # self.cursor is used in setUp, hence is not brand new at this point
+        brand_new_cursor = self.cnxn.cursor()
+        self.assertIsNone(brand_new_cursor.messages)
+
+        self.cursor.execute("PRINT 'hello world'")
+        self.assertTrue(type(self.cursor.messages) is list)
+        self.assertEqual(len(self.cursor.messages), 1)
+        self.assertTrue(type(self.cursor.messages[0]) is tuple)
+        self.assertEqual(len(self.cursor.messages[0]), 2)
+        self.assertTrue(type(self.cursor.messages[0][0]) is str)
+        self.assertTrue(type(self.cursor.messages[0][1]) is str)
+        self.assertEqual('[01000] (0)', self.cursor.messages[0][0])
+        self.assertTrue(self.cursor.messages[0][1].endswith('hello world'))
+
+    def test_cursor_messages_with_stored_proc(self):
+        """
+        Complex scenario to test the Cursor.messages attribute.
+        """
+        self.cursor.execute("""
+            CREATE OR ALTER PROCEDURE test_cursor_messages AS
+            BEGIN
+                SET NOCOUNT ON;
+                PRINT 'Message 1a';
+                PRINT 'Message 1b';
+                SELECT N'Field 1a' AS F UNION ALL SELECT N'Field 1b';
+                SELECT N'Field 2a' AS F UNION ALL SELECT N'Field 2b';
+                PRINT 'Message 2a';
+                PRINT 'Message 2b';
+            END
+        """)
+        # result set 1
+        self.cursor.execute("EXEC test_cursor_messages")
+        rows = [tuple(r) for r in self.cursor.fetchall()]  # convert pyodbc.Row objects for ease of use
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(self.cursor.messages), 2)
+        self.assertSequenceEqual(rows, [('Field 1a', ), ('Field 1b', )])
+        self.assertEqual(rows[0][0], 'Field 1a')
+        self.assertEqual(rows[1][0], 'Field 1b')
+        self.assertTrue(self.cursor.messages[0][1].endswith('Message 1a'))
+        self.assertTrue(self.cursor.messages[1][1].endswith('Message 1b'))
+        # result set 2
+        self.assertTrue(self.cursor.nextset())
+        rows = [tuple(r) for r in self.cursor.fetchall()]  # convert pyodbc.Row objects for ease of use
+        self.assertSequenceEqual(rows, [('Field 2a', ), ('Field 2b', )])
+        self.assertEqual(self.cursor.messages, [])
+        # result set 3
+        self.assertTrue(self.cursor.nextset())
+        with self.assertRaises(pyodbc.ProgrammingError):
+            self.cursor.fetchall()
+        self.assertTrue(self.cursor.messages[0][1].endswith('Message 2a'))
+        self.assertTrue(self.cursor.messages[1][1].endswith('Message 2b'))
+        # result set 4
+        self.assertFalse(self.cursor.nextset())
 
     def test_none_param(self):
         "Ensure None can be used for params other than the first"
@@ -1481,7 +1538,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s varchar(800))")
         def test():
             self.cursor.execute("insert into t1 values (?)", value)
-        self.assertRaises(pyodbc.DataError, test)
+        self.assertRaises(pyodbc.ProgrammingError, test)
 
     def test_geometry_null_insert(self):
         def convert(value):
