@@ -1538,7 +1538,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s varchar(800))")
         def test():
             self.cursor.execute("insert into t1 values (?)", value)
-        self.assertRaises(pyodbc.ProgrammingError, test)
+        self.assertRaises(pyodbc.DataError, test)
 
     def test_geometry_null_insert(self):
         def convert(value):
