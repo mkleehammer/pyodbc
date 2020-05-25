@@ -1240,7 +1240,7 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("create table t1(s varchar(800))")
         def test():
             self.cursor.execute("insert into t1 values (?)", value)
-        self.assertRaises((pyodbc.DataError, pyodbc.ProgrammingError), test)
+        self.assertRaises(pyodbc.DataError, test)
 
     def test_login_timeout(self):
         # This can only test setting since there isn't a way to cause it to block on the server side.
