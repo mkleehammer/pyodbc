@@ -167,10 +167,10 @@ if ($python_arch -eq "64") {
     CheckAndInstallZippedMsiFromUrl `
         -driver_name "PostgreSQL Unicode(x64)" `
         -driver_bitness "64-bit" `
-        -driver_url "https://ftp.postgresql.org/pub/odbc/versions/msi/psqlodbc_09_06_0500-x64.zip" `
-        -zipfile_path "$temp_dir\psqlodbc_09_06_0500-x64.zip" `
+        -driver_url "https://ftp.postgresql.org/pub/odbc/versions/msi/psqlodbc_11_01_0000-x64.zip" `
+        -zipfile_path "$temp_dir\psqlodbc_11_01_0000-x64.zip" `
         -zip_internal_msi_file "psqlodbc_x64.msi" `
-        -msifile_path "$cache_dir\psqlodbc_09_06_0500-x64.msi";
+        -msifile_path "$cache_dir\psqlodbc_11_01_0000-x64.msi";
 
     # MySQL 8.0 drivers apparently don't work on Python 2.7 ("system error 126").
     # Note, installing MySQL 8.0 ODBC drivers causes the 5.3 drivers to be uninstalled.
@@ -193,10 +193,10 @@ if ($python_arch -eq "64") {
     CheckAndInstallZippedMsiFromUrl `
         -driver_name "PostgreSQL Unicode" `
         -driver_bitness "32-bit" `
-        -driver_url "https://ftp.postgresql.org/pub/odbc/versions/msi/psqlodbc_09_06_0500-x86.zip" `
-        -zipfile_path "$temp_dir\psqlodbc_09_06_0500-x86.zip" `
+        -driver_url "https://ftp.postgresql.org/pub/odbc/versions/msi/psqlodbc_11_01_0000-x86.zip" `
+        -zipfile_path "$temp_dir\psqlodbc_11_01_0000-x86.zip" `
         -zip_internal_msi_file "psqlodbc_x86.msi" `
-        -msifile_path "$cache_dir\psqlodbc_09_06_0500-x86.msi";
+        -msifile_path "$cache_dir\psqlodbc_11_01_0000-x86.msi";
 
     # MySQL 8.0 drivers apparently don't work on Python 2.7 ("system error 126") so install 5.3 instead.
     # Note, installing MySQL 8.0 ODBC drivers causes the 5.3 drivers to be uninstalled.
