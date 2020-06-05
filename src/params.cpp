@@ -606,6 +606,8 @@ static void FreeInfos(ParamInfo* a, Py_ssize_t count)
             pyodbc_free(a[i].ParameterValuePtr);
         if (a[i].ParameterType == SQL_SS_TABLE && a[i].nested)
             FreeInfos(a[i].nested, a[i].maxlength);
+        if (a[i].type_name)
+            pyodbc_free(a[i].type_name);
         Py_XDECREF(a[i].pObject);
     }
     pyodbc_free(a);
@@ -1193,7 +1195,36 @@ static bool GetTableInfo(Cursor *cur, Py_ssize_t index, PyObject* param, ParamIn
     }
     nrows -= nskip;
 
-    if (!nskip)
+    if (!nrows)
+    {
+        // With no table rows to examine, we'll need the TPV's type. Note that
+        // we don't really need any values provided by SQLDescribeParam, but
+        // without invoking that function, the next call (to get the table type
+        // name) will fail for some some reason. Failure to retrieve the name
+        // will be detected later (when the needed type_name pointer is found
+        // to be NULL).
+        SQLHANDLE ipd;
+        SQLWCHAR name[257] = {0};
+        SQLINTEGER len = 0;
+        SQLSMALLINT datatype;
+        SQLGetStmtAttr(cur->hstmt, SQL_ATTR_IMP_PARAM_DESC, &ipd,
+                       SQL_IS_POINTER, &len);
+        SQLDescribeParam(cur->hstmt, index + 1, &datatype, 0, 0, 0);
+        SQLRETURN rc = SQLGetDescFieldW(ipd, index + 1, SQL_CA_SS_TYPE_NAME,
+                                        name, sizeof(name), &len);
+        if (SQL_SUCCEEDED(rc))
+        {
+            info.type_name = (SQLWCHAR*)pyodbc_malloc(len + sizeof(SQLWCHAR));
+            if (!info.type_name)
+            {
+                PyErr_NoMemory();
+                return false;
+            }
+            memcpy(info.type_name, name, len + sizeof(SQLWCHAR));
+        }
+    }
+
+    else if (!nskip)
     {
         // Need to describe in order to fill in IPD with the TVP's type name, because user has not provided it
         SQLSMALLINT tvptype;
@@ -1434,9 +1465,15 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
             return false;
         }
 
-        Py_ssize_t i = PySequence_Size(info.pObject) - info.ColumnSize;
+        // Make sure the user didn't pass None for the TVP.
+        Py_ssize_t i = PySequence_Size(info.pObject);
+        if (i < 0)
+        {
+            RaiseErrorV(0, ProgrammingError, "A TVP must be a Sequence.");
+        }
         Py_ssize_t ncols = 0;
-        while (i < PySequence_Size(info.pObject))
+        i -= info.ColumnSize;
+        while (i >= 0 && i < PySequence_Size(info.pObject))
         {
             PyObject *row = PySequence_GetItem(info.pObject, i);
             Py_XDECREF(row);
@@ -1455,12 +1492,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
             ncols = PySequence_Size(row);
             i++;
         }
-        if (!ncols)
-        {
-            // TVP has no columns --- is null
-            info.nested = 0;
-        }
-        else
+        if (ncols)
         {
             PyObject *row = PySequence_GetItem(info.pObject, PySequence_Size(info.pObject) - info.ColumnSize);
             Py_XDECREF(row);
@@ -1493,6 +1525,132 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
                 if (!SQL_SUCCEEDED(ret))
                 {
                     RaiseErrorFromHandle(cur->cnxn, "SQLBindParameter", GetConnection(cur)->hdbc, cur->hstmt);
+                    return false;
+                }
+            }
+        }
+
+        else
+        {
+            // An empty sequence was passed for the TVP, so we can't use
+            // the data to figure even how many columns the TVP has. Get
+            // some help from the server.
+            SQLHANDLE chstmt;
+            ParamInfo* column = 0;
+
+            if (!info.type_name)
+            {
+                RaiseErrorV(0, ProgrammingError,
+                            "Unable to find TVP type name.");
+                return false;
+            }
+            ret = SQLAllocHandle(SQL_HANDLE_STMT, GetConnection(cur)->hdbc,
+                                 &chstmt);
+            if (!SQL_SUCCEEDED(ret))
+            {
+                RaiseErrorFromHandle(cur->cnxn, "SQLAllocHandle",
+                                     GetConnection(cur)->hdbc, cur->hstmt);
+                return false;
+            }
+            ret = SQLSetStmtAttr(chstmt, SQL_SOPT_SS_NAME_SCOPE,
+                                 (SQLPOINTER)SQL_SS_NAME_SCOPE_TABLE_TYPE,
+                                 SQL_IS_UINTEGER);
+            if (!SQL_SUCCEEDED(ret))
+            {
+                RaiseErrorFromHandle(cur->cnxn, "SQLSetStmtAttr",
+                                     GetConnection(cur)->hdbc, cur->hstmt);
+                return false;
+            }
+            Py_BEGIN_ALLOW_THREADS
+                ret = SQLColumnsW(chstmt, NULL, 0, NULL, 0, info.type_name,
+                                  SQL_NTS, NULL, 0);
+            Py_END_ALLOW_THREADS
+            if (GetConnection(cur)->hdbc == SQL_NULL_HANDLE)
+            {
+                RaiseErrorV(0, ProgrammingError,
+                            "The cursor's connection was closed.");
+                return false;
+            }
+            if (!SQL_SUCCEEDED(ret))
+            {
+                RaiseErrorFromHandle(cur->cnxn, "SQLColumnsW",
+                                     GetConnection(cur)->hdbc, cur->hstmt);
+                return false;
+            }
+
+            // Now bind the columns for the TVP. Even in the case of
+            // an empty table, the bindings must be performed, or the
+            // Python interpreter will crash. See
+            // https://github.com/mkleehammer/pyodbc/issues/772.
+            for (;;)
+            {
+                SQLSMALLINT datatype, digits;
+                SQLINTEGER colsize, buflen;
+                Py_BEGIN_ALLOW_THREADS
+                    ret = SQLFetch(chstmt);
+                Py_END_ALLOW_THREADS
+                if (GetConnection(cur)->hdbc == SQL_NULL_HANDLE)
+                {
+                    RaiseErrorV(0, ProgrammingError,
+                                "The cursor's connection was closed.");
+                    return false;
+                }
+                if (!SQL_SUCCEEDED(ret))
+                    break;
+                SQLGetData(chstmt, 5, SQL_C_SSHORT, &datatype, 0, 0);
+                SQLGetData(chstmt, 7, SQL_C_SLONG, &colsize, 0, 0);
+                SQLGetData(chstmt, 8, SQL_C_SLONG, &buflen, 0, 0);
+                SQLGetData(chstmt, 9, SQL_C_SSHORT, &digits, 0, 0);
+                if (ncols++)
+                {
+                    if (!pyodbc_realloc((BYTE**)&info.nested,
+                                        ncols * sizeof(ParamInfo)))
+                    {
+                        PyErr_NoMemory();
+                        return false;
+                    }
+                    column = info.nested + ncols - 1;
+                }
+                else
+                {
+                    column = info.nested =
+                        (ParamInfo*)pyodbc_malloc(ncols * sizeof(ParamInfo));
+                    if (!column)
+                    {
+                        PyErr_NoMemory();
+                        return false;
+                    }
+                }
+                memset(column, 0, sizeof(ParamInfo));
+                column->ValueType = SQL_C_DEFAULT;
+                column->ParameterType = datatype;
+                column->ColumnSize = colsize;
+                column->BufferLength = buflen;
+                column->DecimalDigits = digits;
+                column->StrLen_or_Ind = SQL_DATA_AT_EXEC;
+            }
+            for (i = 0; i < ncols; ++i)
+            {
+                Py_BEGIN_ALLOW_THREADS
+                    ret = SQLBindParameter(cur->hstmt, (SQLUSMALLINT)(i + 1),
+                                           SQL_PARAM_INPUT, SQL_C_DEFAULT,
+                                           info.nested[i].ParameterType,
+                                           info.nested[i].ColumnSize,
+                                           info.nested[i].DecimalDigits,
+                                           info.nested + i,
+                                           info.nested[i].BufferLength,
+                                           &info.nested[i].StrLen_or_Ind);
+                Py_END_ALLOW_THREADS
+                if (GetConnection(cur)->hdbc == SQL_NULL_HANDLE)
+                {
+                    RaiseErrorV(0, ProgrammingError,
+                                "The cursor's connection was closed.");
+                    return false;
+                }
+                if (!SQL_SUCCEEDED(ret))
+                {
+                    RaiseErrorFromHandle(cur->cnxn, "SQLBindParameter",
+                                         GetConnection(cur)->hdbc, cur->hstmt);
                     return false;
                 }
             }
