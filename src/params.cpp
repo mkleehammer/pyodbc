@@ -1436,7 +1436,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 
         Py_ssize_t i = PySequence_Size(info.pObject) - info.ColumnSize;
         Py_ssize_t ncols = 0;
-        while (i < PySequence_Size(info.pObject))
+        while (i >= 0 && i < PySequence_Size(info.pObject))
         {
             PyObject *row = PySequence_GetItem(info.pObject, i);
             Py_XDECREF(row);
@@ -1459,6 +1459,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
         {
             // TVP has no columns --- is null
             info.nested = 0;
+            info.StrLen_or_Ind = SQL_DEFAULT_PARAM;
         }
         else
         {
