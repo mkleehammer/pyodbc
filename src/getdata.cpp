@@ -617,6 +617,10 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
     SQLLEN cbFetched = 0;
     SQLRETURN ret;
 
+    PyObject* correctionDelta = NULL;
+    PyObject* correctionDateTime = NULL;
+    PyObject* corrected_timestamp = NULL;
+
     Py_BEGIN_ALLOW_THREADS
     ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_TYPE_TIMESTAMP, &value, sizeof(value), &cbFetched);
     Py_END_ALLOW_THREADS
@@ -639,6 +643,19 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
     }
 
     int micros = (int)(value.fraction / 1000); // nanos --> micros
+
+    if (value.hour == 24) {  // some backends support 24:00 (hh:mm) as "end of a day"
+        correctionDelta = PyDelta_FromDSU(0, 24*60*60, 0); // exactly 24 hours
+        correctionDateTime =
+            PyDateTime_FromDateAndTime(value.year, value.month, value.day, 0, value.minute, value.second, micros),
+
+        corrected_timestamp = PyObject_CallMethod(correctionDateTime, "__add__", "O", correctionDelta);
+
+        Py_DECREF(correctionDelta);
+        Py_DECREF(correctionDateTime);
+        return corrected_timestamp;
+    }
+
     return PyDateTime_FromDateAndTime(value.year, value.month, value.day, value.hour, value.minute, value.second, micros);
 }
 
