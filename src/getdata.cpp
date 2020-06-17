@@ -10,6 +10,7 @@
 #include "connection.h"
 #include "errors.h"
 #include "dbspecific.h"
+#include <time.h>
 #include <datetime.h>
 
 // NULL terminator notes:
@@ -617,10 +618,7 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
     SQLLEN cbFetched = 0;
     SQLRETURN ret;
 
-    PyObject* one_day = NULL;
-    PyObject* previous_day = NULL;
-    PyObject* corrected_day = NULL;
-    PyObject* final_datetime = NULL;
+    struct tm t;
 
     Py_BEGIN_ALLOW_THREADS
     ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_TYPE_TIMESTAMP, &value, sizeof(value), &cbFetched);
@@ -646,20 +644,16 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
     int micros = (int)(value.fraction / 1000); // nanos --> micros
 
     if (value.hour == 24) {  // some backends support 24:00 (hh:mm) as "end of a day"
-        one_day = PyDelta_FromDSU(1, 0, 0);
-        previous_day = PyDate_FromDate(value.year, value.month, value.day);
-        corrected_day = PyObject_CallMethod(previous_day, "__add__", "O", one_day);
-        final_datetime = PyDateTime_FromDateAndTime(
-            PyDateTime_GET_YEAR(corrected_day),
-            PyDateTime_GET_MONTH(corrected_day),
-            PyDateTime_GET_DAY(corrected_day),
-            0, value.minute, value.second, micros
-        );
+        t.tm_year = value.year - 1900;  // tm_year is 1900-based
+        t.tm_mon = value.month - 1;  // tm_mon is zero-based
+        t.tm_mday = value.day;
+        t.tm_hour = value.hour; t.tm_min = value.minute; t.tm_sec = value.second;
+        t.tm_isdst = -1; // auto-adjust for dst
 
-        Py_DECREF(one_day);
-        Py_DECREF(previous_day);
-        Py_DECREF(corrected_day);
-        return final_datetime;
+        mktime(t); // normalize values in t
+        return PyDateTime_FromDateAndTime(
+            t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm.min, t.tm_sec, micros
+        );
     }
 
     return PyDateTime_FromDateAndTime(value.year, value.month, value.day, value.hour, value.minute, value.second, micros);
