@@ -617,9 +617,10 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
     SQLLEN cbFetched = 0;
     SQLRETURN ret;
 
-    PyObject* correctionDelta = NULL;
-    PyObject* correctionDateTime = NULL;
-    PyObject* corrected_timestamp = NULL;
+    PyObject* one_day = NULL;
+    PyObject* previous_day = NULL;
+    PyObject* corrected_day = NULL;
+    PyObject* final_datetime = NULL;
 
     Py_BEGIN_ALLOW_THREADS
     ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_TYPE_TIMESTAMP, &value, sizeof(value), &cbFetched);
@@ -645,15 +646,20 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
     int micros = (int)(value.fraction / 1000); // nanos --> micros
 
     if (value.hour == 24) {  // some backends support 24:00 (hh:mm) as "end of a day"
-        correctionDelta = PyDelta_FromDSU(0, 24*60*60, 0); // exactly 24 hours
-        correctionDateTime =
-            PyDateTime_FromDateAndTime(value.year, value.month, value.day, 0, value.minute, value.second, micros),
+        one_day = PyDelta_FromDSU(1, 0, 0);
+        previous_day = PyDate_FromDate(value.year, value.month, value.day);
+        corrected_day = PyObject_CallMethod(previous_day, "__add__", "O", one_day);
+        final_datetime = PyDateTime_FromDateAndTime(
+            PyDateTime_GET_YEAR(corrected_day),
+            PyDateTime_GET_MONTH(corrected_day),
+            PyDateTime_GET_DAY(corrected_day),
+            0, value.minute, value.second, micros
+        );
 
-        corrected_timestamp = PyObject_CallMethod(correctionDateTime, "__add__", "O", correctionDelta);
-
-        Py_DECREF(correctionDelta);
-        Py_DECREF(correctionDateTime);
-        return corrected_timestamp;
+        Py_DECREF(one_day);
+        Py_DECREF(previous_day);
+        Py_DECREF(corrected_day);
+        return final_datetime;
     }
 
     return PyDateTime_FromDateAndTime(value.year, value.month, value.day, value.hour, value.minute, value.second, micros);
