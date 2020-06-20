@@ -1,4 +1,4 @@
-
+import sys
 import unittest
 from testutils import *
 import dbapi20
@@ -38,6 +38,8 @@ def main():
     testRunner = unittest.TextTestRunner(verbosity=(options.verbose > 1) and 9 or 0)
     result = testRunner.run(suite)
 
+    return result
+
+
 if __name__ == '__main__':
-    main()
-    
+    sys.exit(0 if main().wasSuccessful() else 1)

@@ -783,6 +783,15 @@ class SqlServerTestCase(unittest.TestCase):
         result = self.cursor.execute("select d from t1").fetchone()[0]
         self.assertEqual(result, input)
 
+    def test_overflow_int(self):
+        # python allows integers of any size, bigger than an 8 byte int can contain
+        input = 9999999999999999999999999999999999999
+        self.cursor.execute("create table t1(d bigint)")
+        self.cnxn.commit()
+        self.assertRaises(OverflowError, self.cursor.execute, "insert into t1 values (?)", input)
+        result = self.cursor.execute("select * from t1").fetchall()
+        self.assertEqual(result, [])
+
     def test_float(self):
         value = 1234.567
         self.cursor.execute("create table t1(n float)")
@@ -803,6 +812,14 @@ class SqlServerTestCase(unittest.TestCase):
         self.cursor.execute("insert into t1 values (?)", value)
         result  = self.cursor.execute("select n from t1").fetchone()[0]
         self.assertEqual(value, result)
+
+    def test_non_numeric_float(self):
+        self.cursor.execute("create table t1(d float)")
+        self.cnxn.commit()
+        for input in (float('+Infinity'), float('-Infinity'), float('NaN')):
+            self.assertRaises(pyodbc.ProgrammingError, self.cursor.execute, "insert into t1 values (?)", input)
+        result = self.cursor.execute("select * from t1").fetchall()
+        self.assertEqual(result, [])
 
     #
     # stored procedures
@@ -1610,11 +1627,7 @@ class SqlServerTestCase(unittest.TestCase):
             table_name = 'pyodbc_89abcdef'[:i]
 
             self.cursor.execute("""\
-            BEGIN TRY
-                DROP TABLE {0};
-            END TRY
-            BEGIN CATCH
-            END CATCH
+            IF OBJECT_ID (N'{0}', N'U') IS NOT NULL DROP TABLE {0};
             CREATE TABLE {0} (id INT PRIMARY KEY);
             """.format(table_name))
 
@@ -1808,6 +1821,8 @@ def main():
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
     result = testRunner.run(suite)
 
+    return result
+
 
 if __name__ == '__main__':
 
@@ -1816,4 +1831,4 @@ if __name__ == '__main__':
     add_to_path()
 
     import pyodbc
-    main()
+    sys.exit(0 if main().wasSuccessful() else 1)

@@ -19,6 +19,7 @@ You can also put the connection string into a tmp/setup.cfg file like so:
 Note: Be sure to use the "Unicode" (not the "ANSI") version of the PostgreSQL ODBC driver.
 """
 
+import sys
 import uuid
 import unittest
 from decimal import Decimal
@@ -702,7 +703,10 @@ def main():
         s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, m) for m in methods ])
 
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
-    testRunner.run(s)
+    result = testRunner.run(s)
+
+    return result
+
 
 if __name__ == '__main__':
 
@@ -711,4 +715,4 @@ if __name__ == '__main__':
     add_to_path()
 
     import pyodbc
-    main()
+    sys.exit(0 if main().wasSuccessful() else 1)
