@@ -66,7 +66,7 @@ class SQLPutDataUnicodeToBytesMemoryLeakTestCase(unittest.TestCase):
 
     def test__varchar_max__inserting_many_rows__same_memory_usage(self):
         varchar_limit = "max"
-        num_rows = 10_000
+        num_rows = 50_000
         data = [(i, f"col{i:06}", 3.14159265 * (i + 1)) for i in range(num_rows)]
         table_name = "pd_test"
         col_names = ["id", "txt_col", "float_col"]
