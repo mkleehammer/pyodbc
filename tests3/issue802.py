@@ -47,8 +47,8 @@ CONNECTION_STRING_ERROR_MESSAGE = (
 process = psutil.Process()
 
 
-def memory_mib():
-    return process.memory_info().vms / MB
+def memory():
+    return process.memory_info().vms
 
 
 class SQLPutDataUnicodeToBytesMemoryLeakTestCase(unittest.TestCase):
@@ -76,9 +76,9 @@ class SQLPutDataUnicodeToBytesMemoryLeakTestCase(unittest.TestCase):
             # First time adds memory, not related to the test.
             self.action(cnxn, data, ins_sql, table_name, varchar_limit)
             for iteration in range(3):
-                start_memory = memory_mib()
+                start_memory = memory()
                 self.action(cnxn, data, ins_sql, table_name, varchar_limit)
-                end_memory = memory_mib()
+                end_memory = memory()
                 memory_diff = end_memory - start_memory
                 self.assertLess(memory_diff, 100 * KB)
 
