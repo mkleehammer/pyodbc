@@ -290,10 +290,15 @@ class SqlServerTestCase(unittest.TestCase):
         """
         The implementation for string, Unicode, and binary tests.
         """
-        assert colsize is None or isinstance(colsize, int), colsize
-        assert colsize is None or (value is None or colsize >= len(value))
+        assert (
+            value is None
+            or
+            colsize == -1 or colsize is None or colsize >= len(value)
+        ), colsize
 
-        if colsize:
+        if colsize == -1:
+            sql = "create table t1(s %s(max))" % sqltype
+        elif colsize:
             sql = "create table t1(s %s(%s))" % (sqltype, colsize)
         else:
             sql = "create table t1(s %s)" % sqltype
@@ -383,6 +388,14 @@ class SqlServerTestCase(unittest.TestCase):
     for value in STR_FENCEPOSTS:
         locals()['test_varchar_%s' % len(value)] = _maketest(value)
 
+    # Generate a test for each fencepost size: test_varchar_0, etc.
+    def _maketest(value):
+        def t(self):
+            self._test_strtype('varchar', value, colsize=-1)
+        return t
+    for value in STR_FENCEPOSTS:
+        locals()['test_varchar_max_%s' % len(value)] = _maketest(value)
+
     def test_varchar_many(self):
         self.cursor.execute("create table t1(c1 varchar(300), c2 varchar(300), c3 varchar(300))")
 
@@ -411,6 +424,13 @@ class SqlServerTestCase(unittest.TestCase):
         return t
     for value in STR_FENCEPOSTS:
         locals()['test_unicode_%s' % len(value)] = _maketest(value)
+
+    def _maketest(value):
+        def t(self):
+            self._test_strtype('nvarchar', value, colsize=-1)
+        return t
+    for value in STR_FENCEPOSTS:
+        locals()['test_unicode_max_%s' % len(value)] = _maketest(value)
 
     def test_unicode_longmax(self):
         # Issue 188:	Segfault when fetching NVARCHAR(MAX) data over 511 bytes
