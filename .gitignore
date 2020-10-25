@@ -49,6 +49,7 @@ x86/
 # Other
 pyodbc.conf
 tmp
+tags
 
 # The Access unit tests copy empty.accdb and empty.mdb to these names and use them.
 test.accdb

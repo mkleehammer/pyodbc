@@ -66,7 +66,9 @@ class SqlServerTestCase(unittest.TestCase):
     SMALL_FENCEPOST_SIZES = [ 0, 1, 255, 256, 510, 511, 512, 1023, 1024, 2047, 2048, 4000 ]
     LARGE_FENCEPOST_SIZES = [ 4095, 4096, 4097, 10 * 1024, 20 * 1024 ]
 
-    STR_FENCEPOSTS = [ _generate_test_string(size) for size in SMALL_FENCEPOST_SIZES ]
+    STR_FENCEPOSTS = [_generate_test_string(size) for size in SMALL_FENCEPOST_SIZES]
+    LARGE_STR_FENCEPOSTS = STR_FENCEPOSTS + [_generate_test_string(size) for size in LARGE_FENCEPOST_SIZES]
+
     BYTE_FENCEPOSTS    = [ bytes(s, 'ascii') for s in STR_FENCEPOSTS ]
     IMAGE_FENCEPOSTS   = BYTE_FENCEPOSTS + [ bytes(_generate_test_string(size), 'ascii') for size in LARGE_FENCEPOST_SIZES ]
 
@@ -393,7 +395,7 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strtype('varchar', value, colsize=-1)
         return t
-    for value in STR_FENCEPOSTS:
+    for value in LARGE_STR_FENCEPOSTS:
         locals()['test_varchar_max_%s' % len(value)] = _maketest(value)
 
     def test_varchar_many(self):
@@ -429,7 +431,7 @@ class SqlServerTestCase(unittest.TestCase):
         def t(self):
             self._test_strtype('nvarchar', value, colsize=-1)
         return t
-    for value in STR_FENCEPOSTS:
+    for value in LARGE_STR_FENCEPOSTS:
         locals()['test_unicode_max_%s' % len(value)] = _maketest(value)
 
     def test_unicode_longmax(self):
