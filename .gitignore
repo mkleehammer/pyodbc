@@ -27,9 +27,9 @@ wheelhouse/
 .coverage
 
 # Virtual Environments
-venv/
-.env/
-.venv/
+/venv*
+/.env/
+/.venv
 
 # JetBrains
 .idea/
