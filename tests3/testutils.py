@@ -39,7 +39,7 @@ def print_library_info(cnxn):
     import pyodbc
     print('python:  %s' % sys.version)
     print('pyodbc:  %s %s' % (pyodbc.version, os.path.abspath(pyodbc.__file__)))
-    print('odbc:    %s' % cnxn.getinfo(pyodbc.SQL_ODBC_VER))
+#    print('odbc:    %s' % cnxn.getinfo(pyodbc.SQL_ODBC_VER))
     print('driver:  %s %s' % (cnxn.getinfo(pyodbc.SQL_DRIVER_NAME), cnxn.getinfo(pyodbc.SQL_DRIVER_VER)))
     print('         supports ODBC version %s' % cnxn.getinfo(pyodbc.SQL_DRIVER_ODBC_VER))
     print('os:      %s' % platform.system())
