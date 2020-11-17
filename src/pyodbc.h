@@ -53,8 +53,15 @@ typedef unsigned long long UINT64;
 #include <windows.h>
 #endif
 
-#include <sql.h>
-#include <sqlext.h>
+#if ( defined DBMAKER && defined(__GNUC__) && !defined(__MINGW32__))
+#define DWORD UDWORD
+#define WORD UDWORD
+#define BYTE unsigned char
+#define size_t unsigned long
+#endif
+
+ #include <sql.h>
+ #include <sqlext.h>
 
 #if PY_VERSION_HEX < 0x02050000 && !defined(PY_SSIZE_T_MIN)
 typedef int Py_ssize_t;
@@ -148,7 +155,7 @@ inline void DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
 #define pyodbc_free free
 // #endif
 
-bool pyodbc_realloc(BYTE** pp, size_t newlen);
+bool pyodbc_realloc(BYTE** pp, size_t len);
 // A wrapper around realloc with a safer interface.  If it is successful, *pp is updated to the
 // new pointer value.  If not successful, it is not modified.  (It is easy to forget and lose
 // the old pointer value with realloc.)

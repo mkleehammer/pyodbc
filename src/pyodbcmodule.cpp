@@ -140,7 +140,7 @@ bool pyodbc_realloc(BYTE** pp, size_t newlen)
 }
 
 
-
+#ifdef SQL_GUID
 bool UseNativeUUID()
 {
     PyObject* o = PyObject_GetAttrString(pModule, "native_uuid");
@@ -149,7 +149,7 @@ bool UseNativeUUID()
     Py_XDECREF(o);
     return b;
 }
-
+#endif
 HENV henv = SQL_NULL_HANDLE;
 
 Py_UNICODE chDecimal = '.';
@@ -631,6 +631,8 @@ static PyObject* mod_datasources(PyObject* self)
         Py_BEGIN_ALLOW_THREADS
         ret = SQLDataSources(henv, nDirection, szDSN,  _countof(szDSN),  &cbDSN, szDesc, _countof(szDesc), &cbDesc);
         Py_END_ALLOW_THREADS
+        if (!cbDSN || !cbDesc)
+            ret = SQL_NO_DATA;
         if (!SQL_SUCCEEDED(ret))
             break;
 
@@ -914,7 +916,9 @@ static const ConstantDef aConstants[] = {
     MAKECONST(SQL_INTERVAL_HOUR_TO_MINUTE),
     MAKECONST(SQL_INTERVAL_HOUR_TO_SECOND),
     MAKECONST(SQL_INTERVAL_MINUTE_TO_SECOND),
+#ifdef SQL_GUID
     MAKECONST(SQL_GUID),
+#endif
     MAKECONST(SQL_NULLABLE),
     MAKECONST(SQL_NO_NULLS),
     MAKECONST(SQL_NULLABLE_UNKNOWN),
@@ -1097,7 +1101,9 @@ static const ConstantDef aConstants[] = {
     MAKECONST(SQL_ODBC_CURSORS), MAKECONST(SQL_ATTR_ODBC_CURSORS),
     MAKECONST(SQL_QUIET_MODE), MAKECONST(SQL_ATTR_QUIET_MODE),
     MAKECONST(SQL_PACKET_SIZE),
+#ifndef DBMAKER
     MAKECONST(SQL_ATTR_ANSI_APP),
+#endif
 
     // SQL_CONVERT_X
     MAKECONST(SQL_CONVERT_FUNCTIONS),
@@ -1109,7 +1115,9 @@ static const ConstantDef aConstants[] = {
     MAKECONST(SQL_CONVERT_DECIMAL),
     MAKECONST(SQL_CONVERT_DOUBLE),
     MAKECONST(SQL_CONVERT_FLOAT),
+#ifdef SQL_GUID
     MAKECONST(SQL_CONVERT_GUID),
+#endif
     MAKECONST(SQL_CONVERT_INTEGER),
     MAKECONST(SQL_CONVERT_INTERVAL_DAY_TIME),
     MAKECONST(SQL_CONVERT_INTERVAL_YEAR_MONTH),
@@ -1231,8 +1239,13 @@ initpyodbc(void)
     PyModule_AddIntConstant(module, "threadsafety", 1);
     PyModule_AddStringConstant(module, "apilevel", "2.0");
     PyModule_AddStringConstant(module, "paramstyle", "qmark");
+#ifdef DBMAKER
+    PyModule_AddObject(module, "pooling", Py_False);
+    Py_INCREF(Py_False);
+#else
     PyModule_AddObject(module, "pooling", Py_True);
     Py_INCREF(Py_True);
+#endif 
     PyModule_AddObject(module, "lowercase", Py_False);
     Py_INCREF(Py_False);
     PyModule_AddObject(module, "native_uuid", Py_False);

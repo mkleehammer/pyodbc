@@ -84,7 +84,9 @@ const char* CTypeName(SQLSMALLINT n)
         _MAKESTR(SQL_C_ULONG);
         _MAKESTR(SQL_C_USHORT);
         _MAKESTR(SQL_C_UTINYINT);
+#ifdef SQL_GUID
         _MAKESTR(SQL_C_GUID);
+#endif
     }
     return "unknown";
 }

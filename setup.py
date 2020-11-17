@@ -171,8 +171,7 @@ def get_compiler_settings(version_str):
         if sys.hexversion >= 0x03050000:
             settings['extra_compile_args'].append('/d2FH4-')
             settings['extra_link_args'].append('/d2:-FH4-')
-
-        settings['libraries'].append('odbc32')
+ #       settings['libraries'].append('odbc32')
         settings['libraries'].append('advapi32')
 
     elif os.environ.get("OS", '').lower().startswith('windows'):
@@ -224,8 +223,8 @@ def get_compiler_settings(version_str):
 #            settings['define_macros'].append(('SQL_WCHART_CONVERT', '1'))
 
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
-        settings['libraries'].append('odbc')
-
+#        settings['libraries'].append('odbc')
+    
     return settings
 
 

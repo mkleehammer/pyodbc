@@ -575,7 +575,7 @@ static PyObject* GetSqlServerTime(Cursor* cur, Py_ssize_t iCol)
     int micros = (int)(value.fraction / 1000); // nanos --> micros
     return PyTime_FromTime(value.hour, value.minute, value.second, micros);
 }
-
+#ifdef SQL_GUID
 static PyObject* GetUUID(Cursor* cur, Py_ssize_t iCol)
 {
     // REVIEW: Since GUID is a fixed size, do we need to pass the size or cbFetched?
@@ -609,7 +609,7 @@ static PyObject* GetUUID(Cursor* cur, Py_ssize_t iCol)
     Py_DECREF(uuid_type);
     return uuid;
 }
-
+#endif
 static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
 {
     TIMESTAMP_STRUCT value;
@@ -689,7 +689,7 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
         pytype = (PyObject*)&PyUnicode_Type;
 #endif
         break;
-
+#ifdef SQL_GUID
     case SQL_GUID:
         if (UseNativeUUID())
         {
@@ -708,7 +708,7 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
 #endif
         }
         break;
-
+#endif
     case SQL_WCHAR:
     case SQL_WVARCHAR:
     case SQL_WLONGVARCHAR:
@@ -800,13 +800,13 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_SS_XML:
     case SQL_DB2_XML:
         return GetText(cur, iCol);
-
+#ifdef SQL_GUID
     case SQL_GUID:
         if (UseNativeUUID())
             return GetUUID(cur, iCol);
         return GetText(cur, iCol);
         break;
-
+#endif
     case SQL_BINARY:
     case SQL_VARBINARY:
     case SQL_LONGVARBINARY:
