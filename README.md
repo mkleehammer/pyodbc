@@ -21,7 +21,7 @@ open cmd with administrator
 cd pyodbc
 python setup.py build_ext  --define DBMAKER --include-dirs C:/dbmaker/5.4/include   --library-dirs C:/dbmaker/5.4/lib  --libraries "dmapi54 odbc32"
 ```
-If it is caused Error ¡°error: Microsoft Visual C++ 14.0 is required. Get it with "Microsoft Visual C++ Build Tools": https://visualstudio.microsoft.com/downloads/,
+If it is caused Error "error: Microsoft Visual C++ 14.0 is required. Get it with "Microsoft Visual C++ Build Tools": https://visualstudio.microsoft.com/downloads/
 
 please intall "Desktop Development with C++" with Visual Studio installer.
 
@@ -42,11 +42,11 @@ python3 setup.py build_ext  --define DBMAKER  --include-dirs /home/dbmaker/5.4/i
 
 **2) cd tests3**
 
-**3) python dbmakertests.py -v "Driver=DBMaker 5.4 Driver; Database=utf8db; uid=sysadm; pwd="
+**3) python dbmakertests.py -v "Driver=DBMaker 5.4 Driver; Database=utf8db; uid=sysadm; pwd="**
 
-Note£ºfor windows, please copy dmapi54.dll to build path of pyodbc.
+Note: for windows, please copy dmapi54.dll to build path of pyodbc.
 
-for example£º
+for example:
 ```
  copy "C:\DBMaker\5.4\bin\dmapi54.dll" "E:\pyodbc\pyodbc\build\lib.win-amd64-3.8\" 
 ```
