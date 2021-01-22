@@ -55,13 +55,3 @@ tags
 test.accdb
 test.mdb
 
-# JetBrain's IDE
-.idea/
-
-# Visual Studio IDE
-.vs/
-*.sln
-*.vcxproj*
-
-# Visual Studio build folder
-x64/
