@@ -484,7 +484,7 @@ static char row_doc[] =
     "  row = cursor.fetchone()\n"
     "  print row.customer_id, row.Name_With_Spaces\n"
     "\n"
-    "If using this non-standard feature, it is often convenient to specifiy the name\n"
+    "If using this non-standard feature, it is often convenient to specify the name\n"
     "using the SQL 'as' keyword:\n"
     "\n"
     "  cursor.execute(\"select count(*) as total from tmp\")\n"

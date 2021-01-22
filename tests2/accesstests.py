@@ -650,9 +650,10 @@ def main():
     CNXNSTRING = 'DRIVER={%s};DBQ=%s;ExtendedAnsiSQL=1' % (driver, dest)
     print(CNXNSTRING)
 
-    cnxn = pyodbc.connect(CNXNSTRING)
-    print_library_info(cnxn)
-    cnxn.close()
+    if options.verbose:
+        cnxn = pyodbc.connect(CNXNSTRING)
+        print_library_info(cnxn)
+        cnxn.close()
 
     suite = load_tests(AccessTestCase, options.test)
 

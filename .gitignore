@@ -1,15 +1,55 @@
+# This file is based largely on the GitHub .gitignore template for Python:
+# https://github.com/github/gitignore/blob/master/Python.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
 setup.cfg
+
+# C extensions
+*.so
+*.dll
+
+# Distribution / packaging
+build/
+dist/
+lib/
+lib64/
 MANIFEST
-build
-dist
-*.pdb
-*.pyc
-*.pyo
-tmp
-TAGS
-pyodbc.egg-info
-pyodbc.conf
+/PKG-INFO
+sdist/
+wheelhouse/
+*.egg-info/
+*.egg
+
+# Unit test / coverage reports
+.tox/
+.coverage
+
+# Virtual Environments
 /venv*
+/.env/
+/.venv
+
+# JetBrains
+.idea/
+
+# Visual Studio
+.vscode/
+.vs/
+*.sln
+*.vcxproj*
+x64/
+x86/
+*.pdb
+
+# Executables
+*.exe
+
+# Other
+pyodbc.conf
+tmp
+tags
 
 # The Access unit tests copy empty.accdb and empty.mdb to these names and use them.
 test.accdb

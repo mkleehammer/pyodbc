@@ -575,9 +575,7 @@ static PyObject* mod_drivers(PyObject* self)
 
     for (;;)
     {
-        Py_BEGIN_ALLOW_THREADS
         ret = SQLDrivers(henv, nDirection, szDriverDesc, _countof(szDriverDesc), &cbDriverDesc, 0, 0, &cbAttrs);
-        Py_END_ALLOW_THREADS
 
         if (!SQL_SUCCEEDED(ret))
             break;
@@ -617,9 +615,9 @@ static PyObject* mod_datasources(PyObject* self)
     if (!result)
         return 0;
 
-    SQLCHAR szDSN[SQL_MAX_DSN_LENGTH];
+    SQLCHAR szDSN[500]; // Using a buffer larger than SQL_MAX_DSN_LENGTH + 1 for systems that ignore it
     SWORD cbDSN;
-    SQLCHAR szDesc[200];
+    SQLCHAR szDesc[500];
     SWORD cbDesc;
 
     SQLUSMALLINT nDirection = SQL_FETCH_FIRST;
@@ -628,9 +626,8 @@ static PyObject* mod_datasources(PyObject* self)
 
     for (;;)
     {
-        Py_BEGIN_ALLOW_THREADS
         ret = SQLDataSources(henv, nDirection, szDSN,  _countof(szDSN),  &cbDSN, szDesc, _countof(szDesc), &cbDesc);
-        Py_END_ALLOW_THREADS
+
         if (!SQL_SUCCEEDED(ret))
             break;
 
