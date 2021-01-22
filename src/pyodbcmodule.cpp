@@ -575,9 +575,7 @@ static PyObject* mod_drivers(PyObject* self)
 
     for (;;)
     {
-        Py_BEGIN_ALLOW_THREADS
         ret = SQLDrivers(henv, nDirection, szDriverDesc, _countof(szDriverDesc), &cbDriverDesc, 0, 0, &cbAttrs);
-        Py_END_ALLOW_THREADS
 
         if (!SQL_SUCCEEDED(ret))
             break;
@@ -628,9 +626,8 @@ static PyObject* mod_datasources(PyObject* self)
 
     for (;;)
     {
-        Py_BEGIN_ALLOW_THREADS
         ret = SQLDataSources(henv, nDirection, szDSN,  _countof(szDSN),  &cbDSN, szDesc, _countof(szDesc), &cbDesc);
-        Py_END_ALLOW_THREADS
+
         if (!SQL_SUCCEEDED(ret))
             break;
 
