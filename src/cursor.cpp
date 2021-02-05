@@ -573,7 +573,7 @@ static int GetDiagRecs(Cursor* cur)
     SQLSMALLINT iRecNumber = 1;  // the index of the diagnostic records (1-based)
     ODBCCHAR    cSQLState[6];  // five-character SQLSTATE code (plus terminating NULL)
     SQLINTEGER  iNativeError;
-    ODBCCHAR    cMessageText[10241];  // PRINT statements can be large, hopefully 10K bytes will be enough
+    ODBCCHAR    cMessageText[10001];  // PRINT statements can be large, hopefully 10K bytes will be enough
     SQLSMALLINT iTextLength;
 
     SQLRETURN ret;
