@@ -64,7 +64,7 @@ static char module_doc[] =
     "  connections.  Note that connections and cursors may be used by different\n"
     "  threads, just not at the same time.\n"
     "\n"
-    "qmark\n"
+    "paramstyle\n"
     "  The string constant 'qmark' to indicate parameters are identified using\n"
     "  question marks.";
 
