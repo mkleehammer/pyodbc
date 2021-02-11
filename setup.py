@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, os, re
+import sys, os, re, shlex
 from os.path import exists, abspath, dirname, join, isdir, relpath, expanduser
 
 try:
@@ -189,28 +189,33 @@ def get_compiler_settings(version_str):
         settings['libraries'].append('odbc32')
 
     elif sys.platform == 'darwin':
-        # The latest versions of OS X no longer ship with iodbc.  Assume
-        # unixODBC for now.
-        settings['libraries'].append('odbc')
-
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].extend([
             '-Wno-write-strings',
             '-Wno-deprecated-declarations'
         ])
 
-        # Apple has decided they won't maintain the iODBC system in OS/X and has added
-        # deprecation warnings in 10.8.  For now target 10.7 to eliminate the warnings.
-        settings['define_macros'].append(('MAC_OS_X_VERSION_10_7',))
+        # Homebrew installs odbc_config
+        pipe = os.popen('odbc_config --cflags --libs 2>/dev/null')
+        cflags, ldflags = pipe.readlines()
+        exit_status = pipe.close()
 
-        # Add directories for MacPorts and Homebrew.
-        dirs = ['/usr/local/include', '/opt/local/include', expanduser('~/homebrew/include')]
-        settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
-
-        # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
-        # ( also OS/X since El Capitan prevents /usr/lib from being accessed )
-        settings['library_dirs'] = ['/usr/local/lib']
-
+        if exit_status is None:
+            settings['extra_compile_args'].extend(shlex.split(cflags))
+            settings['extra_link_args'].extend(shlex.split(ldflags))
+        else:
+            settings['libraries'].append('odbc')
+            # Add directories for MacPorts and Homebrew.
+            dirs = [
+                '/usr/local/include',
+                '/opt/local/include',
+                '/opt/homebrew/include',
+                expanduser('~/homebrew/include'),
+            ]
+            settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
+            # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
+            # ( also OS/X since El Capitan prevents /usr/lib from being accessed )
+            settings['library_dirs'] = ['/usr/local/lib', '/opt/homebrew/lib']
     else:
         # Other posix-like: Linux, Solaris, etc.
 
