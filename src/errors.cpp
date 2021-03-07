@@ -217,7 +217,7 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
     SQLSMALLINT cchMsg;
 
     ODBCCHAR sqlstateT[6];
-    ODBCCHAR szMsg[1024];
+    ODBCCHAR szMsg[SHRT_MAX];
 
     if (hstmt != SQL_NULL_HANDLE)
     {
@@ -317,14 +317,11 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 
 static bool GetSqlState(HSTMT hstmt, char* szSqlState)
 {
-    SQLCHAR szMsg[300];
-    SQLSMALLINT cbMsg = (SQLSMALLINT)(_countof(szMsg) - 1);
-    SQLINTEGER nNative;
     SQLSMALLINT cchMsg;
     SQLRETURN ret;
 
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetDiagRec(SQL_HANDLE_STMT, hstmt, 1, (SQLCHAR*)szSqlState, &nNative, szMsg, cbMsg, &cchMsg);
+    ret = SQLGetDiagField(SQL_HANDLE_STMT, hstmt, 1, SQL_DIAG_SQLSTATE, (SQLCHAR*)szSqlState, 5, &cchMsg);
     Py_END_ALLOW_THREADS
     return SQL_SUCCEEDED(ret);
 }
