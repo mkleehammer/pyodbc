@@ -148,6 +148,10 @@ inline void DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
 #define pyodbc_free free
 // #endif
 
+// issue #880: entry missing from iODBC sqltypes.h
+#ifndef BYTE
+  typedef unsigned char		BYTE;
+#endif
 bool pyodbc_realloc(BYTE** pp, size_t newlen);
 // A wrapper around realloc with a safer interface.  If it is successful, *pp is updated to the
 // new pointer value.  If not successful, it is not modified.  (It is easy to forget and lose
