@@ -403,9 +403,10 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         pts->second = PyDateTime_DATE_GET_SECOND(cell);
 
         // Truncate the fraction according to precision
-        long fast_pow10[] = {1,10,100,1000,10000,100000,1000000,10000000,100000000,1000000000, 10000000000};
+        size_t digits = min(9, pi->DecimalDigits);
+        long fast_pow10[] = {1,10,100,1000,10000,100000,1000000,10000000,100000000,1000000000};
         SQLUINTEGER milliseconds = PyDateTime_DATE_GET_MICROSECOND(cell) * 1000;
-        pts->fraction = milliseconds - (milliseconds % fast_pow10[10 - pi->DecimalDigits]);
+        pts->fraction = milliseconds - (milliseconds % fast_pow10[9 - digits]);
 
         *outbuf += sizeof(SQL_TIMESTAMP_STRUCT);
         ind = sizeof(SQL_TIMESTAMP_STRUCT);
