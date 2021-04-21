@@ -217,7 +217,9 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
     SQLSMALLINT cchMsg;
 
     ODBCCHAR sqlstateT[6];
-    ODBCCHAR szMsg[SHRT_MAX];
+    ODBCCHAR stackMsg[1024];
+    ODBCCHAR *szMsg;
+
 
     if (hstmt != SQL_NULL_HANDLE)
     {
@@ -251,10 +253,27 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 
         SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetDiagRecW(nHandleType, h, iRecord, (SQLWCHAR*)sqlstateT, &nNativeError, (SQLWCHAR*)szMsg, (short)(_countof(szMsg)-1), &cchMsg);
+        ret = SQLGetDiagRecW(nHandleType, h, iRecord, (SQLWCHAR*)sqlstateT, &nNativeError, (SQLWCHAR*)szMsg, (short)(_countof(stackMsg)-1), &cchMsg);
         Py_END_ALLOW_THREADS
         if (!SQL_SUCCEEDED(ret))
             break;
+
+        // If needed, allocate a bigger error message buffer and retry.
+        if (cchMsg > msgLen - 1) {
+            SQLSMALLINT msgLen = cchMsg + 1;
+            szMsg = pyodbc_malloc(msgLen * sizeof(ODBCCHAR));
+            if (!heapMsg) {
+                PyErr_NoMemory();
+                return 0;
+            }
+            Py_BEGIN_ALLOW_THREADS
+            ret = SQLGetDiagRecW(nHandleType, h, iRecord, (SQLWCHAR*)sqlstateT, &nNativeError, (SQLWCHAR*)szMsg, msgLen, &cchMsg);
+            Py_END_ALLOW_THREADS
+            if (!SQL_SUCCEEDED(ret)) {
+                pyodbc_free(szMsg);
+                break;
+            }
+        }
 
         // Not always NULL terminated (MS Access)
         sqlstateT[5] = 0;
@@ -264,6 +283,13 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
         const char *unicode_enc = conn ? conn->metadata_enc.name : ENCSTR_UTF16NE;
         Object msgStr(PyUnicode_Decode((char*)szMsg, cchMsg * sizeof(ODBCCHAR), unicode_enc, "strict"));
 
+        if (szMsg != stackMsg) {
+           // Free and revert back to stackMsg here, reduces the complexity of handling keeping
+           // track of the heap message and freeing it in other places.
+           pyodbc_free(szMsg);
+           stackMsg = szMsg;
+        }
+
         if (cchMsg != 0 && msgStr.Get())
         {
             if (iRecord == 1)
@@ -272,8 +298,10 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
                 // exception class and append the calling function name.
                 CopySqlState(sqlstateT, sqlstate);
                 msg = PyUnicode_FromFormat("[%s] %V (%ld) (%s)", sqlstate, msgStr.Get(), "(null)", (long)nNativeError, szFunction);
-                if (!msg)
+                if (!msg) {
+                    PyErr_NoMemory();
                     return 0;
+                }
             }
             else
             {
@@ -297,6 +325,9 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
         break;
 #endif
     }
+
+    // Free raw message buffer, if allocated on heap.
+    if (szMsg != stackMsg) pyodbc_free(szMsg);
 
     if (!msg || PyUnicode_GetSize(msg.Get()) == 0)
     {

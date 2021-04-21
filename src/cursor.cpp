@@ -574,7 +574,7 @@ static int GetDiagRecs(Cursor* cur)
 
     ODBCCHAR    cSQLState[6];  // five-character SQLSTATE code (plus terminating NULL)
     SQLINTEGER  iNativeError;
-    ODBCCHAR    cMessageText[SHRT_MAX];  // PRINT statements can be large
+    ODBCCHAR    cMessageText[10240];  // PRINT statements can be large
     SQLSMALLINT iTextLength;
 
     SQLRETURN ret;
