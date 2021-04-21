@@ -217,9 +217,13 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
     SQLSMALLINT cchMsg;
 
     ODBCCHAR sqlstateT[6];
-    ODBCCHAR stackMsg[1024];
-    ODBCCHAR *szMsg;
+    SQLSMALLINT msgLen = 1023;
+    ODBCCHAR *szMsg = (ODBCCHAR*) pyodbc_malloc((msgLen + 1) * sizeof(ODBCCHAR));
 
+    if (!szMsg) {
+        PyErr_NoMemory();
+        return 0;
+    }
 
     if (hstmt != SQL_NULL_HANDLE)
     {
@@ -253,26 +257,24 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 
         SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetDiagRecW(nHandleType, h, iRecord, (SQLWCHAR*)sqlstateT, &nNativeError, (SQLWCHAR*)szMsg, (short)(_countof(stackMsg)-1), &cchMsg);
+        ret = SQLGetDiagRecW(nHandleType, h, iRecord, (SQLWCHAR*)sqlstateT, &nNativeError, (SQLWCHAR*)szMsg, msgLen, &cchMsg);
         Py_END_ALLOW_THREADS
         if (!SQL_SUCCEEDED(ret))
             break;
 
         // If needed, allocate a bigger error message buffer and retry.
         if (cchMsg > msgLen - 1) {
-            SQLSMALLINT msgLen = cchMsg + 1;
-            szMsg = pyodbc_malloc(msgLen * sizeof(ODBCCHAR));
-            if (!heapMsg) {
+            msgLen = cchMsg + 1;
+            if (!pyodbc_realloc((BYTE**) &szMsg, (msgLen + 1) * sizeof(ODBCCHAR))) {
                 PyErr_NoMemory();
+                pyodbc_free(szMsg);
                 return 0;
             }
             Py_BEGIN_ALLOW_THREADS
             ret = SQLGetDiagRecW(nHandleType, h, iRecord, (SQLWCHAR*)sqlstateT, &nNativeError, (SQLWCHAR*)szMsg, msgLen, &cchMsg);
             Py_END_ALLOW_THREADS
-            if (!SQL_SUCCEEDED(ret)) {
-                pyodbc_free(szMsg);
+            if (!SQL_SUCCEEDED(ret))
                 break;
-            }
         }
 
         // Not always NULL terminated (MS Access)
@@ -282,13 +284,6 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
         // Note that this will not work if the DM is using a different wide encoding (e.g. UTF-32).
         const char *unicode_enc = conn ? conn->metadata_enc.name : ENCSTR_UTF16NE;
         Object msgStr(PyUnicode_Decode((char*)szMsg, cchMsg * sizeof(ODBCCHAR), unicode_enc, "strict"));
-
-        if (szMsg != stackMsg) {
-           // Free and revert back to stackMsg here, reduces the complexity of handling keeping
-           // track of the heap message and freeing it in other places.
-           pyodbc_free(szMsg);
-           stackMsg = szMsg;
-        }
 
         if (cchMsg != 0 && msgStr.Get())
         {
@@ -300,6 +295,7 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
                 msg = PyUnicode_FromFormat("[%s] %V (%ld) (%s)", sqlstate, msgStr.Get(), "(null)", (long)nNativeError, szFunction);
                 if (!msg) {
                     PyErr_NoMemory();
+                    pyodbc_free(szMsg);
                     return 0;
                 }
             }
@@ -326,8 +322,8 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 #endif
     }
 
-    // Free raw message buffer, if allocated on heap.
-    if (szMsg != stackMsg) pyodbc_free(szMsg);
+    // Raw message buffer not needed anymore
+    pyodbc_free(szMsg);
 
     if (!msg || PyUnicode_GetSize(msg.Get()) == 0)
     {
