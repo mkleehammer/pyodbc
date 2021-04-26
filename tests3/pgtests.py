@@ -642,7 +642,7 @@ class PGTestCase(unittest.TestCase):
 
         # using INFO message level because they are always sent to the client regardless of
         # client_min_messages: https://www.postgresql.org/docs/11/runtime-config-client.html
-        for message in ('hello world', 'A' * 30000):
+        for msg in ('hello world', 'ABCDEFGHIJ' * 800):
             self.cursor.execute("""
                 CREATE OR REPLACE PROCEDURE test_cursor_messages()
                 LANGUAGE plpgsql
@@ -651,16 +651,17 @@ class PGTestCase(unittest.TestCase):
                     RAISE INFO '{}' USING ERRCODE = '01000';
                 END;
                 $$;
-            """.format(message))
+            """.format(msg))
             self.cursor.execute("CALL test_cursor_messages();")
-            self.assertTrue(type(self.cursor.messages) is list)
-            self.assertEqual(len(self.cursor.messages), 1)
-            self.assertTrue(type(self.cursor.messages[0]) is tuple)
-            self.assertEqual(len(self.cursor.messages[0]), 2)
-            self.assertTrue(type(self.cursor.messages[0][0]) is str)
-            self.assertTrue(type(self.cursor.messages[0][1]) is str)
-            self.assertEqual('[01000] (-1)', self.cursor.messages[0][0])
-            self.assertTrue(self.cursor.messages[0][1].endswith(message))
+            messages = self.cursor.messages
+            self.assertTrue(type(messages) is list)
+            self.assertTrue(len(messages) > 0)
+            self.assertTrue(all(type(m) is tuple for m in messages))
+            self.assertTrue(all(len(m) == 2 for m in messages))
+            self.assertTrue(all(type(m[0]) is str for m in messages))
+            self.assertTrue(all(type(m[1]) is str for m in messages))
+            self.assertTrue(all(m[0] == '[01000] (-1)' for m in messages))
+            self.assertTrue(''.join(m[1] for m in messages).endswith(msg))
 
     def test_output_conversion(self):
         # Note the use of SQL_WVARCHAR, not SQL_VARCHAR.

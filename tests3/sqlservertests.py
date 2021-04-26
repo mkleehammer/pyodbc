@@ -1374,16 +1374,19 @@ class SqlServerTestCase(unittest.TestCase):
         brand_new_cursor = self.cnxn.cursor()
         self.assertIsNone(brand_new_cursor.messages)
 
-        for message in ('hello world', 'A' * 30000):
-            self.cursor.execute("PRINT '{}'".format(message))
-            self.assertTrue(type(self.cursor.messages) is list)
-            self.assertEqual(len(self.cursor.messages), 1)
-            self.assertTrue(type(self.cursor.messages[0]) is tuple)
-            self.assertEqual(len(self.cursor.messages[0]), 2)
-            self.assertTrue(type(self.cursor.messages[0][0]) is str)
-            self.assertTrue(type(self.cursor.messages[0][1]) is str)
-            self.assertEqual('[01000] (0)', self.cursor.messages[0][0])
-            self.assertTrue(self.cursor.messages[0][1].endswith(message))
+        # SQL Server PRINT statements are never more than 8000 characters
+        # https://docs.microsoft.com/en-us/sql/t-sql/language-elements/print-transact-sql#remarks
+        for msg in ('hello world', 'ABCDEFGHIJ' * 800):
+            self.cursor.execute("PRINT '{}'".format(msg))
+            messages = self.cursor.messages
+            self.assertTrue(type(messages) is list)
+            self.assertEqual(len(messages), 1)
+            self.assertTrue(type(messages[0]) is tuple)
+            self.assertEqual(len(messages[0]), 2)
+            self.assertTrue(type(messages[0][0]) is str)
+            self.assertTrue(type(messages[0][1]) is str)
+            self.assertEqual('[01000] (0)', messages[0][0])
+            self.assertTrue(messages[0][1].endswith(msg))
 
     def test_cursor_messages_with_stored_proc(self):
         """
