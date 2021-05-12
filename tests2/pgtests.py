@@ -526,6 +526,35 @@ class PGTestCase(unittest.TestCase):
 
         self.assertEqual(result, v)
 
+    def test_cursor_messages(self):
+        """
+        Test the Cursor.messages attribute.
+        """
+        # self.cursor is used in setUp, hence is not brand new at this point
+        brand_new_cursor = self.cnxn.cursor()
+        self.assertIsNone(brand_new_cursor.messages)
+
+        # using INFO message level because they are always sent to the client regardless of
+        # client_min_messages: https://www.postgresql.org/docs/11/runtime-config-client.html
+        self.cursor.execute("""
+            CREATE OR REPLACE PROCEDURE test_cursor_messages()
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RAISE INFO 'hello world' USING ERRCODE = '01000';
+            END;
+            $$;
+        """)
+        self.cursor.execute("CALL test_cursor_messages();")
+        self.assertTrue(type(self.cursor.messages) is list)
+        self.assertEqual(len(self.cursor.messages), 1)
+        self.assertTrue(type(self.cursor.messages[0]) is tuple)
+        self.assertEqual(len(self.cursor.messages[0]), 2)
+        self.assertTrue(type(self.cursor.messages[0][0]) is unicode)
+        self.assertTrue(type(self.cursor.messages[0][1]) is unicode)
+        self.assertEqual('[01000] (-1)', self.cursor.messages[0][0])
+        self.assertTrue(self.cursor.messages[0][1].endswith('hello world'))
+
 
 def main():
     from optparse import OptionParser

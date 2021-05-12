@@ -1,24 +1,123 @@
+# This AppVeyor CI configuration file:
+#   - builds pyodbc with multiple versions of Python
+#   - tests the generated pyodbc module against various databases and drivers
+#   - creates "wheel" files for distribution, and stores them as appveyor
+#     artifacts which can be downloaded from the AppVeyor UI
+#
+# Various aspects of this file's behavior can be controlled by setting environment
+# variables in the AppVeyor UI.  You will need an AppVeyor account for this (see
+# the Settings tab -> Environment -> Environment variables).  Here are
+# the relevant variables and their possible string values.  Note, "*" indicates the
+# defaults:
+#   - APVYR_RUN_TESTS - run the unit tests, overall control (true*/false)
+#   - APVYR_RUN_MSSQL_TESTS - run the MS SQL Server unit tests (true*/false)
+#   - APVYR_RUN_POSTGRES_TESTS - run the PostgreSQL unit tests (true*/false)
+#   - APVYR_RUN_MYSQL_TESTS - run the MySQL unit tests (true*/false)
+#   - APVYR_GENERATE_WHEELS - generate distributable wheel files (true/false*)
+#   - APVYR_VERBOSE - output more information to the logs (true/false*)
+#
+# For more information about appveyor.yml files, see: https://www.appveyor.com/docs/appveyor-yml/
 
-# https://packaging.python.org/appveyor/
 
-# This can't build 3.3 or 3.4 versions without a special build.cmd script,
-# defined in the article above. I don't feel like messing with it and am just
-# using this for build testing right now, so I'm not going to test every
-# version.
+# the AppVeyor cache is used to carry files between jobs, so make sure the jobs are serialized
+max_jobs: 1
+
+# the default AppVeyor image for the jobs, but the images are also set in the matrix
+image: Visual Studio 2019
 
 environment:
 
-  matrix:
-    - PYTHON: "C:\\Python27"
-      PYTHON_ARCH: "32"
-    - PYTHON: "C:\\Python27"
-      PYTHON_ARCH: "64"
-    - PYTHON: "C:\\Python36"
-      PYTHON_ARCH: "32"
-    - PYTHON: "C:\\Python36"
-      PYTHON_ARCH: "64"
+  global:
+    # the following variables can be overridden as necessary through the AppVeyor UI
+    APVYR_RUN_TESTS: "true"
+    APVYR_RUN_MSSQL_TESTS: "true"
+    APVYR_RUN_POSTGRES_TESTS: "true"
+    APVYR_RUN_MYSQL_TESTS: "true"
+    APVYR_GENERATE_WHEELS: "false"
+    APVYR_VERBOSE: "false"
+    # SDK v7.0 MSVC Express 2008's SetEnv.cmd script will fail if the
+    # /E:ON and /V:ON options are not enabled in the batch script intepreter
+    # http://stackoverflow.com/a/13751649/163740
+    # http://docs.microsoft.com/en-us/cpp/preprocessor/predefined-macros#microsoft-specific-predefined-macros
+    WITH_COMPILER: "cmd /E:ON /V:ON /C .\\appveyor\\compile.cmd"
+    # database-related variables, which must match the "services:" section below
+    # ref: https://www.appveyor.com/docs/services-databases/
+    MSSQL_INSTANCE: "(local)\\SQL2017"
+    POSTGRES_PATH: "C:\\Program Files\\PostgreSQL\\11"
+    MYSQL_PATH: "C:\\Program Files\\MySQL\\MySQL Server 5.7"
 
-build: off
+  matrix:
+
+    # all the Python versions to be tested, both 32-bit and 64-bit
+    # ref: https://www.appveyor.com/docs/windows-images-software/#python
+
+    # Python 2.7 must be built with Visual Studio 9.0, which is available only
+    # on AppVeyor Windows images Visual Studio 2013 and Visual Studio 2015
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      PYTHON_HOME: "C:\\Python27"
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      PYTHON_HOME: "C:\\Python27-x64"
+
+    # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+    #   PYTHON_HOME: "C:\\Python33"
+
+    # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+    #   PYTHON_HOME: "C:\\Python33-x64"
+
+    # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+    #   PYTHON_HOME: "C:\\Python34"
+
+    # - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+    #   PYTHON_HOME: "C:\\Python34-x64"
+
+    # Python 3.5+ need at least the Visual Studio 2015 image
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python35"
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python35-x64"
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python36"
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python36-x64"
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python37"
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python37-x64"
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python38"
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python38-x64"
+
+cache:
+  - apvyr_cache -> appveyor\install.ps1
+
+install:
+  - ps: .\appveyor\install.ps1
+
+# ref: https://www.appveyor.com/docs/services-databases/
+services:
+  - mssql2017
+  - postgresql11
+  - mysql
+
+build_script:
+  - call .\appveyor\build_script.cmd
 
 test_script:
-  - "%PYTHON%\\python.exe setup.py build"
+  - call .\appveyor\test_script.cmd
+
+after_test:
+  - call .\appveyor\after_test.cmd
+
+artifacts:
+  - path: 'dist\*.whl'
