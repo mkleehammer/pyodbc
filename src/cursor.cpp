@@ -581,7 +581,8 @@ static int GetDiagRecs(Cursor* cur)
     char sqlstate_ascii[6] = "";  // ASCII version of the SQLState
 
     if (!cMessageText) {
-        return 0;
+      PyErr_NoMemory();
+      return 0;
     }
 
     msg_list = PyList_New(0);
@@ -609,6 +610,7 @@ static int GetDiagRecs(Cursor* cur)
             iMessageLen = iTextLength + 1;
             if (!pyodbc_realloc((BYTE**) &cMessageText, (iMessageLen + 1) * sizeof(ODBCCHAR))) {
                 pyodbc_free(cMessageText);
+                PyErr_NoMemory();
                 return 0;
             }
             Py_BEGIN_ALLOW_THREADS
