@@ -90,6 +90,10 @@ def main():
 
         'ext_modules': [Extension('pyodbc', sorted(files), **settings)],
 
+        'data_files': [
+            ('', ['src/pyodbc.pyi'])  # places pyodbc.pyi alongside pyodbc.py in site-packages
+        ],
+
         'license': 'MIT',
 
         'classifiers': ['Development Status :: 5 - Production/Stable',
