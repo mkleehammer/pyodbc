@@ -573,11 +573,17 @@ static int GetDiagRecs(Cursor* cur)
     SQLSMALLINT iRecNumber = 1;  // the index of the diagnostic records (1-based)
     ODBCCHAR    cSQLState[6];  // five-character SQLSTATE code (plus terminating NULL)
     SQLINTEGER  iNativeError;
-    ODBCCHAR    cMessageText[10001];  // PRINT statements can be large, hopefully 10K bytes will be enough
+    SQLSMALLINT iMessageLen = 1023;
+    ODBCCHAR    *cMessageText = (ODBCCHAR*) pyodbc_malloc((iMessageLen + 1) * sizeof(ODBCCHAR));
     SQLSMALLINT iTextLength;
 
     SQLRETURN ret;
     char sqlstate_ascii[6] = "";  // ASCII version of the SQLState
+
+    if (!cMessageText) {
+      PyErr_NoMemory();
+      return 0;
+    }
 
     msg_list = PyList_New(0);
     if (!msg_list)
@@ -593,11 +599,29 @@ static int GetDiagRecs(Cursor* cur)
         Py_BEGIN_ALLOW_THREADS
         ret = SQLGetDiagRecW(
             SQL_HANDLE_STMT, cur->hstmt, iRecNumber, (SQLWCHAR*)cSQLState, &iNativeError,
-            (SQLWCHAR*)cMessageText, (short)(_countof(cMessageText)-1), &iTextLength
+            (SQLWCHAR*)cMessageText, iMessageLen, &iTextLength
         );
         Py_END_ALLOW_THREADS
         if (!SQL_SUCCEEDED(ret))
             break;
+
+        // If needed, allocate a bigger error message buffer and retry.
+        if (iTextLength > iMessageLen - 1) {
+            iMessageLen = iTextLength + 1;
+            if (!pyodbc_realloc((BYTE**) &cMessageText, (iMessageLen + 1) * sizeof(ODBCCHAR))) {
+                pyodbc_free(cMessageText);
+                PyErr_NoMemory();
+                return 0;
+            }
+            Py_BEGIN_ALLOW_THREADS
+            ret = SQLGetDiagRecW(
+                SQL_HANDLE_STMT, cur->hstmt, iRecNumber, (SQLWCHAR*)cSQLState, &iNativeError,
+                (SQLWCHAR*)cMessageText, iMessageLen, &iTextLength
+            );
+            Py_END_ALLOW_THREADS
+            if (!SQL_SUCCEEDED(ret))
+                break;
+        }
 
         cSQLState[5] = 0;  // Not always NULL terminated (MS Access)
         CopySqlState(cSQLState, sqlstate_ascii);
@@ -634,6 +658,7 @@ static int GetDiagRecs(Cursor* cur)
 
         iRecNumber++;
     }
+    pyodbc_free(cMessageText);
 
     Py_XDECREF(cur->messages);
     cur->messages = msg_list;  // cur->messages now owns the msg_list reference
