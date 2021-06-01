@@ -1185,11 +1185,13 @@ static bool GetTableInfo(Cursor *cur, Py_ssize_t index, PyObject* param, ParamIn
         Py_XDECREF(cell0);
         if (PyBytes_Check(cell0) || PyUnicode_Check(cell0))
         {
-            SQLHDESC desc;
-            PyObject *tvpname = PyCodec_Encode(cell0, "UTF-16LE", 0);
-            SQLGetStmtAttr(cur->hstmt, SQL_ATTR_IMP_PARAM_DESC, &desc, 0, 0);
-            SQLSetDescFieldW(desc, index + 1, SQL_CA_SS_TYPE_NAME, (SQLPOINTER)PyBytes_AsString(tvpname), PyBytes_Size(tvpname));
             nskip++;
+            if (nrows > 1)
+            {
+                PyObject *cell1 = PySequence_GetItem(param, 1);
+                Py_XDECREF(cell1);
+                nskip += (PyBytes_Check(cell1) || PyUnicode_Check(cell1));
+            }
         }
     }
     nrows -= nskip;
@@ -1423,6 +1425,33 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
     // This is a TVP. Enter and bind its parameters, allocate descriptors for its columns (all as DAE)
     if (sqltype == SQL_SS_TABLE)
     {
+        Py_ssize_t nrows = PySequence_Size(info.pObject);
+        if (nrows > 0)
+        {
+            PyObject *cell0 = PySequence_GetItem(info.pObject, 0);
+            Py_XDECREF(cell0);
+            if (PyBytes_Check(cell0) || PyUnicode_Check(cell0))
+            {
+                SQLHDESC desc;
+                PyObject *tvpname = PyCodec_Encode(cell0, "UTF-16LE", 0);
+                SQLGetStmtAttr(cur->hstmt, SQL_ATTR_IMP_PARAM_DESC, &desc, 0, 0);
+                SQLSetDescFieldW(desc, index + 1, SQL_CA_SS_TYPE_NAME, (SQLPOINTER)PyBytes_AsString(tvpname), PyBytes_Size(tvpname));
+                Py_XDECREF(tvpname);
+
+                if (nrows > 1)
+                {
+                    PyObject *cell1 = PySequence_GetItem(info.pObject, 1);
+                    Py_XDECREF(cell1);
+                    if (PyBytes_Check(cell1) || PyUnicode_Check(cell1))
+                    {
+                        PyObject *tvpschema = PyCodec_Encode(cell1, "UTF-16LE", 0);
+                        SQLSetDescFieldW(desc, index + 1, SQL_CA_SS_SCHEMA_NAME, (SQLPOINTER)PyBytes_AsString(tvpschema), PyBytes_Size(tvpschema));
+                        Py_XDECREF(tvpschema);
+                    }
+                }
+            }
+        }
+
         SQLHDESC desc;
         SQLGetStmtAttr(cur->hstmt, SQL_ATTR_APP_PARAM_DESC, &desc, 0, 0);
         SQLSetDescField(desc, index + 1, SQL_DESC_DATA_PTR, (SQLPOINTER)info.ParameterValuePtr, 0);

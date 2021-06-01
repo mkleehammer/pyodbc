@@ -82,6 +82,14 @@ typedef int Py_ssize_t;
 #define SQL_CA_SS_TYPE_NAME 1227
 #endif
 
+#ifndef SQL_CA_SS_SCHEMA_NAME
+#define SQL_CA_SS_SCHEMA_NAME 1226
+#endif
+
+#ifndef SQL_CA_SS_CATALOG_NAME
+#define SQL_CA_SS_CATALOG_NAME 1225
+#endif
+
 inline bool IsSet(DWORD grf, DWORD flags)
 {
     return (grf & flags) == flags;
