@@ -1816,8 +1816,8 @@ class SqlServerTestCase(unittest.TestCase):
         result = self.cursor.execute("select s from t1").fetchone()[0]
 
         self.assertEqual(result, v)
-        
-    def test_tvp(self):
+
+    def _test_tvp(self, diff_schema):
         # https://github.com/mkleehammer/pyodbc/issues/290
         #
         # pyodbc supports queries with table valued parameters in sql server
@@ -1827,18 +1827,36 @@ class SqlServerTestCase(unittest.TestCase):
             warn('FREETDS_KNOWN_ISSUE - test_tvp: test cancelled.')
             return
 
+        procname = 'SelectTVP'
+        typename = 'TestTVP'
+
+        if diff_schema:
+            schemaname = 'myschema'
+            procname = schemaname + '.' + procname
+            typenameonly = typename
+            typename = schemaname + '.' + typename
+
         # (Don't use "if exists" since older SQL Servers don't support it.)
         try:
-            self.cursor.execute("drop procedure SelectTVP")
+            self.cursor.execute("drop procedure " + procname)
         except:
             pass
         try:
-            self.cursor.execute("drop type TestTVP")
+            self.cursor.execute("drop type " + typename)
         except:
             pass
+        if diff_schema:
+            try:
+                self.cursor.execute("drop schema " + schemaname)
+            except:
+                pass
         self.cursor.commit()
         
-        query = "CREATE TYPE TestTVP AS TABLE("\
+        if diff_schema:
+            self.cursor.execute("CREATE SCHEMA myschema")
+            self.cursor.commit()
+
+        query = "CREATE TYPE %s AS TABLE("\
                 "c01 VARCHAR(255),"\
                 "c02 VARCHAR(MAX),"\
                 "c03 VARBINARY(255),"\
@@ -1850,11 +1868,11 @@ class SqlServerTestCase(unittest.TestCase):
                 "c09 BIGINT,"\
                 "c10 FLOAT,"\
                 "c11 NUMERIC(38, 24),"\
-                "c12 UNIQUEIDENTIFIER)"
+                "c12 UNIQUEIDENTIFIER)" % typename
 
         self.cursor.execute(query)
         self.cursor.commit()
-        self.cursor.execute("CREATE PROCEDURE SelectTVP @TVP TestTVP READONLY AS SELECT * FROM @TVP;")
+        self.cursor.execute("CREATE PROCEDURE %s @TVP %s READONLY AS SELECT * FROM @TVP;" % (procname, typename))
         self.cursor.commit()
 
         long_string = ''
@@ -1907,7 +1925,7 @@ class SqlServerTestCase(unittest.TestCase):
                '33F7504C-2BAC-1B83-01D1-7434A7BA6A17',
                'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF']
 
-        param_array = []       
+        param_array = []
 
         for i in range (3):
             param_array.append([c01[i], c02[i], c03[i], c04[i], c05[i], c06[i], c07[i], c08[i], c09[i], c10[i], c11[i], c12[i]])
@@ -1915,7 +1933,10 @@ class SqlServerTestCase(unittest.TestCase):
         success = True
 
         try:
-            result_array = self.cursor.execute("exec SelectTVP ?",[param_array]).fetchall()
+            p1 = [param_array]
+            if diff_schema:
+                p1 = [ [ typenameonly, schemaname ] + param_array ]
+            result_array = self.cursor.execute("exec %s ?" % procname, p1).fetchall()
         except Exception as ex:
             print("Failed to execute SelectTVP")
             print("Exception: [" + type(ex).__name__ + "]" , ex.args)
@@ -1929,7 +1950,10 @@ class SqlServerTestCase(unittest.TestCase):
                         success = False
 
         try:
-            result_array = self.cursor.execute("exec SelectTVP ?", [[]]).fetchall()
+            p1 = [[]]
+            if diff_schema:
+                p1 = [ [ typenameonly, schemaname ] + [] ]
+            result_array = self.cursor.execute("exec %s ?" % procname, p1).fetchall()
             self.assertEqual(result_array, [])
         except Exception as ex:
             print("Failed to execute SelectTVP")
@@ -1938,6 +1962,11 @@ class SqlServerTestCase(unittest.TestCase):
 
         self.assertEqual(success, True)
 
+    def test_tvp(self):
+        self._test_tvp(False)
+
+    def test_tvp_diffschema(self):
+        self._test_tvp(True)
 
 def main():
     from optparse import OptionParser
