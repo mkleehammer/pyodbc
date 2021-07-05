@@ -3,15 +3,13 @@
 #include "wrapper.h"
 #include "textenc.h"
 
-
-static PyObject* nulls = PyBytes_FromStringAndSize("\0\0\0\0", 4);
-
-
 void SQLWChar::init(PyObject* src, const TextEnc& enc)
 {
   // Initialization code common to all of the constructors.
   //
   // Convert `src` to SQLWCHAR.
+
+    static PyObject* nulls = NULL;
 
     if (src == 0 || src == Py_None)
     {
@@ -60,7 +58,6 @@ void SQLWChar::init(PyObject* src, const TextEnc& enc)
     if (pb)
     {
         // Careful: Some encodings don't return bytes.
-
         if (!PyBytes_Check(pb))
         {
             // REVIEW: Error or just return null?
@@ -68,6 +65,9 @@ void SQLWChar::init(PyObject* src, const TextEnc& enc)
             Py_DECREF(pb);
             return;
         }
+        
+        if(!nulls)
+            nulls = PyBytes_FromStringAndSize("\0\0\0\0", 4);
 
         PyBytes_Concat(&pb, nulls);
         if (!pb)
