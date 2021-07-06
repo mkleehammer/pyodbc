@@ -968,6 +968,28 @@ static int Connection_setautocommit(PyObject* self, PyObject* value, void* closu
 }
 
 
+static PyObject* Connection_getclosed(PyObject* self, void* closure)
+{
+    UNUSED(closure);
+    Connection* cnxn;
+
+    if (self == 0 || !Connection_Check(self))
+    {
+        PyErr_SetString(PyExc_TypeError, "Connection object required");
+        return 0;
+    }
+
+    cnxn = (Connection*)self;
+
+    if (cnxn->hdbc == SQL_NULL_HANDLE)
+    {
+        Py_RETURN_TRUE;
+    }
+
+    Py_RETURN_FALSE;
+}
+
+
 static PyObject* Connection_getsearchescape(PyObject* self, void* closure)
 {
     UNUSED(closure);
@@ -1615,6 +1637,8 @@ static struct PyMethodDef Connection_methods[] =
 };
 
 static PyGetSetDef Connection_getseters[] = {
+    { "closed", (getter)Connection_getclosed, 0,
+      "Returns True if the connection is closed; False otherwise.", 0},
     { "searchescape", (getter)Connection_getsearchescape, 0,
         "The ODBC search pattern escape character, as returned by\n"
         "SQLGetInfo(SQL_SEARCH_PATTERN_ESCAPE).  These are driver specific.", 0 },
