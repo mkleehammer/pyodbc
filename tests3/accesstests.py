@@ -94,6 +94,11 @@ class AccessTestCase(unittest.TestCase):
             # If we've already closed the cursor or connection, exceptions are thrown.
             pass
 
+    def test_closed_reflects_connection_state(self):
+        self.assertFalse(self.cnxn.closed)
+        self.cnxn.close()
+        self.assertTrue(self.cnxn.closed)
+
     def test_multiple_bindings(self):
         "More than one bind and select on a cursor"
         self.cursor.execute("create table t1(n int)")
