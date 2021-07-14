@@ -521,7 +521,21 @@ class AccessTestCase(unittest.TestCase):
 
         # Put it back so other tests don't fail.
         pyodbc.lowercase = False
-        
+
+    def test_long_column_name(self):
+        "ensure super long column names are handled correctly."
+        c1 = 'abcdefghij' * 50
+        c2 = 'klmnopqrst' * 60
+        self.cursor = self.cnxn.cursor()
+
+        self.cursor.execute("create table t1({} int, {} int)".format(c1, c2))
+        self.cursor.execute("select * from t1")
+
+        names = [ t[0] for t in self.cursor.description ]
+        names.sort()
+
+        self.assertEqual(names, [ c1, c2 ])
+
     def test_row_description(self):
         """
         Ensure Cursor.description is accessible as Row.cursor_description.
