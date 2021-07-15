@@ -584,22 +584,6 @@ class MySqlTestCase(unittest.TestCase):
         # Put it back so other tests don't fail.
         pyodbc.lowercase = False
 
-    def test_long_column_name(self):
-        "ensure super long column names are handled correctly."
-        c1 = 'abcdefghij' * 50
-        c2 = 'klmnopqrst' * 60
-        self.cursor = self.cnxn.cursor()
-
-        self.cursor.execute("create table t1(c1 int, c2 int)")
-        self.cursor.execute("select c1 as {}, c2 as {} from t1".format(c1, c2))
-
-        names = [ t[0] for t in self.cursor.description ]
-        names.sort()
-        print(names)
-        print([ c1, c2 ])
-
-        self.assertEqual(names, [ c1, c2 ])
-
     def test_row_description(self):
         """
         Ensure Cursor.description is accessible as Row.cursor_description.
