@@ -383,7 +383,7 @@ class SqliteTestCase(unittest.TestCase):
 
         # Put it back so other tests don't fail.
         pyodbc.lowercase = False
-
+    
     def test_long_column_name(self):
         "ensure super long column names are handled correctly."
         c1 = 'abcdefghij' * 50
