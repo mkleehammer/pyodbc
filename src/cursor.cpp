@@ -131,7 +131,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
     bool success = false;
     PyObject *desc = 0, *colmap = 0, *colinfo = 0, *type = 0, *index = 0, *nullable_obj=0;
-    SQLSMALLINT nameLen = 300;
+    SQLSMALLINT nameLen = 700;
     ODBCCHAR *szName = NULL;
     SQLRETURN ret;
 
