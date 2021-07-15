@@ -791,7 +791,7 @@ class InformixTestCase(unittest.TestCase):
 
         # Put it back so other tests don't fail.
         pyodbc.lowercase = False
-    
+        
     def test_row_description(self):
         """
         Ensure Cursor.description is accessible as Row.cursor_description.
