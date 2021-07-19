@@ -1,0 +1,193 @@
+name: Ubuntu build
+
+on: [push]
+
+jobs:
+  run_tests:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: 2.7
+            tests-dir: tests2
+          - python-version: 3.5
+            tests-dir: tests3
+          - python-version: 3.6
+            tests-dir: tests3
+          - python-version: 3.7
+            tests-dir: tests3
+          - python-version: 3.8
+            tests-dir: tests3
+          - python-version: 3.9
+            tests-dir: tests3
+
+    services:
+
+      mssql2017:
+        image: mcr.microsoft.com/mssql/server:2017-latest
+        ports:
+        - 1401:1433
+        env:
+          ACCEPT_EULA: Y
+          SA_PASSWORD: StrongPassword2017
+
+      mssql2019:
+        image: mcr.microsoft.com/mssql/server:2019-latest
+        ports:
+        - 1402:1433
+        env:
+          ACCEPT_EULA: Y
+          SA_PASSWORD: StrongPassword2019
+
+      postgres:
+        image: postgres:11
+        env:
+          POSTGRES_DB: postgres_db
+          POSTGRES_USER: postgres_user
+          POSTGRES_PASSWORD: postgres_pwd
+        ports:
+        - 5432:5432
+        # needed because the postgres container does not provide a healthcheck
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+
+    - name: Start MySQL service
+      run: |
+        sudo systemctl start mysql.service
+
+    - name: Check initial setup
+      run: |
+        echo '*** echo $PATH'
+        echo "$PATH"
+        echo "*** odbcinst -j"
+        odbcinst -j
+        echo '*** ls -l /etc/odbc*.ini'
+        ls -l /etc/odbc*.ini || true
+        echo "*** cat /etc/odbcinst.ini"
+        cat /etc/odbcinst.ini
+        echo "*** cat /etc/odbc.ini"
+        cat /etc/odbc.ini
+
+    - name: Install ODBC driver for PostgreSQL
+      run: |
+        echo "*** apt-get install the driver"
+        sudo apt-get install --yes odbc-postgresql
+        echo '*** ls -l /usr/lib/x86_64-linux-gnu/odbc'
+        ls -l /usr/lib/x86_64-linux-gnu/odbc || true
+        echo '*** add full paths to Postgres .so files in /etc/odbcinst.ini'
+        sudo sed -i 's|Driver=psqlodbca.so|Driver=/usr/lib/x86_64-linux-gnu/odbc/psqlodbca.so|g' /etc/odbcinst.ini
+        sudo sed -i 's|Driver=psqlodbcw.so|Driver=/usr/lib/x86_64-linux-gnu/odbc/psqlodbcw.so|g' /etc/odbcinst.ini
+        sudo sed -i 's|Setup=libodbcpsqlS.so|Setup=/usr/lib/x86_64-linux-gnu/odbc/libodbcpsqlS.so|g' /etc/odbcinst.ini
+
+    - name: Install ODBC driver for MySQL
+      run: |
+        cd "$RUNNER_TEMP"
+        echo "*** download driver zip file"
+        curl --silent --show-error --write-out "$CURL_OUTPUT_FORMAT" -O "https://www.mirrorservice.org/sites/ftp.mysql.com/Downloads/Connector-ODBC/8.0/${MYSQL_DRIVER}.tar.gz"
+        ls -l "${MYSQL_DRIVER}.tar.gz"
+        tar -xz -f "${MYSQL_DRIVER}.tar.gz"
+        echo "*** copy driver file to /usr/lib"
+        sudo cp -v "${MYSQL_DRIVER}/lib/libmyodbc8a.so" /usr/lib/x86_64-linux-gnu/odbc/
+        sudo chmod a+r /usr/lib/x86_64-linux-gnu/odbc/libmyodbc8a.so
+        echo "*** create odbcinst.ini entry"
+        echo '[MySQL ODBC 8.0 ANSI Driver]' > mysql_odbcinst.ini
+        echo 'Driver     = /usr/lib/x86_64-linux-gnu/odbc/libmyodbc8a.so' >> mysql_odbcinst.ini
+        echo 'UsageCount = 1' >> mysql_odbcinst.ini
+        echo 'Threading  = 2' >> mysql_odbcinst.ini
+        sudo odbcinst -i -d -f mysql_odbcinst.ini
+      env:
+        CURL_OUTPUT_FORMAT: '%{http_code} %{filename_effective} %{size_download} %{time_total}\n'
+        MYSQL_DRIVER: mysql-connector-odbc-8.0.22-linux-glibc2.12-x86-64bit
+
+    - name: Check ODBC setup
+      run: |
+        echo "*** odbcinst -j"
+        odbcinst -j
+        echo "*** cat /etc/odbcinst.ini"
+        cat /etc/odbcinst.ini
+        echo "*** cat /etc/odbc.ini"
+        cat /etc/odbc.ini
+        echo '*** ls -l /opt/microsoft/msodbcsql17/lib64'
+        ls -l /opt/microsoft/msodbcsql17/lib64 || true
+        echo '*** ls -l /usr/lib/x86_64-linux-gnu/odbc'
+        ls -l /usr/lib/x86_64-linux-gnu/odbc || true
+
+    - name: Create test databases in SQL Server
+      run: |
+        echo "*** SQL Server 2017"
+        docker exec -i "${{ job.services.mssql2017.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2017' -Q "SELECT @@VERSION" || sleep 5
+        docker exec -i "${{ job.services.mssql2017.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2017' -Q "CREATE DATABASE test"
+        echo "*** SQL Server 2019"
+        docker exec -i "${{ job.services.mssql2019.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2019' -Q "SELECT @@VERSION" || sleep 5
+        docker exec -i "${{ job.services.mssql2019.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2019' -Q "CREATE DATABASE test"
+
+    - name: Create test database in PostgreSQL
+      run: |
+        echo "*** get version"
+        psql -c "SELECT version()"
+        echo "*** create database"
+        psql -c "CREATE DATABASE test WITH encoding='UTF8' LC_COLLATE='en_US.utf8' LC_CTYPE='en_US.utf8'"
+        echo "*** list databases"
+        psql -l
+      env:
+        PGHOST: localhost
+        PGPORT: 5432
+        PGDATABASE: postgres_db
+        PGUSER: postgres_user
+        PGPASSWORD: postgres_pwd
+
+    - name: Create test database in MySQL
+      run: |
+        echo "*** get status"
+        mysql --user=root --password=root --execute "STATUS"
+        echo "*** create database"
+        mysql --user=root --password=root --execute "CREATE DATABASE test"
+
+    - uses: actions/checkout@v2
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Python dependencies
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Build and install pyodbc
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        echo "*** current python version"
+        python -VV
+        echo "*** run setup.py"
+        python setup.py install
+        echo "*** pip freeze"
+        python -m pip freeze --all
+        echo "*** pyodbc version"
+        python -c "import pyodbc; print(pyodbc.version)"
+
+    - name: Run SQL Server 2017 tests
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        python "./${{ matrix.tests-dir }}/sqlservertests.py" "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost,1401;UID=sa;PWD=StrongPassword2017;DATABASE=test"
+
+    - name: Run SQL Server 2019 tests
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        python "./${{ matrix.tests-dir }}/sqlservertests.py" "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost,1402;UID=sa;PWD=StrongPassword2019;DATABASE=test"
+
+    - name: Run PostgreSQL tests
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        python "./${{ matrix.tests-dir }}/pgtests.py" "DRIVER={PostgreSQL Unicode};SERVER=localhost;PORT=5432;UID=postgres_user;PWD=postgres_pwd;DATABASE=test"
+
+    - name: Run MySQL tests
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        python "./${{ matrix.tests-dir }}/mysqltests.py" "DRIVER={MySQL ODBC 8.0 ANSI Driver};SERVER=localhost;UID=root;PWD=root;DATABASE=test;CHARSET=utf8mb4"
