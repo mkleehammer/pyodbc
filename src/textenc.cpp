@@ -9,7 +9,9 @@ static PyObject* nulls = PyBytes_FromStringAndSize("\0\0\0\0", 4);
 
 void SQLWChar::init(PyObject* src, const TextEnc& enc)
 {
-    // Initialization code common to all of the constructors.
+  // Initialization code common to all of the constructors.
+  //
+  // Convert `src` to SQLWCHAR.
 
     if (src == 0 || src == Py_None)
     {
@@ -37,7 +39,24 @@ void SQLWChar::init(PyObject* src, const TextEnc& enc)
     }
 #endif
 
-    PyObject* pb = PyUnicode_AsEncodedString(src, enc.name, "strict");
+    PyObject* pb = 0;
+
+#if PY_MAJOR_VERSION == 2
+    if (PyBytes_Check(src))
+    {
+      // If this is Python 2, the string could already be encoded as bytes.  If the encoding is
+      // different than what we want, we have to decode to Unicode and then re-encode.
+
+
+      PyObject* u = PyString_AsDecodedObject(src, 0, "strict");
+      if (u)
+        src = u;
+    }
+#endif
+
+    if (!pb && PyUnicode_Check(src))
+        pb = PyUnicode_AsEncodedString(src, enc.name, "strict");
+
     if (pb)
     {
         // Careful: Some encodings don't return bytes.
@@ -56,9 +75,16 @@ void SQLWChar::init(PyObject* src, const TextEnc& enc)
             psz = 0;
             return;
         }
+    } else {
+      // If the encoding failed (possibly due to "strict"), it will generate an exception, but
+      // we're going to continue.
+      PyErr_Clear();
+      psz = 0;
+    }
 
-        psz = (SQLWCHAR*)PyBytes_AS_STRING(pb);
+    if (pb) {
         bytes.Attach(pb);
+        psz = (SQLWCHAR*)PyBytes_AS_STRING(pb);
     }
 }
 
