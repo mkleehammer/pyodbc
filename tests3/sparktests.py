@@ -4,7 +4,7 @@
 usage = """\
 usage: %prog [options] connection_string
 
-Unit tests for PostgreSQL.  To use, pass a connection string as the parameter.
+Unit tests for Apache Spark. To use, pass a connection string as the parameter.
 The tests will create and drop tables t1 and t2 as necessary.
 
 These run using the version from the 'build' directory, not the version
@@ -13,10 +13,11 @@ before running the tests.
 
 You can also put the connection string into a tmp/setup.cfg file like so:
 
-  [pgtests]
-  connection-string=DSN=PostgreSQL35W
+  [sparktests]
+  connection-string=DSN=Spark
 
-Note: Be sure to use the "Unicode" (not the "ANSI") version of the PostgreSQL ODBC driver.
+These tests use Simba Spark ODBC driver.
+The DSN should be configured with UseNativeQuery=0 to pass the tests.
 """
 
 import sys
@@ -46,7 +47,7 @@ def _generate_test_string(length):
     return v[:length]
 
 
-class PGTestCase(unittest.TestCase):
+class SparkTestCase(unittest.TestCase):
 
     INTEGERS = [ -1, 0, 1, 0x7FFFFFFF ]
     BIGINTS  = INTEGERS + [ 0xFFFFFFFF, 0x123456789 ]
@@ -65,7 +66,7 @@ class PGTestCase(unittest.TestCase):
         self.ansi = ansi
 
     def setUp(self):
-        self.cnxn   = pyodbc.connect(self.connection_string, ansi=self.ansi)
+        self.cnxn   = pyodbc.connect(self.connection_string, ansi=self.ansi, autocommit=True)
         self.cursor = self.cnxn.cursor()
 
         # I've set my test database to use UTF-8 which seems most popular.
@@ -78,12 +79,9 @@ class PGTestCase(unittest.TestCase):
 
         for i in range(3):
             try:
-                self.cursor.execute("drop table t%d" % i)
-                self.cnxn.commit()
+                self.cursor.execute("drop table if exists t%d" % i)
             except:
                 pass
-
-        self.cnxn.rollback()
 
 
     def tearDown(self):
@@ -166,14 +164,6 @@ class PGTestCase(unittest.TestCase):
 
         self.assertEqual(result, value)
 
-    def test_maxwrite(self):
-        # If we write more than `maxwrite` bytes, pyodbc will switch from
-        # binding the data all at once to providing it at execute time with
-        # SQLPutData.  The default maxwrite is 1GB so this is rarely needed in
-        # PostgreSQL but I need to test the functionality somewhere.
-        self.cnxn.maxwrite = 300
-        self._test_strtype('varchar', _generate_test_string(400))
-
     #
     # VARCHAR
     #
@@ -210,28 +200,13 @@ class PGTestCase(unittest.TestCase):
 
     def test_chinese(self):
         v = '我的'
-        self.cursor.execute("SELECT N'我的' AS name")
+        self.cursor.execute("SELECT '我的' AS name")
         row = self.cursor.fetchone()
         self.assertEqual(row[0], v)
 
-        self.cursor.execute("SELECT N'我的' AS name")
+        self.cursor.execute("SELECT '我的' AS name")
         rows = self.cursor.fetchall()
         self.assertEqual(rows[0][0], v)
-
-    #
-    # bytea
-    #
-
-    def test_null_bytea(self):
-        self._test_strtype('bytea', None)
-    def test_small_bytea(self):
-        self._test_strtype('bytea', self.SMALL_BYTES)
-    def test_large_bytea(self):
-        self._test_strtype('bytea', self.LARGE_BYTES)
-
-    # Now test with bytearray
-    def test_large_bytea_array(self):
-        self._test_strtype('bytea', bytearray(self.LARGE_BYTES), resulttype=bytes)
 
     for value in INTEGERS:
         name = str(value).replace('.', '_').replace('-', 'neg_')
@@ -240,10 +215,6 @@ class PGTestCase(unittest.TestCase):
     for value in BIGINTS:
         name = str(value).replace('.', '_').replace('-', 'neg_')
         locals()['test_bigint_%s' % name] = _simpletest('bigint', value)
-
-    for value in [-1234.56, -1, 0, 1, 1234.56, 123456789.21]:
-        name = str(value).replace('.', '_').replace('-', 'neg_')
-        locals()['test_money_%s' % name] = _simpletest('money', value)
 
     for value in "-1234.56  -1  0  1  1234.56  123456789.21".split():
         name = value.replace('.', '_').replace('-', 'neg_')
@@ -281,29 +252,6 @@ class PGTestCase(unittest.TestCase):
         v = self.cursor.execute("select * from t1").fetchone()[0]
         self.assertEqual(type(v), Decimal)
         self.assertEqual(v, value)
-
-    def test_nonnative_uuid(self):
-        # The default is False meaning we should return a string.  Note that
-        # SQL Server seems to always return uppercase.
-        value = uuid.uuid4()
-        self.cursor.execute("create table t1(n uuid)")
-        self.cursor.execute("insert into t1 values (?)", value)
-
-        pyodbc.native_uuid = False
-        result = self.cursor.execute("select n from t1").fetchval()
-        self.assertEqual(type(result), str)
-        self.assertEqual(result, str(value).upper())
-
-    def test_native_uuid(self):
-        # When true, we should return a uuid.UUID object.
-        value = uuid.uuid4()
-        self.cursor.execute("create table t1(n uuid)")
-        self.cursor.execute("insert into t1 values (?)", value)
-
-        pyodbc.native_uuid = True
-        result = self.cursor.execute("select n from t1").fetchval()
-        self.assertIsInstance(result, uuid.UUID)
-        self.assertEqual(value, result)
 
     def _exec(self):
         self.cursor.execute(self.sql)
@@ -352,49 +300,6 @@ class PGTestCase(unittest.TestCase):
     def test_version(self):
         self.assertEqual(3, len(pyodbc.version.split('.'))) # 1.3.1 etc.
 
-    def test_rowcount_delete(self):
-        self.assertEqual(self.cursor.rowcount, -1)
-        self.cursor.execute("create table t1(i int)")
-        count = 4
-        for i in range(count):
-            self.cursor.execute("insert into t1 values (?)", i)
-        self.cursor.execute("delete from t1")
-        self.assertEqual(self.cursor.rowcount, count)
-
-    def test_rowcount_nodata(self):
-        """
-        This represents a different code path than a delete that deleted something.
-
-        The return value is SQL_NO_DATA and code after it was causing an error.  We could use SQL_NO_DATA to step over
-        the code that errors out and drop down to the same SQLRowCount code.  On the other hand, we could hardcode a
-        zero return value.
-        """
-        self.cursor.execute("create table t1(i int)")
-        # This is a different code path internally.
-        self.cursor.execute("delete from t1")
-        self.assertEqual(self.cursor.rowcount, 0)
-
-    def test_rowcount_select(self):
-        self.cursor.execute("create table t1(i int)")
-        count = 4
-        for i in range(count):
-            self.cursor.execute("insert into t1 values (?)", i)
-        self.cursor.execute("select * from t1")
-        self.assertEqual(self.cursor.rowcount, 4)
-
-    # PostgreSQL driver fails here?
-    # def test_rowcount_reset(self):
-    #     "Ensure rowcount is reset to -1"
-    #
-    #     self.cursor.execute("create table t1(i int)")
-    #     count = 4
-    #     for i in range(count):
-    #         self.cursor.execute("insert into t1 values (?)", i)
-    #     self.assertEqual(self.cursor.rowcount, 1)
-    #
-    #     self.cursor.execute("create table t2(i int)")
-    #     self.assertEqual(self.cursor.rowcount, -1)
-
     def test_lower_case(self):
         "Ensure pyodbc.lowercase forces returned column names to lowercase."
 
@@ -414,13 +319,26 @@ class PGTestCase(unittest.TestCase):
         # Put it back so other tests don't fail.
         pyodbc.lowercase = False
 
+    def test_long_column_name(self):
+        "ensure super long column names are handled correctly."
+        c1 = 'abcdefghij' * 50
+        c2 = 'klmnopqrst' * 60
+        self.cursor = self.cnxn.cursor()
+
+        self.cursor.execute("create table t1(c1 int, c2 int)")
+        self.cursor.execute("select c1 as {}, c2 as {} from t1".format(c1, c2))
+
+        names = [ t[0] for t in self.cursor.description ]
+        names.sort()
+
+        self.assertEqual(names, [ c1, c2 ])
+
     def test_row_description(self):
         """
         Ensure Cursor.description is accessible as Row.cursor_description.
         """
         self.cursor = self.cnxn.cursor()
         self.cursor.execute("create table t1(a int, b char(3))")
-        self.cnxn.commit()
         self.cursor.execute("insert into t1 values(1, 'abc')")
 
         row = self.cursor.execute("select * from t1").fetchone()
@@ -434,10 +352,7 @@ class PGTestCase(unittest.TestCase):
 
         self.cursor.executemany("insert into t1(a, b) values (?,?)", params)
 
-        # REVIEW: Without the cast, we get the following error:
-        # [07006] [unixODBC]Received an unsupported type from Postgres.;\nERROR:  table "t2" does not exist (14)
-
-        count = self.cursor.execute("select cast(count(*) as int) from t1").fetchone()[0]
+        count = self.cursor.execute("select count(*) from t1").fetchone()[0]
         self.assertEqual(count, len(params))
 
         self.cursor.execute("select a, b from t1 order by a")
@@ -458,10 +373,7 @@ class PGTestCase(unittest.TestCase):
 
         self.cursor.executemany("insert into t1(a, b) values (?,?)", params)
 
-        # REVIEW: Without the cast, we get the following error: [07006] [unixODBC]Received an
-        # unsupported type from Postgres.;\nERROR: table "t2" does not exist (14)
-
-        count = self.cursor.execute("select cast(count(*) as int) from t1").fetchone()[0]
+        count = self.cursor.execute("select count(*) from t1").fetchone()[0]
         self.assertEqual(count, len(params))
 
         self.cursor.execute("select a, b from t1 order by a")
@@ -500,16 +412,6 @@ class PGTestCase(unittest.TestCase):
         result = row[0:4]
         self.assertTrue(result is row)
 
-    def test_cnxn_execute_error(self):
-        """
-        Make sure that Connection.execute (not Cursor) errors are not "eaten".
-
-        GitHub issue #74
-        """
-        self.cursor.execute("create table t1(a int primary key)")
-        self.cursor.execute("insert into t1 values (1)")
-        self.assertRaises(pyodbc.Error, self.cnxn.execute, "insert into t1 values (1)")
-
     def test_row_repr(self):
         self.cursor.execute("create table t1(a int, b int, c int, d int)")
         self.cursor.execute("insert into t1 values(1,2,3,4)")
@@ -525,28 +427,12 @@ class PGTestCase(unittest.TestCase):
         result = str(row[:1])
         self.assertEqual(result, "(1,)")
 
-
-    def test_autocommit(self):
-        self.assertEqual(self.cnxn.autocommit, False)
-        othercnxn = pyodbc.connect(self.connection_string, autocommit=True)
-        self.assertEqual(othercnxn.autocommit, True)
-        othercnxn.autocommit = False
-        self.assertEqual(othercnxn.autocommit, False)
-
-    def test_exc_integrity(self):
-        "Make sure an IntegretyError is raised"
-        # This is really making sure we are properly encoding and comparing the SQLSTATEs.
-        self.cursor.execute("create table t1(s1 varchar(10) primary key)")
-        self.cursor.execute("insert into t1 values ('one')")
-        self.assertRaises(pyodbc.IntegrityError, self.cursor.execute, "insert into t1 values ('one')")
-
-
     def test_cnxn_set_attr_before(self):
         # I don't have a getattr right now since I don't have a table telling me what kind of
         # value to expect.  For now just make sure it doesn't crash.
         # From the unixODBC sqlext.h header file.
         SQL_ATTR_PACKET_SIZE = 112
-        othercnxn = pyodbc.connect(self.connection_string, attrs_before={ SQL_ATTR_PACKET_SIZE : 1024 * 32 })
+        othercnxn = pyodbc.connect(self.connection_string, attrs_before={ SQL_ATTR_PACKET_SIZE : 1024 * 32 }, autocommit=True)
 
     def test_cnxn_set_attr(self):
         # I don't have a getattr right now since I don't have a table telling me what kind of
@@ -557,25 +443,16 @@ class PGTestCase(unittest.TestCase):
         self.cnxn.set_attr(SQL_ATTR_ACCESS_MODE, SQL_MODE_READ_ONLY)
 
     def test_columns(self):
-        # When using aiohttp, `await cursor.primaryKeys('t1')` was raising the error
-        #
-        #   Error: TypeError: argument 2 must be str, not None
-        #
-        # I'm not sure why, but PyArg_ParseTupleAndKeywords fails if you use "|s" for an
-        # optional string keyword when calling indirectly.
-
-        self.cursor.execute("create table t1(a int, b varchar(3), xΏz varchar(4))")
+        self.cursor.execute("create table t1(a int, b varchar(3), `xΏz` decimal(8,2))")
 
         self.cursor.columns('t1')
         results = {row.column_name: row for row in self.cursor}
         row = results['a']
-        assert row.type_name == 'int4', row.type_name
+        assert row.type_name == 'INT', row.type_name
         row = results['b']
-        assert row.type_name == 'varchar'
-        assert row.precision == 3, row.precision
+        assert row.type_name == 'VARCHAR'
         row = results['xΏz']
-        assert row.type_name == 'varchar'
-        assert row.precision == 4, row.precision
+        assert row.type_name == 'DECIMAL'
 
         # Now do the same, but specifically pass in None to one of the keywords.  Old versions
         # were parsing arguments incorrectly and would raise an error.  (This crops up when
@@ -584,10 +461,9 @@ class PGTestCase(unittest.TestCase):
         self.cursor.columns('t1', schema=None, catalog=None)
         results = {row.column_name: row for row in self.cursor}
         row = results['a']
-        assert row.type_name == 'int4', row.type_name
+        assert row.type_name == 'INT', row.type_name
         row = results['b']
-        assert row.type_name == 'varchar'
-        assert row.precision == 3
+        assert row.type_name == 'VARCHAR'
 
     def test_cancel(self):
         # I'm not sure how to reliably cause a hang to cancel, so for now we'll settle with
@@ -611,88 +487,7 @@ class PGTestCase(unittest.TestCase):
         result = self.cursor.execute("select s from t1").fetchone()[0]
 
         self.assertEqual(result, v)
-
-    def test_emoticons_as_literal(self):
-        # https://github.com/mkleehammer/pyodbc/issues/630
-
-        v = "x \U0001F31C z"
-
-        self.cursor.execute("CREATE TABLE t1(s varchar(100))")
-        self.cursor.execute("insert into t1 values ('%s')" % v)
-
-        result = self.cursor.execute("select s from t1").fetchone()[0]
-
-        self.assertEqual(result, v)
-
-    def test_cursor_messages(self):
-        """
-        Test the Cursor.messages attribute.
-        """
-        # self.cursor is used in setUp, hence is not brand new at this point
-        brand_new_cursor = self.cnxn.cursor()
-        self.assertIsNone(brand_new_cursor.messages)
-
-        # using INFO message level because they are always sent to the client regardless of
-        # client_min_messages: https://www.postgresql.org/docs/11/runtime-config-client.html
-        for msg in ('hello world', 'ABCDEFGHIJ' * 800):
-            self.cursor.execute("""
-                CREATE OR REPLACE PROCEDURE test_cursor_messages()
-                LANGUAGE plpgsql
-                AS $$
-                BEGIN
-                    RAISE INFO '{}' USING ERRCODE = '01000';
-                END;
-                $$;
-            """.format(msg))
-            self.cursor.execute("CALL test_cursor_messages();")
-            messages = self.cursor.messages
-            self.assertTrue(type(messages) is list)
-            self.assertTrue(len(messages) > 0)
-            self.assertTrue(all(type(m) is tuple for m in messages))
-            self.assertTrue(all(len(m) == 2 for m in messages))
-            self.assertTrue(all(type(m[0]) is str for m in messages))
-            self.assertTrue(all(type(m[1]) is str for m in messages))
-            self.assertTrue(all(m[0] == '[01000] (-1)' for m in messages))
-            self.assertTrue(''.join(m[1] for m in messages).endswith(msg))
-
-    def test_output_conversion(self):
-        # Note the use of SQL_WVARCHAR, not SQL_VARCHAR.
-
-        def convert(value):
-            # The value is the raw bytes (as a bytes object) read from the
-            # database.  We'll simply add an X at the beginning at the end.
-            return 'X' + value.decode('latin1') + 'X'
-
-        self.cursor.execute("create table t1(n int, v varchar(10))")
-        self.cursor.execute("insert into t1 values (1, '123.45')")
-
-        self.cnxn.add_output_converter(pyodbc.SQL_WVARCHAR, convert)
-        value = self.cursor.execute("select v from t1").fetchone()[0]
-        self.assertEqual(value, 'X123.45X')
-
-        # Clear all conversions and try again.  There should be no Xs this time.
-        self.cnxn.clear_output_converters()
-        value = self.cursor.execute("select v from t1").fetchone()[0]
-        self.assertEqual(value, '123.45')
-
-        # Same but clear using remove_output_converter.
-        self.cnxn.add_output_converter(pyodbc.SQL_WVARCHAR, convert)
-        value = self.cursor.execute("select v from t1").fetchone()[0]
-        self.assertEqual(value, 'X123.45X')
-
-        self.cnxn.remove_output_converter(pyodbc.SQL_WVARCHAR)
-        value = self.cursor.execute("select v from t1").fetchone()[0]
-        self.assertEqual(value, '123.45')
-
-        # And lastly, clear by passing None for the converter.
-        self.cnxn.add_output_converter(pyodbc.SQL_WVARCHAR, convert)
-        value = self.cursor.execute("select v from t1").fetchone()[0]
-        self.assertEqual(value, 'X123.45X')
-
-        self.cnxn.add_output_converter(pyodbc.SQL_WVARCHAR, None)
-        value = self.cursor.execute("select v from t1").fetchone()[0]
-        self.assertEqual(value, '123.45')
-        
+       
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage="usage: %prog [options] connection_string")
@@ -707,7 +502,7 @@ def main():
         parser.error('Only one argument is allowed.  Do you need quotes around the connection string?')
 
     if not args:
-        connection_string = load_setup_connection_string('pgtests')
+        connection_string = load_setup_connection_string('sparktests')
 
         if not connection_string:
             parser.print_help()
@@ -725,13 +520,13 @@ def main():
         if not options.test.startswith('test_'):
             options.test = 'test_%s' % (options.test)
 
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.test) ])
+        s = unittest.TestSuite([ SparkTestCase(connection_string, options.ansi, options.test) ])
     else:
         # Run all tests in the class
 
-        methods = [ m for m in dir(PGTestCase) if m.startswith('test_') ]
+        methods = [ m for m in dir(SparkTestCase) if m.startswith('test_') ]
         methods.sort()
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, m) for m in methods ])
+        s = unittest.TestSuite([ SparkTestCase(connection_string, options.ansi, m) for m in methods ])
 
     testRunner = unittest.TextTestRunner(verbosity=options.verbose)
     result = testRunner.run(s)

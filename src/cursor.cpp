@@ -131,6 +131,8 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
     bool success = false;
     PyObject *desc = 0, *colmap = 0, *colinfo = 0, *type = 0, *index = 0, *nullable_obj=0;
+    SQLSMALLINT nameLen = 300;
+    ODBCCHAR *szName = NULL;
     SQLRETURN ret;
 
     I(cur->hstmt != SQL_NULL_HANDLE && cur->colinfos != 0);
@@ -148,20 +150,21 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
     desc   = PyTuple_New((Py_ssize_t)field_count);
     colmap = PyDict_New();
-    if (!desc || !colmap)
+    szName = (ODBCCHAR*) pyodbc_malloc((nameLen + 1) * sizeof(ODBCCHAR));
+    if (!desc || !colmap || !szName)
         goto done;
 
     for (int i = 0; i < field_count; i++)
     {
-        ODBCCHAR szName[300];
         SQLSMALLINT cchName;
         SQLSMALLINT nDataType;
         SQLULEN nColSize;           // precision
         SQLSMALLINT cDecimalDigits; // scale
         SQLSMALLINT nullable;
 
+        retry:
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLDescribeColW(cur->hstmt, (SQLUSMALLINT)(i + 1), (SQLWCHAR*)szName, _countof(szName), &cchName, &nDataType, &nColSize, &cDecimalDigits, &nullable);
+        ret = SQLDescribeColW(cur->hstmt, (SQLUSMALLINT)(i + 1), (SQLWCHAR*)szName, nameLen, &cchName, &nDataType, &nColSize, &cDecimalDigits, &nullable);
         Py_END_ALLOW_THREADS
 
         if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
@@ -175,6 +178,16 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
         {
             RaiseErrorFromHandle(cur->cnxn, "SQLDescribeCol", cur->cnxn->hdbc, cur->hstmt);
             goto done;
+        }
+
+        // If needed, allocate a bigger column name message buffer and retry.
+        if (cchName > nameLen - 1) {
+            nameLen = cchName + 1;
+            if (!pyodbc_realloc((BYTE**) &szName, (nameLen + 1) * sizeof(ODBCCHAR))) {
+                PyErr_NoMemory();
+                goto done;
+            }
+            goto retry;
         }
 
         const TextEnc& enc = cur->cnxn->metadata_enc;
@@ -289,6 +302,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
     Py_XDECREF(colmap);
     Py_XDECREF(index);
     Py_XDECREF(colinfo);
+    pyodbc_free(szName);
 
     return success;
 }

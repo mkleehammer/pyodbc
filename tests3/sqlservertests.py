@@ -1916,6 +1916,21 @@ class SqlServerTestCase(unittest.TestCase):
     def test_tvp_diffschema(self):
         self._test_tvp(True)
 
+    def test_columns(self):
+        self.cursor.execute(
+            """
+            create table t1(n int, d datetime, c nvarchar(100))
+            """)
+
+        self.cursor.columns(table='t1')
+        names = {row.column_name for row in self.cursor.fetchall()}
+        assert names == {'n', 'd', 'c'}, 'names=%r' % names
+
+        self.cursor.columns(table='t1', column='c')
+        row = self.cursor.fetchone()
+        assert row.column_name == 'c'
+
+
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage=usage)

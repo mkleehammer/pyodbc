@@ -1,38 +1,38 @@
 from __future__ import annotations
-from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, Sequence, Tuple, TypeVar, Union
-
-_TV = TypeVar('_TV')  # represents any class, for the cursor description "type_code" attribute
+from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, Sequence, Tuple, Union
 
 
-# ODBC connection attributes
-SQL_ACCESS_MODE: int
-SQL_AUTOCOMMIT: int
-SQL_LOGIN_TIMEOUT: int
-SQL_OPT_TRACE: int
-SQL_OPT_TRACEFILE: int
-SQL_TRANSLATE_DLL: int
-SQL_TRANSLATE_OPTION: int
-SQL_TXN_ISOLATION: int
-SQL_CURRENT_QUALIFIER: int
-SQL_ODBC_CURSORS: int
-SQL_QUIET_MODE: int
-SQL_PACKET_SIZE: int
+# SQLSetConnectAttr attributes
+# ref: https://docs.microsoft.com/en-us/sql/odbc/reference/syntax/sqlsetconnectattr-function
 SQL_ATTR_ACCESS_MODE: int
 SQL_ATTR_AUTOCOMMIT: int
+SQL_ATTR_CURRENT_CATALOG: int
 SQL_ATTR_LOGIN_TIMEOUT: int
+SQL_ATTR_ODBC_CURSORS: int
+SQL_ATTR_QUIET_MODE: int
 SQL_ATTR_TRACE: int
 SQL_ATTR_TRACEFILE: int
 SQL_ATTR_TRANSLATE_LIB: int
 SQL_ATTR_TRANSLATE_OPTION: int
 SQL_ATTR_TXN_ISOLATION: int
-SQL_ATTR_CURRENT_CATALOG: int
-SQL_ATTR_ODBC_CURSORS: int
-SQL_ATTR_QUIET_MODE: int
+# other (e.g. specific to certain RDBMSs)
+SQL_ACCESS_MODE: int
+SQL_AUTOCOMMIT: int
+SQL_CURRENT_QUALIFIER: int
+SQL_LOGIN_TIMEOUT: int
+SQL_ODBC_CURSORS: int
+SQL_OPT_TRACE: int
+SQL_OPT_TRACEFILE: int
+SQL_PACKET_SIZE: int
+SQL_QUIET_MODE: int
+SQL_TRANSLATE_DLL: int
+SQL_TRANSLATE_OPTION: int
+SQL_TXN_ISOLATION: int
+# Unicode
 SQL_ATTR_ANSI_APP: int
 
 # ODBC column data types
 # https://docs.microsoft.com/en-us/sql/odbc/reference/appendixes/appendix-d-data-types
-SQL_WMETADATA: int
 SQL_UNKNOWN_TYPE: int
 SQL_CHAR: int
 SQL_VARCHAR: int
@@ -72,9 +72,12 @@ SQL_INTERVAL_HOUR_TO_MINUTE: int
 SQL_INTERVAL_HOUR_TO_SECOND: int
 SQL_INTERVAL_MINUTE_TO_SECOND: int
 SQL_GUID: int
-SQL_NULLABLE: int
+# SQLDescribeCol 
 SQL_NO_NULLS: int
+SQL_NULLABLE: int
 SQL_NULLABLE_UNKNOWN: int
+# specific to pyodbc
+SQL_WMETADATA: int
 
 # SQL_CONVERT_X
 SQL_CONVERT_FUNCTIONS: int
@@ -104,14 +107,14 @@ SQL_CONVERT_WCHAR: int
 SQL_CONVERT_WLONGVARCHAR: int
 SQL_CONVERT_WVARCHAR: int
 
-# SQLSetConnectAttr transaction isolation
-SQL_ATTR_TXN_ISOLATION: int
-SQL_TXN_READ_UNCOMMITTED: int
+# transaction isolation
+# ref: https://docs.microsoft.com/en-us/sql/relational-databases/native-client-odbc-cursors/properties/cursor-transaction-isolation-level
 SQL_TXN_READ_COMMITTED: int
+SQL_TXN_READ_UNCOMMITTED: int
 SQL_TXN_REPEATABLE_READ: int
 SQL_TXN_SERIALIZABLE: int
 
-## outer join capabilities
+# outer join capabilities
 SQL_OJ_LEFT: int
 SQL_OJ_RIGHT: int
 SQL_OJ_FULL: int
@@ -292,14 +295,14 @@ SQL_XOPEN_CLI_YEAR: int
 # pyodbc-specific constants
 BinaryNull: Any  # to distinguish binary NULL values from char NULL values
 
-# read-only module attributes
-version: str
+# module attributes
 # https://www.python.org/dev/peps/pep-0249/#globals
+# read-only
+version: str  # not pep-0249
 apilevel: str
 threadsafety: int
 paramstyle: str
-
-# read-write module attributes
+# read-write
 pooling: bool
 lowercase: bool
 native_uuid: bool
@@ -318,7 +321,7 @@ class ProgrammingError(DatabaseError): ...
 class NotSupportedError(DatabaseError): ...
 
 
-# an ODBC connection to the database, in part manages database transactions
+# an ODBC connection to the database, for managing database transactions and creating cursors
 # https://www.python.org/dev/peps/pep-0249/#connection-objects
 class Connection:
 
@@ -330,17 +333,25 @@ class Connection:
     # read-only attributes
     searchescape: str
 
+    # implemented dunder methods
+    def __enter__(self) -> Connection: ...
+    def __exit__(self, exc_type, exc_value, traceback) -> None: ...
+
+    # define text encoding for data, metadata, etc.
     def setencoding(self, encoding: str, ctype: Optional[int]) -> None: ...
     def setdecoding(self, encoding: str, ctype: Optional[int]) -> None: ...
 
+    # connection attributes
     def getinfo(self, infotype: int, /) -> Any: ...
     def set_attr(self, attr_id: int, value: int, /) -> None: ...
 
+    # handle non-standard database data types
     def add_output_converter(self, sqltype: int, new_converter: Callable, /) -> None: ...
     def get_output_converter(self, sqltype: int, /) -> Optional[Callable]: ...
     def remove_output_converter(self, sqltype: int, /) -> None: ...
     def clear_output_converters(self) -> None: ...
 
+    # query functions (in rough order of use)
     def cursor(self) -> Cursor: ...
     def execute(self, sql: str, *params) -> Cursor: ...
     def commit(self) -> None: ...
@@ -358,11 +369,18 @@ class Cursor:
     noscan: bool
 
     # read-only attributes
-    description: Tuple[Tuple[str, _TV, int, int, int, int, bool]]
+    description: Tuple[Tuple[str, Any, int, int, int, int, bool]]
     messages: Optional[List[Tuple[str, Union[str, bytes]]]]
     rowcount: int
     connection: Connection
 
+    # implemented dunder methods
+    def __enter__(self) -> Cursor: ...
+    def __exit__(self, exc_type, exc_value, traceback) -> None: ...
+    def __iter__(self, /) -> Cursor: ...
+    def __next__(self, /) -> Row: ...
+
+    # query functions (in rough order of use)
     def setinputsizes(self, sizes: List[Tuple[int, int, int]], /) -> None: ...
     def setoutputsize(self) -> None: ...
     def execute(self, sql: str, *params) -> Cursor: ...
@@ -378,6 +396,7 @@ class Cursor:
     def cancel(self) -> None: ...
     def close(self) -> None: ...
 
+    # metadata functions
     def tables(self) -> Cursor: ...
     def columns(self) -> Cursor: ...
     def statistics(self) -> Cursor: ...
@@ -392,10 +411,29 @@ class Cursor:
 
 # a Row object represents a single database record, and behaves somewhat similar to a NamedTuple
 class Row:
-    cursor_description: Tuple[Tuple[str, _TV, int, int, int, int, bool]]
+    cursor_description: Tuple[Tuple[str, Any, int, int, int, int, bool]]
+
+    # implemented dunder methods
+    def __contains__(self, key, /) -> int: ...
+    def __delattr__(self, name, /) -> None: ...
+    def __delitem__(self, key, /) -> None: ...
+    def __eq__(self, value, /) -> bool: ...
+    def __ge__(self, value, /) -> bool: ...
+    def __getattribute__(self, name, /) -> Any: ...
+    def __getitem__(self, key, /) -> Any: ...
+    def __gt__(self, value, /) -> bool: ...
+    def __le__(self, value, /) -> bool: ...
+    def __len__(self, /) -> int: ...
+    def __lt__(self, value, /) -> bool: ...
+    def __ne__(self, value, /) -> bool: ...
+    def __reduce__(self) -> Any: ...
+    def __repr__(self, /) -> str: ...
+    def __setattr__(self, name, value, /) -> None: ...
+    def __setitem__(self, key, value, /) -> None: ...
 
 
-# functions
+# module functions
+
 def dataSources() -> Dict[str, str]: ...
 def drivers() -> List[str]: ...
 
@@ -404,11 +442,11 @@ def getDecimalSeparator() -> str: ...
 
 # https://www.python.org/dev/peps/pep-0249/#connect
 def connect(connstring: str,
-            /, *,  # positional-only parameters before, named-only after
+            /, *,  # only positional parameters before, only named parameters after
             autocommit: bool = False,
             encoding: str = 'utf-16le',
             ansi: bool = False,
             readonly: bool = False,
-            timeout: int,
-            attrs_before: dict,
+            timeout: int = 0,
+            attrs_before: dict = {},
             **kwargs) -> Connection: ...

@@ -1,6 +1,7 @@
 import os, sys, platform
 from os.path import join, dirname, abspath, basename
 import unittest
+from distutils.util import get_platform
 
 def add_to_path():
     """
@@ -18,7 +19,7 @@ def add_to_path():
 
     # Only go into directories that match our version number.
 
-    dir_suffix = '-%s.%s' % (sys.version_info[0], sys.version_info[1])
+    dir_suffix = '%s-%s.%s' % (get_platform(), sys.version_info[0], sys.version_info[1])
 
     build = join(dirname(dirname(abspath(__file__))), 'build')
 
@@ -30,6 +31,7 @@ def add_to_path():
         for name in library_names:
             if name in files:
                 sys.path.insert(0, root)
+                print('Library:', join(root, name))
                 return
 
     print('Did not find the pyodbc library in the build directory.  Will use an installed version.')
