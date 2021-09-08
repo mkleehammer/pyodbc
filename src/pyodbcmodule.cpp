@@ -615,9 +615,16 @@ static PyObject* mod_datasources(PyObject* self)
     if (!result)
         return 0;
 
-    SQLCHAR szDSN[500]; // Using a buffer larger than SQL_MAX_DSN_LENGTH + 1 for systems that ignore it
-    SWORD cbDSN;
+    // Using a buffer larger than SQL_MAX_DSN_LENGTH + 1 for systems that ignore it
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+    SQLWCHAR szDSN[500];
+    SQLWCHAR szDesc[500];
+#else
+    SQLCHAR szDSN[500];
     SQLCHAR szDesc[500];
+#endif
+
+    SWORD cbDSN;
     SWORD cbDesc;
 
     SQLUSMALLINT nDirection = SQL_FETCH_FIRST;
@@ -626,12 +633,30 @@ static PyObject* mod_datasources(PyObject* self)
 
     for (;;)
     {
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+        // wchar_t and UTF-16 on Windows
+        ret = SQLDataSourcesW(henv, nDirection, szDSN,  _countof(szDSN),  &cbDSN, szDesc, _countof(szDesc), &cbDesc);
+
+        if (!SQL_SUCCEEDED(ret))
+            break;
+
+        int byteorder = BYTEORDER_NATIVE;
+        PyObject* key = PyUnicode_DecodeUTF16((char*)szDSN, cbDSN * sizeof(wchar_t), "strict", &byteorder);
+        PyObject* val = PyUnicode_DecodeUTF16((char*)szDesc, cbDesc * sizeof(wchar_t), "strict", &byteorder);
+#else
+        // UTF-8
         ret = SQLDataSources(henv, nDirection, szDSN,  _countof(szDSN),  &cbDSN, szDesc, _countof(szDesc), &cbDesc);
 
         if (!SQL_SUCCEEDED(ret))
             break;
 
-        PyDict_SetItemString(result, (const char*)szDSN, PyString_FromString((const char*)szDesc));
+        PyObject* key = PyString_FromString((const char*)szDSN);
+        PyObject* val = PyString_FromString((const char*)szDesc);
+#endif
+
+        if(key && val)
+            PyDict_SetItem(result, key, val);
+
         nDirection = SQL_FETCH_NEXT;
     }
 
