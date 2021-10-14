@@ -207,6 +207,7 @@ jobs:
         env:
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_24
           CIBW_BEFORE_ALL_LINUX: apt-get update && apt-get -y install unixodbc-dev
+          CIBW_SKIP: "*-win32 *-manylinux_i686"
 
       - uses: actions/upload-artifact@v2
         with:
