@@ -206,7 +206,7 @@ jobs:
         uses: pypa/cibuildwheel@v2.1.3
         env:
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_24
-          CIBW_BEFORE_ALL_LINUX: apt-get -y install unixodbc-dev
+          CIBW_BEFORE_ALL_LINUX: apt-get update && apt-get -y install unixodbc-dev
 
       - uses: actions/upload-artifact@v2
         with:
