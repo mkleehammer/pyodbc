@@ -275,7 +275,7 @@ def get_version():
 
     if not numbers:
         _print('WARNING: Unable to determine version.  Using 4.0.0.0')
-        name, numbers = '4.0.0.dev0', [4,0,0,0]
+        name, numbers = '4.0.dev0', [4,0,0,0]
 
     return name, numbers
 
