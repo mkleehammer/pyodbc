@@ -12,6 +12,11 @@ The easiest way to install is to use pip:
 
     pip install pyodbc
 
+If you are using Mac, you should be using `Homebrew` for installing pyodbc:
+
+    ```brew install unixodbc
+       pip install pyodbc```
+    
 Precompiled binary wheels are provided for most Python versions on Windows and macOS.  On other
 operating systems this will build from source.  Note, pyodbc contains C++ extensions so you will
 need a suitable C++ compiler on your computer to install pyodbc, for all operating systems.  See
