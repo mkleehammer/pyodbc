@@ -201,12 +201,12 @@ def get_compiler_settings(version_str):
         settings['define_macros'].append(('MAC_OS_X_VERSION_10_7',))
 
         # Add directories for MacPorts and Homebrew.
-        dirs = ['/usr/local/include', '/opt/local/include', expanduser('~/homebrew/include')]
+        dirs = ['/usr/local/include', '/opt/local/include', '/opt/homebrew/include', expanduser('~/homebrew/include')]
         settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
 
         # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
         # ( also OS/X since El Capitan prevents /usr/lib from being accessed )
-        settings['library_dirs'] = ['/usr/local/lib']
+        settings['library_dirs'] = ['/usr/local/lib', '/opt/homebrew/lib']
 
     else:
         # Other posix-like: Linux, Solaris, etc.
