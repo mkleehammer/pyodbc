@@ -273,7 +273,7 @@ class MySqlTestCase(unittest.TestCase):
     # bit
     #
 
-    # The MySQL driver maps BIT colums to the ODBC bit data type, but they aren't behaving quite like a Boolean value
+    # The MySQL driver maps BIT columns to the ODBC bit data type, but they aren't behaving quite like a Boolean value
     # (which is what the ODBC bit data type really represents).  The MySQL BOOL data type is just an alias for a small
     # integer, so pyodbc can't recognize it and map it back to True/False.
     #
