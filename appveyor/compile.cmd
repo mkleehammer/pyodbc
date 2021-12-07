@@ -48,14 +48,10 @@ IF %PYTHON_MAJOR_VERSION% EQU 2 (
 ) ELSE (
     IF %PYTHON_MAJOR_VERSION% EQU 3 (
         SET WINDOWS_SDK_VERSION="v7.1"
-        IF %PYTHON_MINOR_VERSION% LEQ 4 (
-            SET SET_SDK_64=Y
-        ) ELSE (
-            SET SET_SDK_64=N
-            IF EXIST "%WIN_WDK%" (
-                :: See: https://connect.microsoft.com/VisualStudio/feedback/details/1610302/
-                REN "%WIN_WDK%" 0wdf
-            )
+        SET SET_SDK_64=N
+        IF EXIST "%WIN_WDK%" (
+            :: See: https://connect.microsoft.com/VisualStudio/feedback/details/1610302/
+            REN "%WIN_WDK%" 0wdf
         )
     ) ELSE (
         ECHO Unsupported Python version: "%PYTHON_MAJOR_VERSION%"
