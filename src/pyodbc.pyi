@@ -440,7 +440,7 @@ def setDecimalSeparator(sep: str, /) -> None: ...
 def getDecimalSeparator() -> str: ...
 
 # https://www.python.org/dev/peps/pep-0249/#connect
-def connect(connstring: str,
+def connect(connstring: Optional[str] = None,
             /, *,  # only positional parameters before, only named parameters after
             autocommit: bool = False,
             encoding: str = 'utf-16le',
