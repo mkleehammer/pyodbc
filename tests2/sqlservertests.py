@@ -613,7 +613,7 @@ class SqlServerTestCase(unittest.TestCase):
         # and we don't know how it was encoded so we don't know how to decode
         # it.  Since almost everyone treats XML as Unicode nowadays, we're going
         # to decode XML as Unicode.  Force your XML to Unicode before writing
-        # to the database.  (Otherwise, set a global encoder for the XMl type.)
+        # to the database.  (Otherwise, set a global encoder for the XML type.)
         ascii = 'test'
         val = unicode(ascii)
         self.cursor.execute("create table t1(a xml)")
