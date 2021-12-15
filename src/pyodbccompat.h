@@ -90,7 +90,7 @@ inline TEXT_T* Text_Buffer(PyObject* o)
 
 inline bool IntOrLong_Check(PyObject* o)
 {
-    // A compatability function to check for an int or long.  Python 3 doesn't differentate
+    // A compatibility function to check for an int or long.  Python 3 doesn't differentate
     // anymore.
     // A compatibility function that determines if the object is a string, based on the version of Python.
     // For Python 2, an ASCII or Unicode string is allowed.  For Python 3, it must be a Unicode object.

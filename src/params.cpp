@@ -1124,7 +1124,7 @@ static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamI
     else
     {
         // There are multiple segments, so we'll provide the data at execution time.  Pass the PyObject pointer as
-        // the parameter value which will be pased back to us when the data is needed.  (If we release threads, we
+        // the parameter value which will be passed back to us when the data is needed.  (If we release threads, we
         // need to up the refcount!)
 
         info.ParameterType     = SQL_LONGVARBINARY;
@@ -1376,7 +1376,7 @@ static bool UpdateParamInfo(Cursor* pCursor, Py_ssize_t nIndex, ParamInfo *pInfo
 
   // If the user didn't provide the full array (in case he gave us an array), the above code would
   // set an internal error on the cursor object, as we try to read three values from an array
-  // which may not have as many. This is ok, because we don't really care if the array is not completly
+  // which may not have as many. This is ok, because we don't really care if the array is not completely
   // specified, so we clear the error in case it comes from this. If the error was already present before that
   // we keep it, so the user can handle it.
   if (clearError)
