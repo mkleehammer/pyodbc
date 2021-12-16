@@ -615,7 +615,7 @@ static PyObject* mod_datasources(PyObject* self)
     if (!result)
         return 0;
 
-    // Using a buffer larger than SQL_MAX_DSN_LENGTH + 1 for systems that ignore it
+// Using a buffer larger than SQL_MAX_DSN_LENGTH + 1 for systems that ignore it
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
     SQLWCHAR szDSN[500];
     SQLWCHAR szDesc[500];
