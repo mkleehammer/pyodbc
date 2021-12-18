@@ -141,7 +141,7 @@ struct Cursor
     int rowcount;
 
     // A dictionary that maps from column name (PyString) to index into the result columns (PyInteger).  This is
-    // constructued during an execute and shared with each row (reference counted) to implement accessing results by
+    // constructed during an execute and shared with each row (reference counted) to implement accessing results by
     // column name.
     //
     // This duplicates some ODBC functionality, but allows us to use Row objects after the statement is closed and

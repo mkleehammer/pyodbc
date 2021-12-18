@@ -65,7 +65,7 @@ inline bool IsWideType(SQLSMALLINT sqltype)
     return false;
 }
 
-// TODO: Wont pyodbc_free crash if we didn't use pyodbc_realloc.
+// TODO: Won't pyodbc_free crash if we didn't use pyodbc_realloc.
 
 static bool ReadVarColumn(Cursor *cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool &isNull, byte *&pbResult, Py_ssize_t &cbResult)
 {
