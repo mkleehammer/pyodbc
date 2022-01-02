@@ -1764,8 +1764,9 @@ class SqlServerTestCase(unittest.TestCase):
         self.assertTrue(len(drivers) > 0)
 
         m = re.search('DRIVER={?([^}]+?)}?;', self.connection_string, re.IGNORECASE)
-        current = m.group(1)
-        self.assertTrue(current in drivers)
+        if m:  # issue #1000 - may be testing with DSN= connection
+            current = m.group(1)
+            self.assertTrue(current in drivers)
 
     def test_prepare_cleanup(self):
         # When statement is prepared, it is kept in case the next execute uses the same statement.  This must be
