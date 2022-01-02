@@ -1327,7 +1327,6 @@ BOOL WINAPI DllMain(
 }
 #endif
 
-
 static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
 {
     // Creates a connection string from an optional existing connection string plus a dictionary of keyword value
@@ -1344,13 +1343,13 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
 
     I(PyUnicode_Check(existing));
 
-    Py_ssize_t length = 0;      // length in *characters*
-    if (existing)
-        length = Text_Size(existing) + 1; // + 1 to add a trailing semicolon
-
     Py_ssize_t pos = 0;
     PyObject* key = 0;
     PyObject* value = 0;
+    Py_ssize_t length = 0;      // length in *characters*
+#if PY_MAJOR_VERSION < 3
+    if (existing)
+        length = Text_Size(existing) + 1; // + 1 to add a trailing semicolon
 
     while (PyDict_Next(parts, &pos, &key, &value))
     {
@@ -1379,7 +1378,66 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
         offset += TextCopyToUnicode(&buffer[offset], value);
         buffer[offset++] = (Py_UNICODE)';';
     }
+#else // >= Python 3.3
+    int result_kind = PyUnicode_1BYTE_KIND;
+    if (existing) {
+        length = PyUnicode_GET_LENGTH(existing) + 1; // + 1 to add a trailing semicolon
+        int kind = PyUnicode_KIND(existing);
+        if (result_kind < kind)
+            result_kind = kind;
+    }
 
+    while (PyDict_Next(parts, &pos, &key, &value))
+    {
+        // key=value;
+        length += PyUnicode_GET_LENGTH(key) + 1;
+        length += PyUnicode_GET_LENGTH(value) + 1;
+        int kind = PyUnicode_KIND(key);
+        if (result_kind < kind)
+            result_kind = kind;
+        kind = PyUnicode_KIND(value);
+        if (result_kind < kind)
+            result_kind = kind;
+    }
+
+    Py_UCS4 maxchar = 0x10ffff;
+    if (result_kind == PyUnicode_2BYTE_KIND)
+        maxchar = 0xffff;
+    else if (result_kind == PyUnicode_1BYTE_KIND)
+        maxchar = 0xff;
+    PyObject* result = PyUnicode_New(length, maxchar);
+    if (!result)
+        return 0;
+
+    Py_ssize_t offset = 0;
+    if (existing)
+    {
+        Py_ssize_t count = PyUnicode_GET_LENGTH(existing);
+        Py_ssize_t n = PyUnicode_CopyCharacters(result, offset, existing, 0,
+                                                count);
+        if (n < 0)
+            return 0;
+        offset += count;
+        PyUnicode_WriteChar(result, offset++, (Py_UCS4)';');
+    }
+
+    pos = 0;
+    while (PyDict_Next(parts, &pos, &key, &value))
+    {
+        Py_ssize_t count = PyUnicode_GET_LENGTH(key);
+        Py_ssize_t n = PyUnicode_CopyCharacters(result, offset, key, 0, count);
+        if (n < 0)
+            return 0;
+        offset += count;
+        PyUnicode_WriteChar(result, offset++, (Py_UCS4)'=');
+        count = PyUnicode_GET_LENGTH(value);
+        n = PyUnicode_CopyCharacters(result, offset, value, 0, count);
+        if (n < 0)
+            return 0;
+        offset += count;
+        PyUnicode_WriteChar(result, offset++, (Py_UCS4)';');
+    }
+#endif
     I(offset == length);
 
     return result;
