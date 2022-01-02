@@ -1357,7 +1357,7 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
         length += Text_Size(key) + 1 + Text_Size(value) + 1; // key=value;
     }
 
-    PyObject* result = PyUnicode_FromUnicode(0, length);
+    PyObject* result = Text_New(length);
     if (!result)
         return 0;
 

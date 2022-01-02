@@ -66,13 +66,17 @@ inline void PyString_ConcatAndDel(PyObject** lhs, PyObject* rhs)
 
 #endif
 
+#ifndef MAX_UNICODE
+  #define MAX_UNICODE 0x10ffff
+#endif
+
 inline PyObject* Text_New(Py_ssize_t length)
 {
     // Returns a new, uninitialized String (Python 2) or Unicode object (Python 3) object.
 #if PY_MAJOR_VERSION < 3
     return PyString_FromStringAndSize(0, length);
 #else
-    return PyUnicode_FromUnicode(0, length);
+    return PyUnicode_New(length, MAX_UNICODE);
 #endif
 }
 
