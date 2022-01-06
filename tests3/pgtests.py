@@ -558,11 +558,11 @@ class PGTestCase(unittest.TestCase):
 
 
     def test_columns(self):
+        driver_version = tuple(
+            int(x) for x in self.cnxn.getinfo(pyodbc.SQL_DRIVER_VER).split(".")
+        )
 
         def _get_column_size(row):
-            driver_version = tuple(
-                int(x) for x in self.cnxn.getinfo(pyodbc.SQL_DRIVER_VER).split(".")
-            )
             return row.column_size if driver_version >= (13, 2, 0) else row.precision
 
         # When using aiohttp, `await cursor.primaryKeys('t1')` was raising the error
