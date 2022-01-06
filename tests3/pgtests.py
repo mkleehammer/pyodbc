@@ -69,8 +69,11 @@ class PGTestCase(unittest.TestCase):
         self.cursor = self.cnxn.cursor()
 
         # I've set my test database to use UTF-8 which seems most popular.
-        self.cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
-        self.cnxn.setencoding(encoding='utf-8')
+        #
+        # disabled re: issue #1004
+        #
+        #self.cnxn.setdecoding(pyodbc.SQL_WCHAR, encoding='utf-8')
+        #self.cnxn.setencoding(encoding='utf-8')
 
         # As of psql 9.5.04 SQLGetTypeInfo returns absurdly small sizes leading
         # to slow writes.  Override them:
