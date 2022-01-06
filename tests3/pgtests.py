@@ -556,7 +556,15 @@ class PGTestCase(unittest.TestCase):
         SQL_MODE_READ_ONLY   = 1
         self.cnxn.set_attr(SQL_ATTR_ACCESS_MODE, SQL_MODE_READ_ONLY)
 
+
     def test_columns(self):
+
+        def _get_column_size(row):
+            driver_version = tuple(
+                int(x) for x in self.cnxn.getinfo(pyodbc.SQL_DRIVER_VER).split(".")
+            )
+            return row.column_size if driver_version >= (13, 2, 0) else row.precision
+
         # When using aiohttp, `await cursor.primaryKeys('t1')` was raising the error
         #
         #   Error: TypeError: argument 2 must be str, not None
@@ -572,10 +580,10 @@ class PGTestCase(unittest.TestCase):
         assert row.type_name == 'int4', row.type_name
         row = results['b']
         assert row.type_name == 'varchar'
-        assert row.precision == 3, row.precision
+        assert _get_column_size(row) == 3, _get_column_size(row)
         row = results['xΏz']
         assert row.type_name == 'varchar'
-        assert row.precision == 4, row.precision
+        assert _get_column_size(row) == 4, _get_column_size(row)
 
         # Now do the same, but specifically pass in None to one of the keywords.  Old versions
         # were parsing arguments incorrectly and would raise an error.  (This crops up when
@@ -587,7 +595,7 @@ class PGTestCase(unittest.TestCase):
         assert row.type_name == 'int4', row.type_name
         row = results['b']
         assert row.type_name == 'varchar'
-        assert row.precision == 3
+        assert _get_column_size(row) == 3
 
     def test_cancel(self):
         # I'm not sure how to reliably cause a hang to cancel, so for now we'll settle with
@@ -692,7 +700,7 @@ class PGTestCase(unittest.TestCase):
         self.cnxn.add_output_converter(pyodbc.SQL_WVARCHAR, None)
         value = self.cursor.execute("select v from t1").fetchone()[0]
         self.assertEqual(value, '123.45')
-        
+
 def main():
     from optparse import OptionParser
     parser = OptionParser(usage="usage: %prog [options] connection_string")
