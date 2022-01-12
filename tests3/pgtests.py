@@ -566,6 +566,8 @@ class PGTestCase(unittest.TestCase):
         )
 
         def _get_column_size(row):
+            # the driver changed the name of the returned columns in version 13.02.
+            # see https://odbc.postgresql.org/docs/release.html, release 13.02.0000, change 6.
             return row.column_size if driver_version >= (13, 2, 0) else row.precision
 
         # When using aiohttp, `await cursor.primaryKeys('t1')` was raising the error
