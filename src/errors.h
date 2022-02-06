@@ -61,7 +61,7 @@ inline PyObject* RaiseErrorFromException(PyObject* pError)
 #if PY_MAJOR_VERSION >= 3
     PyErr_SetObject((PyObject*)Py_TYPE(pError), pError);
 #else
-	PyObject* cls = (PyObject*)((PyInstance_Check(pError) ? (PyObject*)((PyInstanceObject*)pError)->in_class : (PyObject*)(Py_TYPE(pError))));
+    PyObject* cls = (PyObject*)((PyInstance_Check(pError) ? (PyObject*)((PyInstanceObject*)pError)->in_class : (PyObject*)(Py_TYPE(pError))));
     PyErr_SetObject(cls, pError);
 #endif
     return 0;

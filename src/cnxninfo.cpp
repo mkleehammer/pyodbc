@@ -42,7 +42,7 @@ bool CnxnInfo_init()
 static PyObject* GetHash(PyObject* p)
 {
 #if PY_MAJOR_VERSION >= 3
-    Object bytes(PyUnicode_EncodeUTF8(PyUnicode_AS_UNICODE(p), PyUnicode_GET_SIZE(p), 0));
+    Object bytes(PyUnicode_AsUTF8String(p));
     if (!bytes)
         return 0;
     p = bytes.Get();

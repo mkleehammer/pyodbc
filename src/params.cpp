@@ -1952,9 +1952,10 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                 if (PyUnicode_Check(objCell))
                 {
                     const TextEnc& enc = cur->cnxn->sqlwchar_enc;
-                    int cb = PyUnicode_GET_DATA_SIZE(objCell) / 2;
-
                     PyObject* bytes = NULL;
+
+#if PY_MAJOR_VERSION < 3
+                    int cb = PyUnicode_GET_DATA_SIZE(objCell) / 2;
                     const Py_UNICODE* source = PyUnicode_AS_UNICODE(objCell);
 
                     switch (enc.optenc)
@@ -1972,11 +1973,28 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         bytes = PyUnicode_EncodeUTF16(source, cb, "strict", BYTEORDER_BE);
                         break;
                     }
-
+#else
+                    switch (enc.optenc)
+                    {
+                    case OPTENC_UTF8:
+                        bytes = PyUnicode_AsUTF8String(objCell);
+                        break;
+                    case OPTENC_UTF16:
+                        bytes = PyUnicode_AsUTF16String(objCell);
+                        break;
+                    case OPTENC_UTF16LE:
+                        bytes = PyUnicode_AsEncodedString(objCell, "utf_16_le", NULL);
+                        break;
+                    case OPTENC_UTF16BE:
+                        bytes = PyUnicode_AsEncodedString(objCell, "utf_16_be", NULL);
+                        break;
+                    }
+#endif
                     if (bytes && PyBytes_Check(bytes))
                     {
                         objCell = bytes;
                     }
+                    //TODO: Raise or clear error when bytes == NULL.
                 }
 
                 szLastFunction = "SQLPutData";
