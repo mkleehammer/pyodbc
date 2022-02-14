@@ -566,6 +566,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
 
         Py_XDECREF(args);
         Py_XDECREF(scaledDecimal);
+        Py_XDECREF(newDigits);
         Py_XDECREF(cellParts);
 
         pNum->precision = (SQLCHAR)pi->ColumnSize;
