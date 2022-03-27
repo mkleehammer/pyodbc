@@ -1,3 +1,5 @@
+global-exclude *.py[cod]
+
 include src/*.h
 include src/*.cpp
 include tests2/*
