@@ -631,27 +631,28 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
 
     switch (cur->colinfos[iCol].sql_type)
     {
-    case SQL_TYPE_TIME:
-    {
-        int micros = (int)(value.fraction / 1000); // nanos --> micros
-        return PyTime_FromTime(value.hour, value.minute, value.second, micros);
-    }
+		case SQL_TYPE_TIME:
+		{
+			int micros = (int)(value.fraction / 1000); // nanos --> micros
+			return PyTime_FromTime(value.hour, value.minute, value.second, micros);
+		}
 
-    case SQL_TYPE_DATE:
-        return PyDate_FromDate(value.year, value.month, value.day);
+		case SQL_TYPE_DATE:
+			return PyDate_FromDate(value.year, value.month, value.day);
+
+		case SQL_TYPE_TIMESTAMP:
+		{
+			if (value.year < 1)
+			{
+				value.year = 1;
+			}
+			else if (value.year > 9999)
+			{
+				value.year = 9999;
+			}
+		}
     }
 	
-	case SQL_TYPE_TIMESTAMP:
-    {
-        if (value.year < 1)
-        {
-            value.year = 1;
-        }
-        else if (value.year > 9999)
-        {
-            value.year = 9999;
-        }
-    }
 
     int micros = (int)(value.fraction / 1000); // nanos --> micros
 
