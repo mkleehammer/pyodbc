@@ -36,7 +36,7 @@ void GetData_init()
     PyDateTime_IMPORT;
 }
 
-static byte *ReallocOrFreeBuffer(byte *pb, Py_ssize_t cbNeed);
+static byte* ReallocOrFreeBuffer(byte* pb, Py_ssize_t cbNeed);
 
 inline bool IsBinaryType(SQLSMALLINT sqltype)
 {
@@ -67,7 +67,7 @@ inline bool IsWideType(SQLSMALLINT sqltype)
 
 // TODO: Won't pyodbc_free crash if we didn't use pyodbc_realloc.
 
-static bool ReadVarColumn(Cursor *cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool &isNull, byte *&pbResult, Py_ssize_t &cbResult)
+static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool& isNull, byte*& pbResult, Py_ssize_t& cbResult)
 {
     // Called to read a variable-length column and return its data in a newly-allocated heap
     // buffer.
@@ -85,7 +85,7 @@ static bool ReadVarColumn(Cursor *cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool 
     // If a zero-length value was read, isNull is set to false and pbResult and cbResult will
     // be set to 0.
 
-    isNull = false;
+    isNull   = false;
     pbResult = 0;
     cbResult = 0;
 
@@ -95,7 +95,7 @@ static bool ReadVarColumn(Cursor *cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool 
     // TODO: Make the initial allocation size configurable?
     Py_ssize_t cbAllocated = 4096;
     Py_ssize_t cbUsed = 0;
-    byte *pb = (byte *)malloc((size_t)cbAllocated);
+    byte* pb = (byte*)malloc((size_t)cbAllocated);
     if (!pb)
     {
         PyErr_NoMemory();
@@ -114,7 +114,7 @@ static bool ReadVarColumn(Cursor *cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool 
         SQLLEN cbData = 0;
 
         Py_BEGIN_ALLOW_THREADS
-            ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol + 1), ctype, &pb[cbUsed], (SQLLEN)cbAvailable, &cbData);
+        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), ctype, &pb[cbUsed], (SQLLEN)cbAvailable, &cbData);
         Py_END_ALLOW_THREADS;
 
         TRACE("ReadVarColumn: SQLGetData avail=%d --> ret=%d cbData=%d\n", (int)cbAvailable, (int)ret, (int)cbData);
@@ -145,7 +145,7 @@ static bool ReadVarColumn(Cursor *cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool 
             // sets cbRead to the number of bytes we read *plus* the amount remaining.
 
             Py_ssize_t cbRemaining = 0; // How many more bytes do we need to allocate, not including null?
-            Py_ssize_t cbRead = 0;      // How much did we just read, not including null?
+            Py_ssize_t cbRead = 0; // How much did we just read, not including null?
 
             if (cbData == SQL_NO_TOTAL)
             {
@@ -201,7 +201,8 @@ static bool ReadVarColumn(Cursor *cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool 
 
             cbUsed += cbData;
         }
-    } while (ret == SQL_SUCCESS_WITH_INFO);
+    }
+    while (ret == SQL_SUCCESS_WITH_INFO);
 
     isNull = (ret == SQL_NULL_DATA);
 
@@ -218,13 +219,13 @@ static bool ReadVarColumn(Cursor *cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool 
     return true;
 }
 
-static byte *ReallocOrFreeBuffer(byte *pb, Py_ssize_t cbNeed)
+static byte* ReallocOrFreeBuffer(byte* pb, Py_ssize_t cbNeed)
 {
     // Attempts to reallocate `pb` to size `cbNeed`.  If the realloc fails, the original memory
     // is freed, a memory exception is set, and 0 is returned.  Otherwise the new pointer is
     // returned.
 
-    byte *pbNew = (byte *)realloc(pb, (size_t)cbNeed);
+    byte* pbNew = (byte*)realloc(pb, (size_t)cbNeed);
     if (pbNew == 0)
     {
         pyodbc_free(pb);
@@ -234,7 +235,8 @@ static byte *ReallocOrFreeBuffer(byte *pb, Py_ssize_t cbNeed)
     return pbNew;
 }
 
-static PyObject *GetText(Cursor *cur, Py_ssize_t iCol)
+
+static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
 {
     // We are reading one of the SQL_WCHAR, SQL_WVARCHAR, etc., and will return
     // a string.
@@ -247,11 +249,11 @@ static PyObject *GetText(Cursor *cur, Py_ssize_t iCol)
     // (Otherwise it is just UTF-8 with each character stored as 2 bytes.)  That's why we allow
     // the user to configure.
 
-    ColumnInfo *pinfo = &cur->colinfos[iCol];
-    const TextEnc &enc = IsWideType(pinfo->sql_type) ? cur->cnxn->sqlwchar_enc : cur->cnxn->sqlchar_enc;
+    ColumnInfo* pinfo = &cur->colinfos[iCol];
+    const TextEnc& enc = IsWideType(pinfo->sql_type) ? cur->cnxn->sqlwchar_enc : cur->cnxn->sqlchar_enc;
 
     bool isNull = false;
-    byte *pbData = 0;
+    byte* pbData = 0;
     Py_ssize_t cbData = 0;
     if (!ReadVarColumn(cur, iCol, enc.ctype, isNull, pbData, cbData))
         return 0;
@@ -262,19 +264,21 @@ static PyObject *GetText(Cursor *cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
     }
 
-    PyObject *result = TextBufferToObject(enc, pbData, cbData);
+    PyObject* result = TextBufferToObject(enc, pbData, cbData);
 
     pyodbc_free(pbData);
 
     return result;
 }
 
-static PyObject *GetBinary(Cursor *cur, Py_ssize_t iCol)
+
+
+static PyObject* GetBinary(Cursor* cur, Py_ssize_t iCol)
 {
     // Reads SQL_BINARY.
 
     bool isNull = false;
-    byte *pbData = 0;
+    byte* pbData = 0;
     Py_ssize_t cbData = 0;
     if (!ReadVarColumn(cur, iCol, SQL_C_BINARY, isNull, pbData, cbData))
         return 0;
@@ -285,23 +289,24 @@ static PyObject *GetBinary(Cursor *cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
     }
 
-    PyObject *obj;
+    PyObject* obj;
 #if PY_MAJOR_VERSION >= 3
-    obj = PyBytes_FromStringAndSize((char *)pbData, cbData);
+    obj = PyBytes_FromStringAndSize((char*)pbData, cbData);
 #else
-    obj = PyByteArray_FromStringAndSize((char *)pbData, cbData);
+    obj = PyByteArray_FromStringAndSize((char*)pbData, cbData);
 #endif
     pyodbc_free(pbData);
     return obj;
 }
 
-static PyObject *GetDataUser(Cursor *cur, Py_ssize_t iCol, int conv)
+
+static PyObject* GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
 {
     // conv
     //   The index into the connection's user-defined conversions `conv_types`.
 
     bool isNull = false;
-    byte *pbData = 0;
+    byte* pbData = 0;
     Py_ssize_t cbData = 0;
     if (!ReadVarColumn(cur, iCol, SQL_C_BINARY, isNull, pbData, cbData))
         return 0;
@@ -312,12 +317,12 @@ static PyObject *GetDataUser(Cursor *cur, Py_ssize_t iCol, int conv)
         Py_RETURN_NONE;
     }
 
-    PyObject *value = PyBytes_FromStringAndSize((char *)pbData, cbData);
+    PyObject* value = PyBytes_FromStringAndSize((char*)pbData, cbData);
     pyodbc_free(pbData);
     if (!value)
         return 0;
 
-    PyObject *result = PyObject_CallFunction(cur->cnxn->conv_funcs[conv], "(O)", value);
+    PyObject* result = PyObject_CallFunction(cur->cnxn->conv_funcs[conv], "(O)", value);
     Py_DECREF(value);
     if (!result)
         return 0;
@@ -325,27 +330,28 @@ static PyObject *GetDataUser(Cursor *cur, Py_ssize_t iCol, int conv)
     return result;
 }
 
+
 #if PY_VERSION_HEX < 0x02060000
-static PyObject *GetDataBuffer(Cursor *cur, Py_ssize_t iCol)
+static PyObject* GetDataBuffer(Cursor* cur, Py_ssize_t iCol)
 {
-    PyObject *str = GetDataString(cur, iCol);
+    PyObject* str = GetDataString(cur, iCol);
 
     if (str == Py_None)
         return str;
 
-    PyObject *buffer = 0;
+    PyObject* buffer = 0;
 
     if (str)
     {
         buffer = PyBuffer_FromObject(str, 0, PyString_GET_SIZE(str));
-        Py_DECREF(str); // If no buffer, release it.  If buffer, the buffer owns it.
+        Py_DECREF(str);         // If no buffer, release it.  If buffer, the buffer owns it.
     }
 
     return buffer;
 }
 #endif
 
-static PyObject *GetDataDecimal(Cursor *cur, Py_ssize_t iCol)
+static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 {
     // The SQL_NUMERIC_STRUCT support is hopeless (SQL Server ignores scale on input parameters and output columns,
     // Oracle does something else weird, and many drivers don't support it at all), so we'll rely on the Decimal's
@@ -359,12 +365,12 @@ static PyObject *GetDataDecimal(Cursor *cur, Py_ssize_t iCol)
     // is universal), and a decimal point ('.' or ',' usually).  We'll do everything as Unicode in case currencies,
     // etc. are too far out.
 
-    const TextEnc &enc = cur->cnxn->sqlwchar_enc;
+    const TextEnc& enc = cur->cnxn->sqlwchar_enc;
     // I'm going to request the data as Unicode in case there is a weird currency symbol.  If
     // this is a performance problems we may want a flag on this.
 
     bool isNull = false;
-    byte *pbData = 0;
+    byte* pbData = 0;
     Py_ssize_t cbData = 0;
     if (!ReadVarColumn(cur, iCol, enc.ctype, isNull, pbData, cbData))
         return 0;
@@ -390,13 +396,13 @@ static PyObject *GetDataDecimal(Cursor *cur, Py_ssize_t iCol)
     // all ASCII characters, we can ignore any multiple-byte characters.  Fortunately, if a
     // character is multi-byte all bytes will have the high bit set.
 
-    char *pch;
+    char* pch;
     Py_ssize_t cch;
 
 #if PY_MAJOR_VERSION >= 3
     if (PyUnicode_Check(result))
     {
-        pch = (char *)PyUnicode_AsUTF8AndSize(result, &cch);
+        pch = (char*)PyUnicode_AsUTF8AndSize(result, &cch);
     }
     else
     {
@@ -426,7 +432,7 @@ static PyObject *GetDataDecimal(Cursor *cur, Py_ssize_t iCol)
     char ascii[100];
     size_t asciilen = 0;
 
-    const char *pchMax = pch + cch;
+    const char* pchMax = pch + cch;
     while (pch < pchMax)
     {
         if ((*pch & 0x80) == 0)
@@ -449,25 +455,26 @@ static PyObject *GetDataDecimal(Cursor *cur, Py_ssize_t iCol)
     Object str(PyString_FromStringAndSize(ascii, (Py_ssize_t)asciilen));
     if (!str)
         return 0;
-    PyObject *decimal_type = GetClassForThread("decimal", "Decimal");
+    PyObject* decimal_type = GetClassForThread("decimal", "Decimal");
     if (!decimal_type)
         return 0;
-    PyObject *decimal = PyObject_CallFunction(decimal_type, "O", str.Get());
+    PyObject* decimal = PyObject_CallFunction(decimal_type, "O", str.Get());
     Py_DECREF(decimal_type);
     return decimal;
 }
 
-static PyObject *GetDataBit(Cursor *cur, Py_ssize_t iCol)
+static PyObject* GetDataBit(Cursor* cur, Py_ssize_t iCol)
 {
     SQLCHAR ch;
     SQLLEN cbFetched;
     SQLRETURN ret;
 
     Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol + 1), SQL_C_BIT, &ch, sizeof(ch), &cbFetched);
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_BIT, &ch, sizeof(ch), &cbFetched);
     Py_END_ALLOW_THREADS
 
-        if (!SQL_SUCCEEDED(ret)) return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -478,9 +485,10 @@ static PyObject *GetDataBit(Cursor *cur, Py_ssize_t iCol)
     Py_RETURN_FALSE;
 }
 
-static PyObject *GetDataLong(Cursor *cur, Py_ssize_t iCol)
+
+static PyObject* GetDataLong(Cursor* cur, Py_ssize_t iCol)
 {
-    ColumnInfo *pinfo = &cur->colinfos[iCol];
+    ColumnInfo* pinfo = &cur->colinfos[iCol];
 
     SQLINTEGER value;
     SQLLEN cbFetched;
@@ -489,32 +497,36 @@ static PyObject *GetDataLong(Cursor *cur, Py_ssize_t iCol)
     SQLSMALLINT nCType = pinfo->is_unsigned ? SQL_C_ULONG : SQL_C_LONG;
 
     Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol + 1), nCType, &value, sizeof(value), &cbFetched);
-    Py_END_ALLOW_THREADS if (!SQL_SUCCEEDED(ret)) return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), nCType, &value, sizeof(value), &cbFetched);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
 
     if (pinfo->is_unsigned)
-        return PyInt_FromLong(*(SQLINTEGER *)&value);
+        return PyInt_FromLong(*(SQLINTEGER*)&value);
 
     return PyInt_FromLong(value);
 }
 
-static PyObject *GetDataLongLong(Cursor *cur, Py_ssize_t iCol)
+
+static PyObject* GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
 {
-    ColumnInfo *pinfo = &cur->colinfos[iCol];
+    ColumnInfo* pinfo = &cur->colinfos[iCol];
 
     SQLSMALLINT nCType = pinfo->is_unsigned ? SQL_C_UBIGINT : SQL_C_SBIGINT;
-    SQLBIGINT value;
-    SQLLEN cbFetched;
-    SQLRETURN ret;
+    SQLBIGINT   value;
+    SQLLEN      cbFetched;
+    SQLRETURN   ret;
 
     Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol + 1), nCType, &value, sizeof(value), &cbFetched);
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), nCType, &value, sizeof(value), &cbFetched);
     Py_END_ALLOW_THREADS
 
-        if (!SQL_SUCCEEDED(ret)) return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -525,15 +537,18 @@ static PyObject *GetDataLongLong(Cursor *cur, Py_ssize_t iCol)
     return PyLong_FromLongLong((PY_LONG_LONG)value);
 }
 
-static PyObject *GetDataDouble(Cursor *cur, Py_ssize_t iCol)
+
+static PyObject* GetDataDouble(Cursor* cur, Py_ssize_t iCol)
 {
     double value;
     SQLLEN cbFetched = 0;
     SQLRETURN ret;
 
     Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol + 1), SQL_C_DOUBLE, &value, sizeof(value), &cbFetched);
-    Py_END_ALLOW_THREADS if (!SQL_SUCCEEDED(ret)) return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_DOUBLE, &value, sizeof(value), &cbFetched);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -541,7 +556,8 @@ static PyObject *GetDataDouble(Cursor *cur, Py_ssize_t iCol)
     return PyFloat_FromDouble(value);
 }
 
-static PyObject *GetSqlServerTime(Cursor *cur, Py_ssize_t iCol)
+
+static PyObject* GetSqlServerTime(Cursor* cur, Py_ssize_t iCol)
 {
     SQL_SS_TIME2_STRUCT value;
 
@@ -549,8 +565,10 @@ static PyObject *GetSqlServerTime(Cursor *cur, Py_ssize_t iCol)
     SQLRETURN ret;
 
     Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol + 1), SQL_C_BINARY, &value, sizeof(value), &cbFetched);
-    Py_END_ALLOW_THREADS if (!SQL_SUCCEEDED(ret)) return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_BINARY, &value, sizeof(value), &cbFetched);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -559,7 +577,7 @@ static PyObject *GetSqlServerTime(Cursor *cur, Py_ssize_t iCol)
     return PyTime_FromTime(value.hour, value.minute, value.second, micros);
 }
 
-static PyObject *GetUUID(Cursor *cur, Py_ssize_t iCol)
+static PyObject* GetUUID(Cursor* cur, Py_ssize_t iCol)
 {
     // REVIEW: Since GUID is a fixed size, do we need to pass the size or cbFetched?
 
@@ -567,32 +585,33 @@ static PyObject *GetUUID(Cursor *cur, Py_ssize_t iCol)
     SQLLEN cbFetched = 0;
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol + 1), SQL_GUID, &guid, sizeof(guid), &cbFetched);
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_GUID, &guid, sizeof(guid), &cbFetched);
     Py_END_ALLOW_THREADS
 
-        if (!SQL_SUCCEEDED(ret)) return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
 
 #if PY_MAJOR_VERSION >= 3
-    const char *szFmt = "(yyy#)";
+    const char* szFmt = "(yyy#)";
 #else
-    const char *szFmt = "(sss#)";
+    const char* szFmt = "(sss#)";
 #endif
     Object args(Py_BuildValue(szFmt, NULL, NULL, &guid, (int)sizeof(guid)));
     if (!args)
         return 0;
 
-    PyObject *uuid_type = GetClassForThread("uuid", "UUID");
+    PyObject* uuid_type = GetClassForThread("uuid", "UUID");
     if (!uuid_type)
         return 0;
-    PyObject *uuid = PyObject_CallObject(uuid_type, args.Get());
+    PyObject* uuid = PyObject_CallObject(uuid_type, args.Get());
     Py_DECREF(uuid_type);
     return uuid;
 }
 
-static PyObject *GetDataTimestamp(Cursor *cur, Py_ssize_t iCol)
+static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
 {
     TIMESTAMP_STRUCT value;
 
@@ -602,8 +621,10 @@ static PyObject *GetDataTimestamp(Cursor *cur, Py_ssize_t iCol)
     struct tm t;
 
     Py_BEGIN_ALLOW_THREADS
-        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol + 1), SQL_C_TYPE_TIMESTAMP, &value, sizeof(value), &cbFetched);
-    Py_END_ALLOW_THREADS if (!SQL_SUCCEEDED(ret)) return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_TYPE_TIMESTAMP, &value, sizeof(value), &cbFetched);
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -618,8 +639,9 @@ static PyObject *GetDataTimestamp(Cursor *cur, Py_ssize_t iCol)
 
     case SQL_TYPE_DATE:
         return PyDate_FromDate(value.year, value.month, value.day);
-
-    case SQL_TYPE_TIMESTAMP:
+    }
+	
+	case SQL_TYPE_TIMESTAMP:
     {
         if (value.year < 1)
         {
@@ -630,29 +652,27 @@ static PyObject *GetDataTimestamp(Cursor *cur, Py_ssize_t iCol)
             value.year = 9999;
         }
     }
-    }
 
     int micros = (int)(value.fraction / 1000); // nanos --> micros
 
-    if (value.hour == 24)
-    {                                  // some backends support 24:00 (hh:mm) as "end of a day"
-        t.tm_year = value.year - 1900; // tm_year is 1900-based
-        t.tm_mon = value.month - 1;    // tm_mon is zero-based
+    if (value.hour == 24) {  // some backends support 24:00 (hh:mm) as "end of a day"
+        t.tm_year = value.year - 1900;  // tm_year is 1900-based
+        t.tm_mon = value.month - 1;  // tm_mon is zero-based
         t.tm_mday = value.day;
-        t.tm_hour = value.hour;
-        t.tm_min = value.minute;
-        t.tm_sec = value.second;
+        t.tm_hour = value.hour; t.tm_min = value.minute; t.tm_sec = value.second;
         t.tm_isdst = -1; // auto-adjust for dst
 
         mktime(&t); // normalize values in t
         return PyDateTime_FromDateAndTime(
-            t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, micros);
+            t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, micros
+        );
     }
 
     return PyDateTime_FromDateAndTime(value.year, value.month, value.day, value.hour, value.minute, value.second, micros);
 }
 
-int GetUserConvIndex(Cursor *cur, SQLSMALLINT sql_type)
+
+int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
 {
     // If this sql type has a user-defined conversion, the index into the connection's `conv_funcs` array is returned.
     // Otherwise -1 is returned.
@@ -663,7 +683,8 @@ int GetUserConvIndex(Cursor *cur, SQLSMALLINT sql_type)
     return -1;
 }
 
-PyObject *PythonTypeFromSqlType(Cursor *cur, SQLSMALLINT type)
+
+PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
 {
     // Returns a type object ('int', 'str', etc.) for the given ODBC C type.  This is used to populate
     // Cursor.description with the type of Python object that will be returned for each column.
@@ -678,9 +699,9 @@ PyObject *PythonTypeFromSqlType(Cursor *cur, SQLSMALLINT type)
 
     int conv_index = GetUserConvIndex(cur, type);
     if (conv_index != -1)
-        return (PyObject *)&PyString_Type;
+        return (PyObject*)&PyString_Type;
 
-    PyObject *pytype = 0;
+    PyObject* pytype = 0;
     bool incref = true;
 
     switch (type)
@@ -690,11 +711,11 @@ PyObject *PythonTypeFromSqlType(Cursor *cur, SQLSMALLINT type)
     case SQL_LONGVARCHAR:
 #if PY_MAJOR_VERSION < 3
         if (cur->cnxn->str_enc.ctype == SQL_C_CHAR)
-            pytype = (PyObject *)&PyString_Type;
+            pytype = (PyObject*)&PyString_Type;
         else
-            pytype = (PyObject *)&PyUnicode_Type;
+            pytype = (PyObject*)&PyUnicode_Type;
 #else
-        pytype = (PyObject *)&PyUnicode_Type;
+        pytype = (PyObject*)&PyUnicode_Type;
 #endif
         break;
 
@@ -708,11 +729,11 @@ PyObject *PythonTypeFromSqlType(Cursor *cur, SQLSMALLINT type)
         {
 #if PY_MAJOR_VERSION < 3
             if (cur->cnxn->str_enc.ctype == SQL_C_CHAR)
-                pytype = (PyObject *)&PyString_Type;
+                pytype = (PyObject*)&PyString_Type;
             else
-                pytype = (PyObject *)&PyUnicode_Type;
+                pytype = (PyObject*)&PyUnicode_Type;
 #else
-            pytype = (PyObject *)&PyUnicode_Type;
+            pytype = (PyObject*)&PyUnicode_Type;
 #endif
         }
         break;
@@ -722,7 +743,7 @@ PyObject *PythonTypeFromSqlType(Cursor *cur, SQLSMALLINT type)
     case SQL_WLONGVARCHAR:
     case SQL_SS_XML:
     case SQL_DB2_XML:
-        pytype = (PyObject *)&PyUnicode_Type;
+        pytype = (PyObject*)&PyUnicode_Type;
         break;
 
     case SQL_DECIMAL:
@@ -734,34 +755,34 @@ PyObject *PythonTypeFromSqlType(Cursor *cur, SQLSMALLINT type)
     case SQL_REAL:
     case SQL_FLOAT:
     case SQL_DOUBLE:
-        pytype = (PyObject *)&PyFloat_Type;
+        pytype = (PyObject*)&PyFloat_Type;
         break;
 
     case SQL_SMALLINT:
     case SQL_INTEGER:
     case SQL_TINYINT:
-        pytype = (PyObject *)&PyInt_Type;
+        pytype = (PyObject*)&PyInt_Type;
         break;
 
     case SQL_TYPE_DATE:
-        pytype = (PyObject *)PyDateTimeAPI->DateType;
+        pytype = (PyObject*)PyDateTimeAPI->DateType;
         break;
 
     case SQL_TYPE_TIME:
-    case SQL_SS_TIME2: // SQL Server 2008+
-        pytype = (PyObject *)PyDateTimeAPI->TimeType;
+    case SQL_SS_TIME2:          // SQL Server 2008+
+        pytype = (PyObject*)PyDateTimeAPI->TimeType;
         break;
 
     case SQL_TYPE_TIMESTAMP:
-        pytype = (PyObject *)PyDateTimeAPI->DateTimeType;
+        pytype = (PyObject*)PyDateTimeAPI->DateTimeType;
         break;
 
     case SQL_BIGINT:
-        pytype = (PyObject *)&PyLong_Type;
+        pytype = (PyObject*)&PyLong_Type;
         break;
 
     case SQL_BIT:
-        pytype = (PyObject *)&PyBool_Type;
+        pytype = (PyObject*)&PyBool_Type;
         break;
 
     case SQL_BINARY:
@@ -769,9 +790,9 @@ PyObject *PythonTypeFromSqlType(Cursor *cur, SQLSMALLINT type)
     case SQL_LONGVARBINARY:
     default:
 #if PY_VERSION_HEX >= 0x02060000
-        pytype = (PyObject *)&PyByteArray_Type;
+        pytype = (PyObject*)&PyByteArray_Type;
 #else
-        pytype = (PyObject *)&PyBuffer_Type;
+        pytype = (PyObject*)&PyBuffer_Type;
 #endif
         break;
     }
@@ -781,13 +802,13 @@ PyObject *PythonTypeFromSqlType(Cursor *cur, SQLSMALLINT type)
     return pytype;
 }
 
-PyObject *GetData(Cursor *cur, Py_ssize_t iCol)
+PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
 {
     // Returns an object representing the value in the row/field.  If 0 is returned, an exception has already been set.
     //
     // The data is assumed to be the default C type for the column's SQL type.
 
-    ColumnInfo *pinfo = &cur->colinfos[iCol];
+    ColumnInfo* pinfo = &cur->colinfos[iCol];
 
     // First see if there is a user-defined conversion.
 
@@ -840,6 +861,7 @@ PyObject *GetData(Cursor *cur, Py_ssize_t iCol)
     case SQL_FLOAT:
     case SQL_DOUBLE:
         return GetDataDouble(cur, iCol);
+
 
     case SQL_TYPE_DATE:
     case SQL_TYPE_TIME:
