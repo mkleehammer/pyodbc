@@ -22,8 +22,9 @@
 
 // exported variables ----------------------------------------------------------
 
-/* controls the maximum text field width */
-Py_ssize_t iopro_text_limit = 1024;
+/* controls the maximum text field width, a negative value indicates that the
+   text size limit will be dynamic based on the sql type, e.g. varchar (4000) */
+Py_ssize_t iopro_text_limit = -1;
 
 // -----------------------------------------------------------------------------
 
