@@ -400,8 +400,8 @@ static void closeimpl(Cursor* cur)
 
     free_results(cur, FREE_STATEMENT | FREE_PREPARED);
 
-    FreeParameterInfo(cur);
     FreeParameterData(cur);
+    FreeParameterInfo(cur);
 
     if (StatementIsValid(cur))
     {
@@ -1101,9 +1101,9 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
         if (cursor->fastexecmany)
         {
             free_results(cursor, FREE_STATEMENT | KEEP_PREPARED);
-			if (!ExecuteMulti(cursor, pSql, param_seq))
+            if (!ExecuteMulti(cursor, pSql, param_seq))
                 return 0;
-		}
+        }
         else
         {
             for (Py_ssize_t i = 0; i < c; i++)
