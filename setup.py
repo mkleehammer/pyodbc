@@ -301,11 +301,16 @@ def _get_version_pkginfo():
 
 
 def _get_version_git():
+    """
+    If this is a git repo, returns the version as text and the version as a list of 4 subparts:
+    ("4.0.33", [4, 0, 33, 9999]).
+
+    If this is not a git repo, (None, None) is returned.
+    """
     n, result = getoutput("git describe --tags --match [0-9]*")
     if n:
         _print('WARNING: git describe failed with: %s %s' % (n, result))
         return None, None
-
     match = re.match(r'(\d+).(\d+).(\d+) (?: -(\d+)-g[0-9a-z]+)?', result, re.VERBOSE)
     if not match:
         return None, None
@@ -321,15 +326,20 @@ def _get_version_git():
     n, result = getoutput('git rev-parse --abbrev-ref HEAD')
 
     if result == 'HEAD':
-        # We are not on a branch, so use the last revision instead
-        n, result = getoutput('git rev-parse --short HEAD')
-        name = name + '+commit' + result
+        # We are not on a branch.  In the past we would add "+commitHHHH" to it, but this
+        # interferes with the CI system which checks out by tag name.  The goal of the version
+        # numbers is to be reproducible, so we may want to put this back if we detect the
+        # current commit is not on the master branch.
+
+        #  n, result = getoutput('git rev-parse --short HEAD')
+        #  name = name + '+commit' + result
+
+        pass
     else:
         if result != 'master' and not re.match(r'^v\d+$', result):
             name = name + '+' + result.replace('-', '')
 
     return name, numbers
-
 
 
 def getoutput(cmd):
