@@ -14,8 +14,8 @@ The easiest way to install is to use pip:
 
 If you are using Mac, you should be using `Homebrew` for installing pyodbc:
 
-    ```brew install unixodbc
-       pip install pyodbc```
+    brew install unixodbc
+    pip install pyodbc
     
 Precompiled binary wheels are provided for most Python versions on Windows and macOS.  On other
 operating systems this will build from source.  Note, pyodbc contains C++ extensions so you will
@@ -25,3 +25,6 @@ the [docs](https://github.com/mkleehammer/pyodbc/wiki/Install) for details.
 [Documentation](https://github.com/mkleehammer/pyodbc/wiki)
 
 [Release Notes](https://github.com/mkleehammer/pyodbc/releases)
+
+IMPORTANT: Python 2.7 support is being ended.  The pyodbc 4.x versions will be the last to
+support Python 2.7.  The pyodbc 5.x versions will only support Python 3.7 and above.
