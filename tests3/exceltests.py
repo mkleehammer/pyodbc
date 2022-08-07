@@ -104,15 +104,16 @@ class ExcelTestCase(unittest.TestCase):
 
 
 def main():
-    from optparse import OptionParser
-    parser = OptionParser() #usage=usage)
-    parser.add_option("-v", "--verbose", action="count", help="Increment test verbosity (can be used multiple times)")
-    parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
-    parser.add_option("-t", "--test", help="Run only the named test")
+    from argparse import ArgumentParser
+    parser = ArgumentParser() #usage=usage)
+    parser.add_argument("-v", "--verbose", action="count", help="increment test verbosity (can be used multiple times)")
+    parser.add_argument("-d", "--debug", action="store_true", default=False, help="print debugging items")
+    parser.add_argument("-t", "--test", help="run only the named test")
+    parser.add_argument("conn_str", nargs="*", help="connection string for Excel")
 
-    (options, args) = parser.parse_args()
+    args = parser.parse_args()
 
-    if args:
+    if args.conn_str:
         parser.error('no arguments expected')
     
     global CNXNSTRING
@@ -122,14 +123,14 @@ def main():
     assert os.path.exists(filename)
     CNXNSTRING = 'Driver={Microsoft Excel Driver (*.xls)};DBQ=%s;READONLY=FALSE' % filename
 
-    if options.verbose:
+    if args.verbose:
         cnxn = pyodbc.connect(CNXNSTRING, autocommit=True)
         print_library_info(cnxn)
         cnxn.close()
 
-    suite = load_tests(ExcelTestCase, options.test)
+    suite = load_tests(ExcelTestCase, args.test)
 
-    testRunner = unittest.TextTestRunner(verbosity=options.verbose)
+    testRunner = unittest.TextTestRunner(verbosity=args.verbose)
     result = testRunner.run(suite)
 
     return result
