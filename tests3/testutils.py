@@ -1,40 +1,39 @@
-import os, sys, platform
+from datetime import datetime
+import importlib.machinery
+import os
 from os.path import join, dirname, abspath
+import platform
+import sys
 import unittest
-from distutils.util import get_platform
+
 
 def add_to_path():
     """
-    Prepends the build directory to the path so that newly built pyodbc libraries are used, allowing it to be tested
-    without installing it.
+    Prepends the build directory to the path so that newly built pyodbc libraries are
+    used, allowing it to be tested without installing it.
     """
-    # Put the build directory into the Python path so we pick up the version we just built.
-    #
-    # To make this cross platform, we'll search the directories until we find the .pyd file.
+    # look for the suffixes used in the build filenames, e.g. ".cp38-win_amd64.pyd", ".cpython-38-darwin.so", etc.
+    library_exts = [ext for ext in importlib.machinery.EXTENSION_SUFFIXES if ext != '.pyd']
+    # generate the name of the pyodbc build file(s)
+    library_names = ['pyodbc%s' % ext for ext in library_exts]
 
-    import imp
+    build_dir = join(dirname(dirname(abspath(__file__))), 'build')
 
-    library_exts  = [ t[0] for t in imp.get_suffixes() if t[-1] == imp.C_EXTENSION ]
-    library_names = [ 'pyodbc%s' % ext for ext in library_exts ]
-
-    # Only go into directories that match our version number.
-
-    dir_suffix = '%s-%s.%s' % (get_platform(), sys.version_info[0], sys.version_info[1])
-
-    build = join(dirname(dirname(abspath(__file__))), 'build')
-
-    for root, dirs, files in os.walk(build):
-        for d in dirs[:]:
-            if not d.endswith(dir_suffix):
-                dirs.remove(d)
-
-        for name in library_names:
-            if name in files:
-                sys.path.insert(0, root)
-                print('Library:', join(root, name))
-                return
-
-    print('Did not find the pyodbc library in the build directory.  Will use an installed version.')
+    # find all the relevant pyodbc build files, including modified date
+    file_info = [
+        (os.path.getmtime(join(dirpath, file)), join(dirpath, file))
+        for dirpath, dirs, files in os.walk(build_dir)
+        for file in files
+        if file in library_names
+    ]
+    if file_info:
+        file_info.sort()  # put them in chronological order
+        library_modified_dt, library_path = file_info[-1]  # use the latest one
+        # add the build directory to the Python path
+        sys.path.insert(0, dirname(library_path))
+        print('Library: {} (last modified {})'.format(library_path, datetime.fromtimestamp(library_modified_dt)))
+    else:
+        print('Did not find the pyodbc library in the build directory.  Will use the installed version.')
 
 
 def print_library_info(cnxn):
