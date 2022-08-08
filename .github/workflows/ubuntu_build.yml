@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 jobs:
   run_tests:
-
+    name: Run tests on Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
 
     strategy:
@@ -192,24 +192,56 @@ jobs:
         cd "$GITHUB_WORKSPACE"
         python "./${{ matrix.tests-dir }}/mysqltests.py" "DRIVER={MySQL ODBC 8.0 ANSI Driver};SERVER=localhost;UID=root;PWD=root;DATABASE=test;CHARSET=utf8mb4"
 
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build sdist
+        run: python setup.py sdist
+
+      - name: Upload builds
+        uses: actions/upload-artifact@v3
+        with:
+          name: sdist
+          path: ./dist/*.gz
+
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-20.04, windows-2019, macos-10.15]
+        # https://docs.github.com/en/actions/using-jobs/choosing-the-runner-for-a-job
+        os: [windows-2019, macos-11, ubuntu-20.04]
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.1.3
+        uses: pypa/cibuildwheel@v2.8.1
+        # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
         env:
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_24
-          CIBW_BEFORE_ALL_LINUX: apt-get update && apt-get -y install unixodbc-dev
-          # disable 32-bit and pypy builds
-          CIBW_SKIP: "*-win32 *-manylinux_i686 pp*"
+          # Windows - both 64-bit and 32-bit builds
+          CIBW_ARCHS_WINDOWS: "AMD64 x86"
 
-      - uses: actions/upload-artifact@v2
+          # macOS - both Intel and ARM builds; no bundled libraries
+          CIBW_ARCHS_MACOS: "x86_64 arm64"
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
+
+          # Linux - based on CentOS 7; glibc 64-bit builds only; no bundled libraries
+          # https://github.com/pypa/manylinux#docker-images
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
+          CIBW_ARCHS_LINUX: x86_64
+          CIBW_BEFORE_ALL_LINUX: yum -y install unixODBC-devel && odbcinst -j
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: ""
+
+          # Build choices - disable musl Linux and PyPy builds
+          CIBW_SKIP: "*-musllinux_* pp*"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
         with:
+          name: wheels
           path: ./wheelhouse/*.whl

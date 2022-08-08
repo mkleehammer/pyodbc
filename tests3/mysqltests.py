@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 usage = """\
-usage: %prog [options] connection_string
+%(prog)s [options] connection_string
 
 Unit tests for MySQL.  To use, pass a connection string as the parameter.
 The tests will create and drop tables t1 and t2 as necessary.
