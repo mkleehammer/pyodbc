@@ -12,11 +12,13 @@ def add_to_path():
     Prepends the build directory to the path so that newly built pyodbc libraries are
     used, allowing it to be tested without installing it.
     """
-    # look for the suffixes used in the build filenames, e.g. ".cp38-win_amd64.pyd", ".cpython-38-darwin.so", etc.
+    # look for the suffixes used in the build filenames, e.g. ".cp38-win_amd64.pyd",
+    # ".cpython-38-darwin.so", ".cpython-38-x86_64-linux-gnu.so", etc.
     library_exts = [ext for ext in importlib.machinery.EXTENSION_SUFFIXES if ext != '.pyd']
     # generate the name of the pyodbc build file(s)
     library_names = ['pyodbc%s' % ext for ext in library_exts]
 
+    # there is an assumption here about where this file is located
     build_dir = join(dirname(dirname(abspath(__file__))), 'build')
 
     # find all the relevant pyodbc build files, including modified date
@@ -56,6 +58,12 @@ def print_library_info(cnxn):
     if platform.system() == 'Windows':
         print('         %s' % ' '.join([s for s in platform.win32_ver() if s]))
 
+
+def discover_and_run(top_level_dir='.', start_dir='.', pattern='test*.py', verbosity=0):
+    tests = unittest.defaultTestLoader.discover(top_level_dir=top_level_dir, start_dir=start_dir, pattern=pattern)
+    runner = unittest.TextTestRunner(verbosity=verbosity)
+    result = runner.run(tests)
+    return result
 
 
 def load_tests(testclass, name, *args):
