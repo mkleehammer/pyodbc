@@ -23,6 +23,8 @@ jobs:
             tests-dir: tests3
           - python-version: "3.10"
             tests-dir: tests3
+          - python-version: "3.11"
+            tests-dir: tests3
 
     services:
 
@@ -220,7 +222,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.8.1
+        uses: pypa/cibuildwheel@v2.11.2
         # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
         env:
           # Windows - both 64-bit and 32-bit builds
