@@ -293,6 +293,9 @@ SQL_XOPEN_CLI_YEAR: int
 
 # pyodbc-specific constants
 BinaryNull: Any  # to distinguish binary NULL values from char NULL values
+UNICODE_SIZE: int
+SQLWCHAR_SIZE: int
+
 
 # module attributes
 # https://www.python.org/dev/peps/pep-0249/#globals

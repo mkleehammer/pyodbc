@@ -70,6 +70,8 @@ class PGTestCase(unittest.TestCase):
         if connection_string is not None:
             self.connection_string = connection_string
         else:
+            # if the connection string cannot be provided directly here, it can be
+            # provided in an environment variable
             self.connection_string = os.environ['PYODBC_CONN_STR']
         self.ansi = ansi
 
@@ -777,10 +779,11 @@ def main():
 
 if __name__ == '__main__':
 
-    # add the build directory to the path so we're testing the latest build, not the installed version.
+    # add the build directory to the Python path so we're testing the latest
+    # build, not the pip-installed version
     testutils.add_to_path()
 
-    # only after setting the path, import pyodbc
+    # only after setting the Python path, import the pyodbc module
     import pyodbc
 
     # run the tests

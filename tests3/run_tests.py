@@ -9,8 +9,6 @@ def main(sqlserver=None, postgresql=None, mysql=None, verbose=0):
     # there is an assumption here about where this file is located
     pyodbc_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-    # TODO: move the test scripts into separate folders for each database so that
-    #       multiple test scripts for each database can easily be discovered
     databases = {
         'SQL Server': {
             'conn_strs': sqlserver or [],
@@ -33,14 +31,17 @@ def main(sqlserver=None, postgresql=None, mysql=None, verbose=0):
     for db_name, db_attrs in databases.items():
 
         for db_conn_str in db_attrs['conn_strs']:
-
             print(f'Running tests against {db_name} with connection string: {db_conn_str}')
-            os.environ['PYODBC_CONN_STR'] = db_conn_str
 
             if verbose > 0:
                 cnxn = pyodbc.connect(db_conn_str)
                 testutils.print_library_info(cnxn)
                 cnxn.close()
+
+            # it doesn't seem to be possible to pass test parameters into the test
+            # discovery process, so the connection string will have to be passed to
+            # the test cases via an environment variable
+            os.environ['PYODBC_CONN_STR'] = db_conn_str
 
             result = testutils.discover_and_run(
                 top_level_dir=pyodbc_dir,
@@ -63,10 +64,11 @@ if __name__ == '__main__':
     parser.add_argument("-v", "--verbose", action="count", default=0, help="increment test verbosity (can be used multiple times)")
     args = parser.parse_args()
 
-    # add the build directory to the path so we're testing the latest build, not the installed version
+    # add the build directory to the Python path so we're testing the latest
+    # build, not the pip-installed version
     testutils.add_to_path()
 
-    # only after setting the path, import pyodbc
+    # only after setting the Python path, import the pyodbc module
     import pyodbc
 
     # run the tests
