@@ -38,7 +38,7 @@ IF ERRORLEVEL 1 (
 
 ECHO.
 ECHO *** Installing pyodbc...
-"%PYTHON_HOME%\python" setup.py install
+"%PYTHON_HOME%\python" -m pip install .
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: pyodbc install failed
   EXIT 1
