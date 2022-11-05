@@ -346,7 +346,6 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             {
                 // DAE
                 DAEParam *pParam = (DAEParam*)*outbuf;
-                Py_INCREF(cell);
                 pParam->cell = encoded.Detach();
                 pParam->maxlen = cur->cnxn->GetMaxLength(pi->ValueType);
                 *outbuf += sizeof(DAEParam);
