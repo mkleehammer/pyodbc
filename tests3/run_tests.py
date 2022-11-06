@@ -1,5 +1,6 @@
 #!/usr/bin/python
 import os
+import sys
 
 import testutils
 
@@ -72,4 +73,5 @@ if __name__ == '__main__':
     import pyodbc
 
     # run the tests
-    main(**vars(args))
+    passed = main(**vars(args))
+    sys.exit(0 if passed else 1)
