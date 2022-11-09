@@ -167,8 +167,8 @@ jobs:
         cd "$GITHUB_WORKSPACE"
         echo "*** current python version"
         python -VV
-        echo "*** run setup.py"
-        python setup.py install
+        echo "*** pip install"
+        python -m pip install .
         echo "*** pip freeze"
         python -m pip freeze --all
         echo "*** pyodbc version"

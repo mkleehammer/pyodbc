@@ -92,12 +92,11 @@ environment:
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
       PYTHON_HOME: "C:\\Python310-x64"
 
-# TODO: enable these once Python 3.11 is supported on Windows
-#    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-#      PYTHON_HOME: "C:\\Python311"
-#
-#    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-#      PYTHON_HOME: "C:\\Python311-x64"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python311"
+
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+      PYTHON_HOME: "C:\\Python311-x64"
 
 cache:
   - apvyr_cache -> appveyor\install.ps1
