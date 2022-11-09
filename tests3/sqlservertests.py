@@ -1,8 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-x = 1 # Getting an error if starting with usage for some reason.
-
 usage = """\
 %(prog)s [options] connection_string
 
@@ -34,7 +32,12 @@ from decimal import Decimal
 from datetime import datetime, date, time
 from os.path import join, getsize, dirname, abspath
 from warnings import warn
-from testutils import *
+
+if __name__ != '__main__':
+    import pyodbc
+
+import testutils
+
 
 # Some tests have fallback code for known driver issues.
 # Change this value to False to bypass the fallback code, e.g., to see
@@ -72,9 +75,14 @@ class SqlServerTestCase(unittest.TestCase):
     BYTE_FENCEPOSTS    = [ bytes(s, 'ascii') for s in STR_FENCEPOSTS ]
     IMAGE_FENCEPOSTS   = BYTE_FENCEPOSTS + [ bytes(_generate_test_string(size), 'ascii') for size in LARGE_FENCEPOST_SIZES ]
 
-    def __init__(self, method_name, connection_string):
+    def __init__(self, method_name, connection_string=None):
         unittest.TestCase.__init__(self, method_name)
-        self.connection_string = connection_string
+        if connection_string is not None:
+            self.connection_string = connection_string
+        else:
+            # if the connection string cannot be provided directly here, it can be
+            # provided in an environment variable
+            self.connection_string = os.environ['PYODBC_CONN_STR']
 
     def driver_type_is(self, type_name):
         recognized_types = {
@@ -1937,40 +1945,51 @@ def main():
     parser.add_argument("-v", "--verbose", action="count", default=0, help="increment test verbosity (can be used multiple times)")
     parser.add_argument("-d", "--debug", action="store_true", default=False, help="print debugging items")
     parser.add_argument("-t", "--test", help="run only the named test")
-    parser.add_argument("conn_str", nargs="*", help="connection string for SQL Server")
-
+    parser.add_argument("--sqlserver", nargs='*', help="connection string(s) for SQL Server")
+    # typically, the connection string is provided as the only parameter, so handle this case
+    parser.add_argument('conn_str', nargs='*', help="connection string for SQL Server")
     args = parser.parse_args()
 
     if len(args.conn_str) > 1:
-        parser.error('Only one argument is allowed.  Do you need quotes around the connection string?')
+        parser.error('Only one positional argument is allowed.  Do you need quotes around the connection string?')
 
-    if not args.conn_str:
-        connection_string = load_setup_connection_string('sqlservertests')
-
-        if not connection_string:
-            parser.print_help()
-            raise SystemExit()
+    if args.sqlserver is not None:
+        connection_strings = args.sqlserver
+    elif len(args.conn_str) == 1 and args.conn_str[0]:
+        connection_strings = [args.conn_str[0]]
     else:
-        connection_string = args.conn_str[0]
+        config_conn_string = testutils.load_setup_connection_string('sqlservertests')
+        if config_conn_string is None:
+            parser.print_help()
+            return True  # no connection string, therefore nothing to do
+        else:
+            connection_strings = [config_conn_string]
 
     if args.verbose:
-        cnxn = pyodbc.connect(connection_string)
-        print_library_info(cnxn)
+        cnxn = pyodbc.connect(connection_strings[0])
+        testutils.print_library_info(cnxn)
         cnxn.close()
 
-    suite = load_tests(SqlServerTestCase, args.test, connection_string)
+    overall_result = True
+    for connection_string in connection_strings:
+        print(f'Running tests with connection string: {connection_string}')
+        suite = testutils.load_tests(SqlServerTestCase, args.test, connection_string)
+        testRunner = unittest.TextTestRunner(verbosity=args.verbose)
+        result = testRunner.run(suite)
+        if not result.wasSuccessful():
+            overall_result = False
 
-    testRunner = unittest.TextTestRunner(verbosity=args.verbose)
-    result = testRunner.run(suite)
-
-    return result
+    return overall_result
 
 
 if __name__ == '__main__':
 
-    # Add the build directory to the path so we're testing the latest build, not the installed version.
+    # add the build directory to the Python path so we're testing the latest
+    # build, not the pip-installed version
+    testutils.add_to_path()
 
-    add_to_path()
-
+    # only after setting the Python path, import the pyodbc module
     import pyodbc
-    sys.exit(0 if main().wasSuccessful() else 1)
+
+    # run the tests
+    sys.exit(0 if main() else 1)
