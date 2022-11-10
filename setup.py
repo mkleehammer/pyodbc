@@ -275,16 +275,11 @@ def get_version():
     numbers = None              # The 4 integers that make up the version.
 
     # If we are in the CICD pipeline, use the VERSION, not least because there is no tagging
-    # information available (Github Actions fetches the repo with the --no-tags and --depth=1 options).
+    # information available (Github Actions fetches the repo with the options --no-tags and --depth=1).
 
-    for e in os.environ:
-        _print(str({e: os.getenv(e)}))
-
-    # All CI providers (Github Actions / Travis / CircleCI / AppVeyor / etc.) set CI to
-    # "true" (or similar) but just in case, check for the provider directly as well.
-    if os.getenv('CI', 'false').lower() in ('true', 't', 'yes', 'y', 'on', '1') or \
-       'GITHUB_ACTIONS' in os.environ or \
-       'APPVEYOR' in os.environ:
+    # CI providers (Github Actions / Travis / CircleCI / AppVeyor / etc.) usually set CI to "true", but
+    # in cibuildwheel linux containers, the usual CI env vars are not available, only CIBUILDWHEEL.
+    if os.getenv('CI', 'false').lower() == 'true' or 'CIBUILDWHEEL' in os.environ:
         name = VERSION
         numbers = [int(p) for p in VERSION.split('.')]
         return name, numbers

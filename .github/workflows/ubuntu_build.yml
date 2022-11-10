@@ -225,8 +225,6 @@ jobs:
         uses: pypa/cibuildwheel@v2.11.2
         # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
         env:
-          CIBW_BUILD_VERBOSITY: 1
-
           # Windows - both 64-bit and 32-bit builds
           CIBW_ARCHS_WINDOWS: "AMD64 x86"
 
