@@ -277,8 +277,11 @@ def get_version():
     # If we are in the CICD pipeline, use the VERSION, not least because there is no tagging
     # information available (Github Actions fetches the repo with the --no-tags and --depth=1 options).
 
-    # All CICD engines (Github Actions / Travis / CircleCI / AppVeyor) set CI to "True"/"true"
-    if os.getenv('CI', 'false').lower() == 'true':
+    # All CI providers (Github Actions / Travis / CircleCI / AppVeyor / etc.) set CI to
+    # "true" (or similar) but just in case, check for the provider directly as well.
+    if os.getenv('CI', 'false').lower() in ('true', 't', 'yes', 'y', 'on', '1') or \
+       'GITHUB_ACTIONS' in os.environ or \
+       'APPVEYOR' in os.environ:
         name = VERSION
         numbers = [int(p) for p in VERSION.split('.')]
         return name, numbers
