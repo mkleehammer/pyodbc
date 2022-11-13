@@ -9,6 +9,7 @@ ECHO *** Available ODBC Drivers:
 
 REM check if any testing should be done at all
 IF NOT "%APVYR_RUN_TESTS%" == "true" (
+  ECHO.
   ECHO *** Skipping all the unit tests
   GOTO :end
 )

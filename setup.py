@@ -19,7 +19,7 @@ else:
 
 OFFICIAL_BUILD = 9999
 
-# This version identifier should refer to the NEXT release version, not the
+# This version identifier should refer to the NEXT release, not the
 # current one.  After each release, the version should be incremented.
 VERSION = '4.0.35'
 
@@ -274,10 +274,10 @@ def get_version():
     name    = None              # branch/feature name.  Should be None for official builds.
     numbers = None              # The 4 integers that make up the version.
 
-    # If we are in the CICD pipeline, use the VERSION, not least because there is no tagging
-    # information available (Github Actions fetches the repo with the options --no-tags and --depth=1).
+    # If we are in the CICD pipeline, use the VERSION.  There is no tagging information available
+    # because Github Actions fetches the repo with the options --no-tags and --depth=1.
 
-    # CI providers (Github Actions / Travis / CircleCI / AppVeyor / etc.) usually set CI to "true", but
+    # CI providers (Github Actions / Travis / CircleCI / AppVeyor / etc.) typically set CI to "true", but
     # in cibuildwheel linux containers, the usual CI env vars are not available, only CIBUILDWHEEL.
     if os.getenv('CI', 'false').lower() == 'true' or 'CIBUILDWHEEL' in os.environ:
         name = VERSION

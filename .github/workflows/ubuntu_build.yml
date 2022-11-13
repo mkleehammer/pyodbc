@@ -230,14 +230,23 @@ jobs:
 
           # macOS - both Intel and ARM builds; no bundled libraries
           CIBW_ARCHS_MACOS: "x86_64 arm64"
+          # prevent the addition of unixODBC dylibs to the wheel by simply not calling the repair
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
 
           # Linux - based on CentOS 7; glibc 64-bit builds only; no bundled libraries
           # https://github.com/pypa/manylinux#docker-images
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
           CIBW_ARCHS_LINUX: x86_64
+          # this installs unixODBC 2.3.1 which is quite old but it has the latest ABI so should be fine
           CIBW_BEFORE_ALL_LINUX: yum -y install unixODBC-devel
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --exclude libodbc.so.2 --exclude libltdl.so.7 --wheel-dir {dest_dir} {wheel}"
+          # the raw wheel filename is not PyPi compliant so the wheel must be repaired but
+          # suppress the addition of unixODBC libs to the wheel with --exclude's
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX:
+            auditwheel repair
+              --exclude libodbc.so.2
+              --exclude libltdl.so.7
+              --wheel-dir {dest_dir}
+              {wheel}
 
           # Build choices - disable musl Linux and PyPy builds
           CIBW_SKIP: "*-musllinux_* pp*"
