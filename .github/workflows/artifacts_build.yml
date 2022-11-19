@@ -1,13 +1,9 @@
-# Build the artifacts for a release (i.e. the source distribution file and the various wheels)
+# Build all the artifacts for a release (i.e. the source distribution file and the various wheels)
 
 name: Build the release artifacts
 
-# run manually from the portal
-on:
-  workflow_dispatch: {}
-  push:
-    branches:
-      - 'separate-distribution-workflow-from-build'
+# run this workflow manually from the Actions portal
+on: workflow_dispatch
 
 jobs:
   build_sdist:
