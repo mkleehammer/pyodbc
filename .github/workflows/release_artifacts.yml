@@ -1,5 +1,6 @@
-# Build the artifacts (source distribution file and wheels) for a release
-name: Build artifacts
+# Build the artifacts for a release (i.e. the source distribution file and the various wheels)
+
+name: Build the release artifacts
 
 # run manually from the portal
 on:
@@ -23,7 +24,7 @@ jobs:
       - name: Build sdist
         run: python -m build --sdist --no-isolation
 
-      - name: Upload builds
+      - name: Upload sdist
         uses: actions/upload-artifact@v3
         with:
           name: sdist
