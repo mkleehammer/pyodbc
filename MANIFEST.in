@@ -1,5 +1,3 @@
-global-exclude *.py[cod]
-
 include src/*.h
 include src/*.cpp
 include tests2/*
@@ -9,3 +7,5 @@ include LICENSE.txt
 
 # Include this file, needed for bdist_rpm
 include MANIFEST.in
+
+global-exclude *.py[cod]
