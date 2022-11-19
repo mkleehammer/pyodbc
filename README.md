@@ -1,12 +1,10 @@
 # pyodbc
 
-[![AppVeyor](https://ci.appveyor.com/api/projects/status/github/mkleehammer/pyodbc?branch=master&svg=true&passingText=Windows%20build&failingText=Windows%20build)](https://ci.appveyor.com/project/mkleehammer/pyodbc)
-[![Github Actions - Ubuntu Build](https://github.com/mkleehammer/pyodbc/actions/workflows/ubuntu_build.yml/badge.svg?branch=master)](https://github.com/mkleehammer/pyodbc/actions/workflows/ubuntu_build.yml)
+[![Ubuntu build](https://github.com/mkleehammer/pyodbc/actions/workflows/ubuntu_build.yml/badge.svg)](https://github.com/mkleehammer/pyodbc/actions/workflows/ubuntu_build.yml)
 [![PyPI](https://img.shields.io/pypi/v/pyodbc?color=brightgreen)](https://pypi.org/project/pyodbc/)
 
 pyodbc is an open source Python module that makes accessing ODBC databases simple.  It
-implements the [DB API 2.0](https://www.python.org/dev/peps/pep-0249) specification but is
-packed with even more Pythonic convenience.
+implements the [DB API 2.0](https://www.python.org/dev/peps/pep-0249) specification but is packed with even more Pythonic convenience.
 
 The easiest way to install pyodbc is to use pip:
 
@@ -31,6 +29,3 @@ compiler.  See the [docs](https://github.com/mkleehammer/pyodbc/wiki/Install) fo
 [Documentation](https://github.com/mkleehammer/pyodbc/wiki)
 
 [Release Notes](https://github.com/mkleehammer/pyodbc/releases)
-
-IMPORTANT: Python 2.7 support is being ended.  The pyodbc 4.x versions will be the last to
-support Python 2.7.  The pyodbc 5.x versions will support only Python 3.7 and above.
