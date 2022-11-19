@@ -2,12 +2,6 @@
 
 bool Text_EqualsI(PyObject* lhs, const char* rhs)
 {
-#if PY_MAJOR_VERSION < 3
-    // In Python 2, allow ANSI strings.
-    if (lhs && PyString_Check(lhs))
-        return _strcmpi(PyString_AS_STRING(lhs), rhs) == 0;
-#endif
-
     if (lhs == 0 || !PyUnicode_Check(lhs))
         return false;
 
@@ -27,19 +21,3 @@ bool Text_EqualsI(PyObject* lhs, const char* rhs)
 
     return true;
 }
-
-#if PY_MAJOR_VERSION < 3
-int PyCodec_KnownEncoding(const char *encoding)
-{
-    PyObject* codec = _PyCodec_Lookup(encoding);
-
-    if (codec)
-    {
-        Py_DECREF(codec);
-        return 1;
-    }
-
-    PyErr_Clear();
-    return 0;
-}
-#endif

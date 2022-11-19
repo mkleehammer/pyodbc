@@ -1,157 +1,68 @@
 #!/usr/bin/env python
 
+VERSION = '5.0.0'
+
 import sys, os, re, shlex
 from os.path import exists, abspath, dirname, join, isdir, relpath, expanduser
+from inspect import cleandoc
 
-try:
-    # Allow use of setuptools so eggs can be built.
-    from setuptools import setup, Command
-except ImportError:
-    from distutils.core import setup, Command
+from setuptools import setup, Command
+from setuptools.extension import Extension
+from setuptools.errors import *
 
-from distutils.extension import Extension
-from distutils.errors import *
-
-if sys.hexversion >= 0x03000000:
-    from configparser import ConfigParser
-else:
-    from ConfigParser import ConfigParser
-
-OFFICIAL_BUILD = 9999
-
-# This version identifier should refer to the NEXT release, not the
-# current one.  After each release, the version should be incremented.
-VERSION = '4.0.39'
-
-
-def _print(s):
-    # Python 2/3 compatibility
-    sys.stdout.write(s + '\n')
-
-
-class VersionCommand(Command):
-
-    description = "prints the pyodbc version, determined from git"
-
-    user_options = []
-
-    def initialize_options(self):
-        self.verbose = 0
-
-    def finalize_options(self):
-        pass
-
-    def run(self):
-        version_str, _version = get_version()
-        sys.stdout.write(version_str + '\n')
-
-
-class TagsCommand(Command):
-
-    description = 'runs etags'
-
-    user_options = []
-
-    def initialize_options(self):
-        pass
-
-    def finalize_options(self):
-        pass
-
-    def run(self):
-        # Windows versions of etag do not seem to expand wildcards (which Unix shells normally do for Unix utilities),
-        # so find all of the files ourselves.
-        files = [ join('src', f) for f in os.listdir('src') if f.endswith(('.h', '.cpp')) ]
-        cmd = 'etags %s' % ' '.join(files)
-        return os.system(cmd)
-
+from configparser import ConfigParser
 
 
 def main():
-
-    version_str, version = get_version()
-
-    with open(join(dirname(abspath(__file__)), 'README.md')) as f:
-        long_description = f.read()
-
-    settings = get_compiler_settings(version_str)
+    settings = get_compiler_settings()
 
     files = [ relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
 
-    kwargs = {
-        'name': "pyodbc",
-        'version': version_str,
-        'description': "DB API Module for ODBC",
-
-        'long_description': long_description,
-        'long_description_content_type': 'text/markdown',
-
-        'maintainer':       "Michael Kleehammer",
-        'maintainer_email': "michael@kleehammer.com",
-
-        'ext_modules': [Extension('pyodbc', sorted(files), **settings)],
-
-        'packages': [''],
-        'package_dir': {'': 'src'},
-        'package_data': {'': ['pyodbc.pyi']},  # places pyodbc.pyi alongside pyodbc.{platform}.{pyd|so} in site-packages
-
-        'license': 'MIT',
-
-        'python_requires': '>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*',
-
-        'classifiers': ['Development Status :: 5 - Production/Stable',
-                       'Intended Audience :: Developers',
-                       'Intended Audience :: System Administrators',
-                       'License :: OSI Approved :: MIT License',
-                       'Operating System :: Microsoft :: Windows',
-                       'Operating System :: POSIX',
-                       'Programming Language :: Python',
-                       'Programming Language :: Python :: 2',
-                       'Programming Language :: Python :: 2.7',
-                       'Programming Language :: Python :: 3',
-                       'Programming Language :: Python :: 3.6',
-                       'Programming Language :: Python :: 3.7',
-                       'Programming Language :: Python :: 3.8',
-                       'Programming Language :: Python :: 3.9',
-                       'Programming Language :: Python :: 3.10',
-                       'Programming Language :: Python :: 3.11',
-                       'Topic :: Database',
-                       ],
-
-        'url': 'https://github.com/mkleehammer/pyodbc',
-        'cmdclass': { 'version' : VersionCommand,
-                     'tags'    : TagsCommand }
-        }
-
-    if sys.hexversion >= 0x02060000:
-        kwargs['options'] = {
+    setup(
+        name="pyodbc",
+        version=VERSION,
+        description="DB API Module for ODBC",
+        long_description=cleandoc("""
+            pyodbc is an open source Python module that makes accessing ODBC databases simple.
+            It implements the [DB API 2.0](https://www.python.org/dev/peps/pep-0249)
+            specification but is packed with even more Pythonic convenience."""),
+        maintainer=      "Michael Kleehammer",
+        maintainer_email="michael@kleehammer.com",
+        url='https://github.com/mkleehammer/pyodbc',
+        ext_modules=[Extension('pyodbc', sorted(files), **settings)],
+        data_files=[
+            ('', ['src/pyodbc.pyi'])  # places pyodbc.pyi alongside pyodbc.py in site-packages
+        ],
+        license='MIT',
+        python_requires='>=3.7',
+        classifiers=['Development Status :: 5 - Production/Stable',
+                     'Intended Audience :: Developers',
+                     'Intended Audience :: System Administrators',
+                     'License :: OSI Approved :: MIT License',
+                     'Operating System :: Microsoft :: Windows',
+                     'Operating System :: POSIX',
+                     'Programming Language :: Python',
+                     'Programming Language :: Python :: 3',
+                     'Topic :: Database',
+                     ],
+        options={
             'bdist_wininst': {'user_access_control' : 'auto'}
-            }
+        }
+    )
 
-    setup(**kwargs)
 
-
-def get_compiler_settings(version_str):
+def get_compiler_settings():
 
     settings = {
         'extra_compile_args' : [],
         'extra_link_args': [],
         'libraries': [],
         'include_dirs': [],
-        'define_macros' : [ ('PYODBC_VERSION', version_str) ]
+        'define_macros' : [ ('PYODBC_VERSION', VERSION) ]
     }
-
-    # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
-    # command.
-    for option in ['assert', 'trace', 'leak-check']:
-        try:
-            sys.argv.remove('--%s' % option)
-            settings['define_macros'].append(('PYODBC_%s' % option.replace('-', '_').upper(), 1))
-        except ValueError:
-            pass
 
     if os.name == 'nt':
         settings['extra_compile_args'].extend([
@@ -250,122 +161,6 @@ def get_compiler_settings(version_str):
 
     return settings
 
-
-def get_version():
-    """
-    Returns the version of the product as (description, [major,minor,micro,beta]).
-
-    If the release is official, `beta` will be 9999 (OFFICIAL_BUILD).
-
-      1. If in a git repository, use the latest tag (git describe).
-      2. If in an unzipped source directory (from setup.py sdist),
-         read the version from the PKG-INFO file.
-      3. Use 4.0.0.dev0 and complain a lot.
-    """
-    # My goal is to (1) provide accurate tags for official releases but (2) not have to manage tags for every test
-    # release.
-    #
-    # Official versions are tagged using 3 numbers: major, minor, micro.  A build of a tagged version should produce
-    # the version using just these pieces, such as 2.1.4.
-    #
-    # Unofficial versions are "working towards" the next version.  So the next unofficial build after 2.1.4 would be a
-    # beta for 2.1.5.  Using 'git describe' we can find out how many changes have been made after 2.1.4 and we'll use
-    # this count as the beta id (beta1, beta2, etc.)
-    #
-    # Since the 4 numbers are put into the Windows DLL, we want to make sure the beta versions sort *before* the
-    # official, so we set the official build number to 9999, but we don't show it.
-
-    name    = None              # branch/feature name.  Should be None for official builds.
-    numbers = None              # The 4 integers that make up the version.
-
-    # If we are in the CICD pipeline, use the VERSION.  There is no tagging information available
-    # because Github Actions fetches the repo with the options --no-tags and --depth=1.
-
-    # CI providers (Github Actions / Travis / CircleCI / AppVeyor / etc.) typically set CI to "true", but
-    # in cibuildwheel linux containers, the usual CI env vars are not available, only CIBUILDWHEEL.
-    if os.getenv('CI', 'false').lower() == 'true' or 'CIBUILDWHEEL' in os.environ:
-        name = VERSION
-        numbers = [int(p) for p in VERSION.split('.')]
-        return name, numbers
-
-    # If this is a source release the version will have already been assigned and be in the PKG-INFO file.
-
-    name, numbers = _get_version_pkginfo()
-
-    # If not a source release, we should be in a git repository.  Look for the latest tag.
-
-    if not numbers:
-        name, numbers = _get_version_git()
-
-    if not numbers:
-        _print('WARNING: Unable to determine version.  Using 4.0.0.0')
-        name, numbers = '4.0.dev0', [4,0,0,0]
-
-    return name, numbers
-
-
-def _get_version_pkginfo():
-    filename = join(dirname(abspath(__file__)), 'PKG-INFO')
-    if exists(filename):
-        re_ver = re.compile(r'^Version: \s+ (\d+)\.(\d+)\.(\d+) (?: b(\d+))?', re.VERBOSE)
-        for line in open(filename):
-            match = re_ver.search(line)
-            if match:
-                name    = line.split(':', 1)[1].strip()
-                numbers = [int(n or 0) for n in match.groups()[:3]]
-                numbers.append(int(match.group(4) or OFFICIAL_BUILD)) # don't use 0 as a default for build
-                return name, numbers
-
-    return None, None
-
-
-def _get_version_git():
-    """
-    If this is a git repo, returns the version as text and the version as a list of 4 subparts:
-    ("4.0.33", [4, 0, 33, 9999]).
-
-    If this is not a git repo, (None, None) is returned.
-    """
-    n, result = getoutput("git describe --tags --match [0-9]*")
-    if n:
-        _print('WARNING: git describe failed with: %s %s' % (n, result))
-        return None, None
-    match = re.match(r'(\d+).(\d+).(\d+) (?: -(\d+)-g[0-9a-z]+)?', result, re.VERBOSE)
-    if not match:
-        return None, None
-
-    numbers = [int(n or OFFICIAL_BUILD) for n in match.groups()]
-    if numbers[-1] == OFFICIAL_BUILD:
-        name = '%s.%s.%s' % tuple(numbers[:3])
-    if numbers[-1] != OFFICIAL_BUILD:
-        # This is a beta of the next micro release, so increment the micro number to reflect this.
-        numbers[-2] += 1
-        name = '%s.%s.%sb%d' % tuple(numbers)
-
-    n, result = getoutput('git rev-parse --abbrev-ref HEAD')
-
-    if result == 'HEAD':
-        # We are not on a branch.  In the past we would add "+commitHHHH" to it, but this
-        # interferes with the CI system which checks out by tag name.  The goal of the version
-        # numbers is to be reproducible, so we may want to put this back if we detect the
-        # current commit is not on the master branch.
-
-        #  n, result = getoutput('git rev-parse --short HEAD')
-        #  name = name + '+commit' + result
-
-        pass
-    else:
-        if result != 'master' and not re.match(r'^v\d+$', result):
-            name = name + '+' + result.replace('-', '')
-
-    return name, numbers
-
-
-def getoutput(cmd):
-    pipe = os.popen(cmd, 'r')
-    text   = pipe.read().rstrip('\n')
-    status = pipe.close() or 0
-    return status, text
 
 if __name__ == '__main__':
     main()

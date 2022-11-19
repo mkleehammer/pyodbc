@@ -21,36 +21,13 @@ void SQLWChar::init(PyObject* src, const TextEnc& enc)
     isNone = false;
 
     // If there are optimized encodings that don't require a temporary object, use them.
-#if PY_MAJOR_VERSION < 3
-    if (enc.optenc == OPTENC_RAW && PyString_Check(src))
-    {
-        psz = (SQLWCHAR*)PyString_AS_STRING(src);
-        return;
-    }
-#endif
-
-#if PY_MAJOR_VERSION >= 3
     if (enc.optenc == OPTENC_UTF8 && PyUnicode_Check(src))
     {
         psz = (SQLWCHAR*)PyUnicode_AsUTF8(src);
         return;
     }
-#endif
 
     PyObject* pb = 0;
-
-#if PY_MAJOR_VERSION == 2
-    if (PyBytes_Check(src))
-    {
-      // If this is Python 2, the string could already be encoded as bytes.  If the encoding is
-      // different than what we want, we have to decode to Unicode and then re-encode.
-
-
-      PyObject* u = PyString_AsDecodedObject(src, 0, "strict");
-      if (u)
-        src = u;
-    }
-#endif
 
     if (!pb && PyUnicode_Check(src))
         pb = PyUnicode_AsEncodedString(src, enc.name, "strict");
@@ -91,14 +68,6 @@ void SQLWChar::init(PyObject* src, const TextEnc& enc)
 
 PyObject* TextEnc::Encode(PyObject* obj) const
 {
-#if PY_MAJOR_VERSION < 3
-    if (optenc == OPTENC_RAW || PyBytes_Size(obj) == 0)
-    {
-        Py_INCREF(obj);
-        return obj;
-    }
-#endif
-
     PyObject* bytes = PyCodec_Encode(obj, name, "strict");
 
     if (bytes && PyErr_Occurred())
@@ -119,34 +88,6 @@ PyObject* TextEnc::Encode(PyObject* obj) const
 }
 
 
-#if PY_MAJOR_VERSION < 3
-PyObject* EncodeStr(PyObject* str, const TextEnc& enc)
-{
-    if (enc.optenc == OPTENC_RAW || PyBytes_Size(str) == 0)
-    {
-        // No conversion.
-        Py_INCREF(str);
-        return str;
-    }
-    else
-    {
-        // Encode the text with the user's encoding.
-        Object encoded(PyCodec_Encode(str, enc.name, "strict"));
-        if (!encoded)
-            return 0;
-
-        if (!PyBytes_CheckExact(encoded))
-        {
-            // Not all encodings return bytes.
-            PyErr_Format(PyExc_TypeError, "Unicode read encoding '%s' returned unexpected data type: %s",
-                         enc.name, encoded.Get()->ob_type->tp_name);
-            return 0;
-        }
-
-        return encoded.Detach();
-    }
-}
-#endif
 
 PyObject* TextBufferToObject(const TextEnc& enc, const byte* pbData, Py_ssize_t cbData)
 {
@@ -160,84 +101,39 @@ PyObject* TextBufferToObject(const TextEnc& enc, const byte* pbData, Py_ssize_t 
 
     PyObject* str;
 
-#if PY_MAJOR_VERSION < 3
-    // The Unicode paths use the same code.
-    if (enc.to == TO_UNICODE)
+    if (cbData == 0)
     {
-#endif
-        if (cbData == 0)
-        {
-            str = PyUnicode_FromStringAndSize("", 0);
-        }
-        else
-        {
-            int byteorder = 0;
-            switch (enc.optenc)
-            {
-            case OPTENC_UTF8:
-                str = PyUnicode_DecodeUTF8((char*)pbData, cbData, "strict");
-                break;
-            case OPTENC_UTF16:
-                byteorder = BYTEORDER_NATIVE;
-                str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-                break;
-            case OPTENC_UTF16LE:
-                byteorder = BYTEORDER_LE;
-                str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-                break;
-            case OPTENC_UTF16BE:
-                byteorder = BYTEORDER_BE;
-                str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-                break;
-            case OPTENC_LATIN1:
-                str = PyUnicode_DecodeLatin1((char*)pbData, cbData, "strict");
-                break;
-            default:
-                // The user set an encoding by name.
-                str = PyUnicode_Decode((char*)pbData, cbData, enc.name, "strict");
-                break;
-            }
-        }
-#if PY_MAJOR_VERSION < 3
-    }
-    else if (cbData == 0)
-    {
-        str = PyString_FromStringAndSize("", 0);
-    }
-    else if (enc.optenc == OPTENC_RAW)
-    {
-        // No conversion.
-        str = PyString_FromStringAndSize((char*)pbData, cbData);
+        str = PyUnicode_FromStringAndSize("", 0);
     }
     else
     {
-        // The user has requested a string object.  Unfortunately we don't have
-        // str versions of all of the optimized functions.
-        const char* encoding;
+        int byteorder = 0;
         switch (enc.optenc)
         {
         case OPTENC_UTF8:
-            encoding = "utf-8";
+            str = PyUnicode_DecodeUTF8((char*)pbData, cbData, "strict");
             break;
         case OPTENC_UTF16:
-            encoding = "utf-16";
+            byteorder = BYTEORDER_NATIVE;
+            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
             break;
         case OPTENC_UTF16LE:
-            encoding = "utf-16-le";
+            byteorder = BYTEORDER_LE;
+            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
             break;
         case OPTENC_UTF16BE:
-            encoding = "utf-16-be";
+            byteorder = BYTEORDER_BE;
+            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
             break;
         case OPTENC_LATIN1:
-            encoding = "latin-1";
+            str = PyUnicode_DecodeLatin1((char*)pbData, cbData, "strict");
             break;
         default:
-            encoding = enc.name;
+            // The user set an encoding by name.
+            str = PyUnicode_Decode((char*)pbData, cbData, enc.name, "strict");
+            break;
         }
-
-        str = PyString_Decode((char*)pbData, cbData, encoding, "strict");
     }
-#endif
 
     return str;
 }

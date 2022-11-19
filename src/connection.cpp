@@ -9,7 +9,6 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "pyodbc.h"
-#include "buffer.h"
 #include "wrapper.h"
 #include "textenc.h"
 #include "connection.h"
@@ -18,10 +17,6 @@
 #include "errors.h"
 #include "cnxninfo.h"
 
-#if PY_MAJOR_VERSION < 3
-static bool IsStringType(PyObject* t) { return (void*)t == (void*)&PyString_Type; }
-static bool IsUnicodeType(PyObject* t) { return (void*)t == (void*)&PyUnicode_Type; }
-#endif
 
 static char connection_doc[] =
     "Connection objects manage connections to the database.\n"
@@ -80,24 +75,9 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
     Object encBytes;
     if (encoding)
     {
-        #if PY_MAJOR_VERSION < 3
-        if (PyString_Check(encoding))
-        {
-            szEncoding = PyString_AsString(encoding);
-            if (!szEncoding)
-                return false;
-        }
-        #endif
         if (PyUnicode_Check(encoding))
         {
-            #if PY_MAJOR_VERSION < 3
-                encBytes = PyUnicode_AsUTF8String(encoding);
-                if (!encBytes)
-                    return false;
-                szEncoding = PyString_AS_STRING(encBytes.Get());
-            #else
-                szEncoding = PyUnicode_AsUTF8(encoding);
-            #endif
+          szEncoding = PyUnicode_AsUTF8(encoding);
         }
     }
 
@@ -150,50 +130,31 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
             vallen = SQL_IS_INTEGER;
         }
     }
-#if PY_MAJOR_VERSION < 3
-    else if (PyInt_Check(value))
-    {
-        ivalue = (SQLPOINTER)PyInt_AsLong(value);
-        vallen = SQL_IS_INTEGER;
-    }
-    else if (PyBuffer_Check(value))
-    {
-        // We can only assume and take the first segment.
-        PyBuffer_GetMemory(value, (const char**)&ivalue);
-        vallen = SQL_IS_POINTER;
-    }
-#endif
-#if PY_VERSION_HEX >= 0x02060000
     else if (PyByteArray_Check(value))
     {
         ivalue = (SQLPOINTER)PyByteArray_AsString(value);
         vallen = SQL_IS_POINTER;
     }
-#endif
     else if (PyBytes_Check(value))
     {
         ivalue = PyBytes_AS_STRING(value);
-#if PY_MAJOR_VERSION < 3
-        vallen = SQL_NTS;
-#else
         vallen = SQL_IS_POINTER;
-#endif
     }
     else if (PyUnicode_Check(value))
     {
         Object stringholder;
-if (sizeof(Py_UNICODE) == 2 // This part should be compile-time.
-    && (!strencoding || !strcmp(strencoding, "utf-16le")))
-{
-        // default or utf-16le is set, pass through directly
-        ivalue = PyUnicode_AS_UNICODE(value);
-}
-else
-{
-        // use strencoding to convert, default to utf-16le if not set.
-        stringholder = PyCodec_Encode(value, strencoding ? strencoding : "utf-16le", "strict");
-        ivalue = PyBytes_AS_STRING(stringholder.Get());
-}
+        if (sizeof(Py_UNICODE) == 2 // This part should be compile-time.
+            && (!strencoding || !strcmp(strencoding, "utf-16le")))
+        {
+          // default or utf-16le is set, pass through directly
+          ivalue = PyUnicode_AS_UNICODE(value);
+        }
+        else
+        {
+          // use strencoding to convert, default to utf-16le if not set.
+          stringholder = PyCodec_Encode(value, strencoding ? strencoding : "utf-16le", "strict");
+          ivalue = PyBytes_AS_STRING(stringholder.Get());
+        }
         vallen = SQL_NTS;
         Py_BEGIN_ALLOW_THREADS
         ret = SQLSetConnectAttrW(hdbc, ikey, ivalue, vallen);
@@ -272,10 +233,6 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
 
             if (PyLong_Check(key))
                 ikey = (int)PyLong_AsLong(key);
-#if PY_MAJOR_VERSION < 3
-            else if (PyInt_Check(key))
-                ikey = (int)PyInt_AsLong(key);
-#endif
             if (!ApplyPreconnAttrs(hdbc, ikey, value, strencoding))
             {
                 return 0;
@@ -349,21 +306,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     cnxn->unicode_enc.name   = _strdup(ENCSTR_UTF16NE);
     cnxn->unicode_enc.ctype  = SQL_C_WCHAR;
 
-#if PY_MAJOR_VERSION < 3
-    cnxn->str_enc.optenc = OPTENC_UTF8;
-    cnxn->str_enc.name   = _strdup("utf-8");
-    cnxn->str_enc.ctype  = SQL_C_CHAR;
-
-    cnxn->sqlchar_enc.to  = TO_UNICODE;
-    cnxn->sqlwchar_enc.to = TO_UNICODE;
-    cnxn->metadata_enc.to = TO_UNICODE;
-#endif
-
-    if (!cnxn->sqlchar_enc.name || !cnxn->sqlwchar_enc.name || !cnxn->metadata_enc.name || !cnxn->unicode_enc.name
-#if PY_MAJOR_VERSION < 3
-        || !cnxn->str_enc.name
-#endif
-        )
+    if (!cnxn->sqlchar_enc.name || !cnxn->sqlwchar_enc.name || !cnxn->metadata_enc.name || !cnxn->unicode_enc.name)
     {
         PyErr_NoMemory();
         Py_DECREF(cnxn);
@@ -523,10 +466,6 @@ static int Connection_clear(PyObject* self)
     cnxn->metadata_enc.name = 0;
     free((void*)cnxn->unicode_enc.name);
     cnxn->unicode_enc.name = 0;
-#if PY_MAJOR_VERSION < 3
-    free((void*)cnxn->str_enc.name);
-    cnxn->str_enc.name = 0;
-#endif
 
     Py_XDECREF(cnxn->attrs_before);
     cnxn->attrs_before = 0;
@@ -833,14 +772,7 @@ static PyObject* Connection_getinfo(PyObject* self, PyObject* args)
     case GI_UINTEGER:
     {
         SQLUINTEGER n = *(SQLUINTEGER*)szBuffer; // Does this work on PPC or do we need a union?
-#if PY_MAJOR_VERSION >= 3
         result = PyLong_FromLong((long)n);
-#else
-        if (n <= (SQLUINTEGER)PyInt_GetMax())
-            result = PyInt_FromLong((long)n);
-        else
-            result = PyLong_FromUnsignedLong(n);
-#endif
         break;
     }
 
@@ -1226,11 +1158,7 @@ static char conv_add_doc[] =
     "  The converter function which will be called with a single parameter, the\n"
     "  value, and should return the converted value.  If the value is NULL, the\n"
     "  parameter will be None.  Otherwise it will be a "
-#if PY_MAJOR_VERSION >= 3
     "bytes object.\n"
-#else
-    "str object with the raw bytes.\n"
-#endif
     "\n"
     "If func is None, any existing converter is removed."
     ;
@@ -1373,29 +1301,11 @@ static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype, bool
     char lower[30];
     NormalizeCodecName(encoding, lower, sizeof(lower));
 
-#if PY_MAJOR_VERSION < 3
-    if (strcmp(lower, "|raw|") == 0)
-    {
-        if (!allow_raw)
-        {
-            // Give a better error message for 'raw' than "not a registered codec".  It is never
-            // registered.
-            PyErr_Format(PyExc_ValueError, "Raw codec is only allowed for str / SQL_CHAR");
-            return false;
-        }
-    }
-    else if (!PyCodec_KnownEncoding(encoding))
-    {
-        PyErr_Format(PyExc_ValueError, "not a registered codec: '%s'", encoding);
-        return false;
-    }
-#else
     if (!PyCodec_KnownEncoding(encoding))
     {
         PyErr_Format(PyExc_ValueError, "not a registered codec: '%s'", encoding);
         return false;
     }
-#endif
 
     if (ctype != 0 && ctype != SQL_WCHAR && ctype != SQL_CHAR)
     {
@@ -1453,13 +1363,6 @@ static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype, bool
         enc.optenc = OPTENC_LATIN1;
         enc.ctype  = (SQLSMALLINT)(ctype ? ctype : SQL_C_CHAR);
     }
-#if PY_MAJOR_VERSION < 3
-    else if (strstr("|raw|", lower))
-    {
-        enc.optenc = OPTENC_RAW;
-        enc.ctype  = SQL_C_CHAR;
-    }
-#endif
     else
     {
         enc.optenc = OPTENC_NONE;
@@ -1473,7 +1376,6 @@ static PyObject* Connection_setencoding(PyObject* self, PyObject* args, PyObject
 {
     Connection* cnxn = (Connection*)self;
 
-#if PY_MAJOR_VERSION >= 3
     // In Python 3 we only support encodings for Unicode text.
     char* encoding = 0;
     int ctype = 0;
@@ -1482,21 +1384,6 @@ static PyObject* Connection_setencoding(PyObject* self, PyObject* args, PyObject
         return 0;
     TextEnc& enc = cnxn->unicode_enc;
     bool allow_raw = false;
-#else
-    // In Python 2, we support encodings for Unicode and strings.
-    PyObject* from_type;
-    char* encoding = 0;
-    int ctype = 0;
-    static char *kwlist[] = { "fromtype", "encoding", "ctype", 0 };
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|si", kwlist, &from_type, &encoding, &ctype))
-        return 0;
-
-    if (!IsUnicodeType(from_type) && ! IsStringType(from_type))
-        return PyErr_Format(PyExc_TypeError, "fromtype must be str or unicode");
-
-    TextEnc& enc = IsStringType(from_type) ? cnxn->str_enc : cnxn->unicode_enc;
-    bool allow_raw = IsStringType(from_type);
-#endif
 
     if (!SetTextEncCommon(enc, encoding, ctype, allow_raw))
         return 0;
@@ -1505,11 +1392,7 @@ static PyObject* Connection_setencoding(PyObject* self, PyObject* args, PyObject
 }
 
 static char setdecoding_doc[] =
-#if PY_MAJOR_VERSION >= 3
     "setdecoding(sqltype, encoding=None, ctype=None) --> None\n"
-#else
-    "setdecoding(sqltype, encoding=None, ctype=None, to=None) --> None\n"
-#endif
     "\n"
     "Configures how text of type `ctype` (SQL_CHAR or SQL_WCHAR) is decoded\n"
     "when read from the database.\n"
@@ -1518,9 +1401,6 @@ static char setdecoding_doc[] =
     "pyodbc uses this lookup the decoding information set by this function.\n"
     "sqltype: pyodbc.SQL_CHAR or pyodbc.SQL_WCHAR\n\n"
     "encoding: A registered Python encoding such as \"utf-8\".\n\n"
-#if PY_MAJOR_VERSION < 3
-    "to: the desired Python object type - str or unicode"
-#endif
     "ctype: The C data type should be requested.  Set this to SQL_CHAR for\n"
     "  single-byte encodings like UTF-8 and to SQL_WCHAR for two-byte encodings\n"
     "  like UTF-16.";
@@ -1535,29 +1415,9 @@ static PyObject* Connection_setdecoding(PyObject* self, PyObject* args, PyObject
     int ctype = 0;
     bool allow_raw = false;
 
-#if PY_MAJOR_VERSION >= 3
     static char *kwlist[] = {"sqltype", "encoding", "ctype", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i|si", kwlist, &sqltype, &encoding, &ctype))
         return 0;
-#else
-    int to = 0;
-    PyObject* toObj = 0;
-    static char *kwlist[] = {"sqltype", "encoding", "ctype", "to", NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i|siO", kwlist, &sqltype, &encoding, &ctype, &toObj))
-        return 0;
-
-    if (toObj)
-    {
-        if (IsUnicodeType(toObj))
-            to = TO_UNICODE;
-        else if (IsStringType(toObj))
-            to = TO_STR;
-        else
-            return PyErr_Format(PyExc_ValueError, "`to` can only be unicode or str");
-    }
-
-    allow_raw = (sqltype == SQL_CHAR && to != TO_UNICODE);
-#endif
 
     if (sqltype != SQL_WCHAR && sqltype != SQL_CHAR && sqltype != SQL_WMETADATA)
         return PyErr_Format(PyExc_ValueError, "Invalid sqltype %d.  Must be SQL_CHAR or SQL_WCHAR or SQL_WMETADATA", sqltype);
@@ -1567,13 +1427,6 @@ static PyObject* Connection_setdecoding(PyObject* self, PyObject* args, PyObject
 
     if (!SetTextEncCommon(enc, encoding, ctype, allow_raw))
         return 0;
-
-#if PY_MAJOR_VERSION < 3
-    if (!to && enc.optenc == OPTENC_RAW)
-        enc.to = TO_STR;
-    else
-        enc.to = to ? to : TO_UNICODE;
-#endif
 
     Py_RETURN_NONE;
 }

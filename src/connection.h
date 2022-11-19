@@ -52,9 +52,6 @@ struct Connection
     TextEnc sqlchar_enc;        // encoding used when reading SQL_CHAR data
     TextEnc sqlwchar_enc;       // encoding used when reading SQL_WCHAR data
     TextEnc unicode_enc;        // encoding used when writing unicode strings
-#if PY_MAJOR_VERSION < 3
-    TextEnc str_enc;            // encoding used when writing non-unicode strings
-#endif
 
     TextEnc metadata_enc;
     // Used when reading column names for Cursor.description.  I originally thought I could use

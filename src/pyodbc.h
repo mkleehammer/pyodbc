@@ -28,12 +28,7 @@ typedef long long INT64;
 typedef unsigned long long UINT64;
 #define _strcmpi strcasecmp
 #define _strdup strdup
-#ifdef __MINGW32__
-  #include <windef.h>
-  #include <malloc.h>
-#else
   inline int max(int lhs, int rhs) { return (rhs > lhs) ? rhs : lhs; }
-#endif
 #endif
 
 #ifdef __SUN__
@@ -55,16 +50,6 @@ typedef unsigned long long UINT64;
 
 #include <sql.h>
 #include <sqlext.h>
-
-#if PY_VERSION_HEX < 0x02050000 && !defined(PY_SSIZE_T_MIN)
-typedef int Py_ssize_t;
-#define PY_SSIZE_T_MAX INT_MAX
-#define PY_SSIZE_T_MIN INT_MIN
-#define PyInt_AsSsize_t PyInt_AsLong
-#define lenfunc inquiry
-#define ssizeargfunc intargfunc
-#define ssizeobjargproc intobjargproc
-#endif
 
 #ifndef _countof
 #define _countof(a) (sizeof(a) / sizeof(a[0]))

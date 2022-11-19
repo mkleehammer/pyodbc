@@ -14,7 +14,6 @@
 #include "cursor.h"
 #include "params.h"
 #include "connection.h"
-#include "buffer.h"
 #include "errors.h"
 #include "dbspecific.h"
 #include "row.h"
@@ -44,14 +43,6 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
         pi->ValueType = SQL_C_BIT;
         pi->BufferLength = 1;
     }
-#if PY_MAJOR_VERSION < 3
-    else if (PyInt_Check(cell))
-    {
-    Type_Int:
-        pi->ValueType = sizeof(long) == 8 ? SQL_C_SBIGINT : SQL_C_LONG;
-        pi->BufferLength = sizeof(long);
-    }
-#endif
     else if (PyLong_Check(cell))
     {
     Type_Long:
@@ -78,11 +69,7 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
     Type_Bytes:
         // Assume the SQL type is also character (2.x) or binary (3.x).
         // If it is a max-type (ColumnSize == 0), use DAE.
-#if PY_MAJOR_VERSION < 3
-        pi->ValueType = SQL_C_CHAR;
-#else
         pi->ValueType = SQL_C_BINARY;
-#endif
         pi->BufferLength = pi->ColumnSize ? pi->ColumnSize : sizeof(DAEParam);
     }
     else if (PyUnicode_Check(cell))
@@ -119,21 +106,12 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
             pi->BufferLength = sizeof(SQL_TIME_STRUCT);
         }
     }
-#if PY_VERSION_HEX >= 0x02060000
     else if (PyByteArray_Check(cell))
     {
     Type_ByteArray:
         pi->ValueType = SQL_C_BINARY;
         pi->BufferLength = pi->ColumnSize ? pi->ColumnSize : sizeof(DAEParam);
     }
-#endif
-#if PY_MAJOR_VERSION < 3
-    else if (PyBuffer_Check(cell))
-    {
-        pi->ValueType = SQL_C_BINARY;
-        pi->BufferLength = pi->ColumnSize && PyBuffer_GetMemory(cell, 0) >= 0 ? pi->ColumnSize : sizeof(DAEParam);
-    }
-#endif
     else if (cell == Py_None || cell == null_binary)
     {
         // Use the SQL type to guess what Nones should be inserted as here.
@@ -155,11 +133,7 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
         case SQL_SMALLINT:
         case SQL_INTEGER:
         case SQL_TINYINT:
-#if PY_MAJOR_VERSION < 3
-            goto Type_Int;
-#else
             goto Type_Long;
-#endif
         case SQL_REAL:
         case SQL_FLOAT:
         case SQL_DOUBLE:
@@ -169,11 +143,9 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
         case SQL_BINARY:
         case SQL_VARBINARY:
         case SQL_LONGVARBINARY:
-#if PY_VERSION_HEX >= 0x02060000
-            goto Type_ByteArray;
-#else
+          // TODO: Shouldn't this be bytes?
+            //  goto Type_ByteArray;
             goto Type_Bytes;
-#endif
         case SQL_TYPE_DATE:
             goto Type_Date;
         case SQL_SS_TIME2:
@@ -224,14 +196,6 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             return false;
         WRITEOUT(char, outbuf, cell == Py_True, ind);
     }
-#if PY_MAJOR_VERSION < 3
-    else if (PyInt_Check(cell))
-    {
-        if (pi->ValueType != (sizeof(long) == 8 ? SQL_C_SBIGINT : SQL_C_LONG))
-            return false;
-        WRITEOUT(long, outbuf, PyInt_AS_LONG(cell), ind);
-    }
-#endif
     else if (PyLong_Check(cell))
     {
         if (pi->ValueType == SQL_C_SBIGINT)
@@ -290,11 +254,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
     }
     else if (PyBytes_Check(cell))
     {
-#if PY_MAJOR_VERSION < 3
-        if (pi->ValueType != SQL_C_CHAR)
-#else
         if (pi->ValueType != SQL_C_BINARY)
-#endif
             return false;
         Py_ssize_t len = PyBytes_GET_SIZE(cell);
         if (!pi->ColumnSize) // DAE
@@ -448,7 +408,6 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             ind = sizeof(SQL_TIME_STRUCT);
         }
     }
-#if PY_VERSION_HEX >= 0x02060000
     else if (PyByteArray_Check(cell))
     {
         if (pi->ValueType != SQL_C_BINARY)
@@ -475,38 +434,6 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             ind = len;
         }
     }
-#endif
-#if PY_MAJOR_VERSION < 3
-    else if (PyBuffer_Check(cell))
-    {
-        if (pi->ValueType != SQL_C_BINARY)
-            return false;
-        const char* pb;
-        Py_ssize_t  len = PyBuffer_GetMemory(cell, &pb);
-        if (len < 0)
-        {
-            // DAE
-            DAEParam *pParam = (DAEParam*)*outbuf;
-            len = PyBuffer_Size(cell);
-            Py_INCREF(cell);
-            pParam->cell = cell;
-            pParam->maxlen = cur->cnxn->GetMaxLength(pi->ValueType);
-            *outbuf += pi->BufferLength;
-            ind = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len) : SQL_DATA_AT_EXEC;
-        }
-        else
-        {
-            if (len > pi->BufferLength)
-            {
-                RaiseErrorV(0, ProgrammingError, "String data, right truncation: row %u column %u", 0 /* TODO */, 0 /* TODO */);
-                return false;
-            }
-            memcpy(*outbuf, pb, len);
-            *outbuf += pi->BufferLength;
-            ind = len;
-        }
-    }
-#endif
     else if (IsInstanceForThread(cell, "uuid", "UUID", &cls) && cls)
     {
         if (pi->ValueType != SQL_C_GUID)
@@ -634,7 +561,6 @@ static bool GetNullBinaryInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 }
 
 
-#if PY_MAJOR_VERSION >= 3
 static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     // The Python 3 version that writes bytes as binary data.
@@ -666,67 +592,6 @@ static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamIn
 
     return true;
 }
-#endif
-
-#if PY_MAJOR_VERSION < 3
-static bool GetStrInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
-{
-    const TextEnc& enc = cur->cnxn->str_enc;
-
-    info.ValueType = enc.ctype;
-
-    Py_ssize_t cch = PyString_GET_SIZE(param);
-
-    info.ColumnSize = isTVP ? 0 : (SQLUINTEGER)max(cch, 1);
-
-    Object encoded;
-
-    if (enc.optenc == OPTENC_RAW)
-    {
-        // Take the text as-is.  This is not really a good idea since users will need to make
-        // sure the encoding over the wire matches their system encoding, but it will be wanted
-        // and it is fast when you get it to work.
-        encoded = param;
-    }
-    else
-    {
-        // Encode the text with the user's encoding.
-        encoded = PyCodec_Encode(param, enc.name, "strict");
-        if (!encoded)
-            return false;
-
-        if (!PyBytes_CheckExact(encoded))
-        {
-            // Not all encodings return bytes.
-            PyErr_Format(PyExc_TypeError, "Unicode read encoding '%s' returned unexpected data type: %s",
-                         enc.name, encoded.Get()->ob_type->tp_name);
-            return false;
-        }
-    }
-
-    Py_ssize_t cb = PyBytes_GET_SIZE(encoded);
-    info.pObject = encoded.Detach();
-
-    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-    if (maxlength == 0 || cb <= maxlength || isTVP)
-    {
-        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
-        info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
-        info.StrLen_or_Ind     = (SQLINTEGER)cb;
-    }
-    else
-    {
-        // Too long to pass all at once, so we'll provide the data at execute.
-        info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_LONGVARCHAR : SQL_WLONGVARCHAR;
-        info.ParameterValuePtr = &info;
-        info.BufferLength      = sizeof(ParamInfo*);
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLINTEGER)cb) : SQL_DATA_AT_EXEC;
-        info.maxlength = maxlength;
-    }
-
-    return true;
-}
-#endif
 
 
 static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
@@ -865,33 +730,6 @@ inline bool NeedsBigInt(long long ll)
     // says that (10 < -2147483648).  Perhaps I miscalculated the minimum?
     return ll < -2147483647 || ll > 2147483647;
 }
-
-#if PY_MAJOR_VERSION < 3
-static bool GetIntInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
-{
-    long long value = PyLong_AsLongLong(param);
-    if (PyErr_Occurred())
-        return false;
-
-    if (isTVP || NeedsBigInt(value))
-    {
-        info.Data.i64          = (INT64)value;
-        info.ValueType         = SQL_C_SBIGINT;
-        info.ParameterType     = SQL_BIGINT;
-        info.ParameterValuePtr = &info.Data.i64;
-        info.StrLen_or_Ind     = 8;
-    }
-    else
-    {
-        info.Data.i32          = (int)value;
-        info.ValueType         = SQL_C_LONG;
-        info.ParameterType     = SQL_INTEGER;
-        info.ParameterValuePtr = &info.Data.i32;
-        info.StrLen_or_Ind     = 4;
-    }
-    return true;
-}
-#endif
 
 static bool GetLongInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
@@ -1102,46 +940,7 @@ static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     return true;
 }
 
-#if PY_MAJOR_VERSION < 3
-static bool GetBufferInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
-{
-    info.ValueType = SQL_C_BINARY;
 
-    const char* pb;
-    Py_ssize_t  cb = PyBuffer_GetMemory(param, &pb);
-
-    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-    if (maxlength == 0 || cb <= maxlength)
-    {
-        // There is one segment, so we can bind directly into the buffer object.
-
-        info.ParameterType     = SQL_VARBINARY;
-        info.ParameterValuePtr = (SQLPOINTER)pb;
-        info.BufferLength      = (SQLINTEGER)cb;
-        info.ColumnSize        = (SQLUINTEGER)max(cb, 1);
-        info.StrLen_or_Ind     = (SQLINTEGER)cb;
-    }
-    else
-    {
-        // There are multiple segments, so we'll provide the data at execution time.  Pass the PyObject pointer as
-        // the parameter value which will be passed back to us when the data is needed.  (If we release threads, we
-        // need to up the refcount!)
-
-        info.ParameterType     = SQL_LONGVARBINARY;
-        info.ParameterValuePtr = &info;
-        info.BufferLength      = sizeof(ParamInfo*);
-        info.ColumnSize        = (SQLUINTEGER)PyBuffer_Size(param);
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)PyBuffer_Size(param)) : SQL_DATA_AT_EXEC;
-        info.pObject = param;
-        Py_INCREF(info.pObject);
-        info.maxlength = maxlength;
-    }
-
-    return true;
-}
-#endif
-
-#if PY_VERSION_HEX >= 0x02060000
 static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
     info.ValueType = SQL_C_BINARY;
@@ -1171,7 +970,6 @@ static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
     }
     return true;
 }
-#endif
 
 
 // TVP
@@ -1229,13 +1027,8 @@ bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo&
     if (param == null_binary)
         return GetNullBinaryInfo(cur, index, info);
 
-#if PY_MAJOR_VERSION >= 3
     if (PyBytes_Check(param))
         return GetBytesInfo(cur, index, param, info, isTVP);
-#else
-    if (PyBytes_Check(param))
-        return GetStrInfo(cur, index, param, info, isTVP);
-#endif
 
     if (PyUnicode_Check(param))
         return GetUnicodeInfo(cur, index, param, info, isTVP);
@@ -1258,20 +1051,8 @@ bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo&
     if (PyFloat_Check(param))
         return GetFloatInfo(cur, index, param, info);
 
-#if PY_VERSION_HEX >= 0x02060000
     if (PyByteArray_Check(param))
         return GetByteArrayInfo(cur, index, param, info, isTVP);
-#endif
-
-#if PY_MAJOR_VERSION < 3
-    if (PyInt_Check(param))
-        return GetIntInfo(cur, index, param, info, isTVP);
-
-    if (PyBuffer_Check(param))
-        return GetBufferInfo(cur, index, param, info);
-#endif
-
-    // Decimal
 
     PyObject* cls = 0;
     if (!IsInstanceForThread(param, "decimal", "Decimal", &cls))
@@ -1279,8 +1060,6 @@ bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo&
 
     if (cls != 0)
         return GetDecimalInfo(cur, index, param, info, cls);
-
-    // UUID
 
     if (!IsInstanceForThread(param, "uuid", "UUID", &cls))
         return false;
@@ -1300,14 +1079,6 @@ static bool getObjectValue(PyObject *pObject, long& nValue)
   if (pObject == NULL)
     return false;
 
-#if PY_MAJOR_VERSION < 3
-  if (PyInt_Check(pObject))
-  {
-    nValue = PyInt_AS_LONG(pObject);
-    return true;
-  }
-
-#endif
   if (PyLong_Check(pObject))
   {
     nValue = PyLong_AsLong(pObject);
@@ -1577,14 +1348,6 @@ void FreeParameterInfo(Cursor* cur)
 
 bool Prepare(Cursor* cur, PyObject* pSql)
 {
-#if PY_MAJOR_VERSION >= 3
-    if (!PyUnicode_Check(pSql))
-    {
-        PyErr_SetString(PyExc_TypeError, "SQL must be a Unicode string");
-        return false;
-    }
-#endif
-
     //
     // Prepare the SQL if necessary.
     //
@@ -1597,17 +1360,7 @@ bool Prepare(Cursor* cur, PyObject* pSql)
         const char* szErrorFunc = "SQLPrepare";
 
         const TextEnc* penc;
-
-#if PY_MAJOR_VERSION < 3
-        if (PyBytes_Check(pSql))
-        {
-            penc = &cur->cnxn->str_enc;
-        }
-        else
-#endif
-        {
-            penc = &cur->cnxn->unicode_enc;
-        }
+        penc = &cur->cnxn->unicode_enc;
 
         Object query(penc->Encode(pSql));
         if (!query)
@@ -1954,26 +1707,6 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                     const TextEnc& enc = cur->cnxn->sqlwchar_enc;
                     PyObject* bytes = NULL;
 
-#if PY_MAJOR_VERSION < 3
-                    int cb = PyUnicode_GET_DATA_SIZE(objCell) / 2;
-                    const Py_UNICODE* source = PyUnicode_AS_UNICODE(objCell);
-
-                    switch (enc.optenc)
-                    {
-                    case OPTENC_UTF8:
-                        bytes = PyUnicode_EncodeUTF8(source, cb, "strict");
-                        break;
-                    case OPTENC_UTF16:
-                        bytes = PyUnicode_EncodeUTF16(source, cb, "strict", BYTEORDER_NATIVE);
-                        break;
-                    case OPTENC_UTF16LE:
-                        bytes = PyUnicode_EncodeUTF16(source, cb, "strict", BYTEORDER_LE);
-                        break;
-                    case OPTENC_UTF16BE:
-                        bytes = PyUnicode_EncodeUTF16(source, cb, "strict", BYTEORDER_BE);
-                        break;
-                    }
-#else
                     switch (enc.optenc)
                     {
                     case OPTENC_UTF8:
@@ -1989,7 +1722,6 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         bytes = PyUnicode_AsEncodedString(objCell, "utf_16_be", NULL);
                         break;
                     }
-#endif
                     if (bytes && PyBytes_Check(bytes))
                     {
                         objCell = bytes;
@@ -1998,22 +1730,16 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                 }
 
                 szLastFunction = "SQLPutData";
-                if (PyBytes_Check(objCell)
-    #if PY_VERSION_HEX >= 0x02060000
-                 || PyByteArray_Check(objCell)
-    #endif
-                )
+                if (PyBytes_Check(objCell) || PyByteArray_Check(objCell))
                 {
                     char *(*pGetPtr)(PyObject*);
                     Py_ssize_t (*pGetLen)(PyObject*);
-    #if PY_VERSION_HEX >= 0x02060000
                     if (PyByteArray_Check(objCell))
                     {
                         pGetPtr = PyByteArray_AsString;
                         pGetLen = PyByteArray_Size;
                     }
                     else
-    #endif
                     {
                         pGetPtr = PyBytes_AsString;
                         pGetLen = PyBytes_Size;
@@ -2042,25 +1768,6 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         Py_XDECREF(objCell);
                     }
                 }
-    #if PY_MAJOR_VERSION < 3
-                else if (PyBuffer_Check(objCell))
-                {
-                    // Buffers can have multiple segments, so we might need multiple writes.  Looping through buffers isn't
-                    // difficult, but we've wrapped it up in an iterator object to keep this loop simple.
-
-                    BufferSegmentIterator it(objCell);
-                    byte* pb;
-                    SQLLEN cb;
-                    while (it.Next(pb, cb))
-                    {
-                        Py_BEGIN_ALLOW_THREADS
-                        rc = SQLPutData(cur->hstmt, pb, cb);
-                        Py_END_ALLOW_THREADS
-                        if (!SQL_SUCCEEDED(rc))
-                            return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt) != NULL;
-                    }
-                }
-    #endif
                 Py_XDECREF(pInfo->cell);
                 rc = SQL_NEED_DATA;
             }
