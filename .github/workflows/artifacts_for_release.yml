@@ -1,0 +1,69 @@
+# Build the artifacts for a release
+name: Artifacts
+
+# run manually from the portal
+on: workflow_dispatch
+
+jobs:
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build sdist
+        run: python -m build --sdist --no-isolation
+
+      - name: Upload builds
+        uses: actions/upload-artifact@v3
+        with:
+          name: sdist
+          path: ./dist/*.gz
+
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # https://docs.github.com/en/actions/using-jobs/choosing-the-runner-for-a-job
+        os: [windows-2019, macos-11, ubuntu-20.04]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.11.2
+        # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
+        env:
+          # Windows - both 64-bit and 32-bit builds
+          CIBW_ARCHS_WINDOWS: "AMD64 x86"
+
+          # macOS - both Intel and ARM builds; no bundled libraries
+          CIBW_ARCHS_MACOS: "x86_64 arm64"
+          # prevent the addition of unixODBC dylibs to the wheel by simply not calling the repair
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
+
+          # Linux - based on CentOS 7; glibc 64-bit builds only; no bundled libraries
+          # https://github.com/pypa/manylinux#docker-images
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
+          CIBW_ARCHS_LINUX: x86_64
+          # this installs unixODBC 2.3.1 which is quite old but it has the latest ABI so should be fine
+          CIBW_BEFORE_ALL_LINUX: yum -y install unixODBC-devel
+          # the raw wheel filename is not PyPi compliant so the wheel must be repaired but
+          # suppress the addition of unixODBC libs to the wheel with --exclude's
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX:
+            auditwheel repair
+              --exclude libodbc.so.2
+              --exclude libltdl.so.7
+              --wheel-dir {dest_dir}
+              {wheel}
+
+          # Build choices - disable musl Linux and PyPy builds
+          CIBW_SKIP: "*-musllinux_* pp*"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: ./wheelhouse/*.whl
