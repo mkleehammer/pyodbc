@@ -2,7 +2,11 @@
 name: Artifacts
 
 # run manually from the portal
-on: workflow_dispatch
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - 'separate-distribution-workflow-from-build'
 
 jobs:
   build_sdist:
