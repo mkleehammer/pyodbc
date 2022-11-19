@@ -1,5 +1,5 @@
-# Build the artifacts for a release
-name: Artifacts
+# Build the artifacts (source distribution file and wheels) for a release
+name: Build artifacts
 
 # run manually from the portal
 on:
@@ -15,6 +15,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip build
 
       - name: Build sdist
         run: python -m build --sdist --no-isolation
