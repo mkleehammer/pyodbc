@@ -287,66 +287,38 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         //         Same size      Different size
         // DAE     DAE only       Convert + DAE
         // non-DAE Copy           Convert + Copy
-        if (sizeof(Py_UNICODE) != sizeof(SQLWCHAR))
+        const TextEnc& enc = cur->cnxn->unicode_enc;
+        Object encoded(PyCodec_Encode(cell, enc.name, "strict"));
+        if (!encoded)
+            return false;
+
+        if (enc.optenc == OPTENC_NONE && !PyBytes_CheckExact(encoded))
         {
-            const TextEnc& enc = cur->cnxn->unicode_enc;
-            Object encoded(PyCodec_Encode(cell, enc.name, "strict"));
-            if (!encoded)
-                return false;
+            PyErr_Format(PyExc_TypeError, "Unicode write encoding '%s' returned unexpected data type: %s",
+                         enc.name, encoded.Get()->ob_type->tp_name);
+            return false;
+        }
 
-            if (enc.optenc == OPTENC_NONE && !PyBytes_CheckExact(encoded))
-            {
-                PyErr_Format(PyExc_TypeError, "Unicode write encoding '%s' returned unexpected data type: %s",
-                             enc.name, encoded.Get()->ob_type->tp_name);
-                return false;
-            }
-
-            len = PyBytes_GET_SIZE(encoded);
-            if (!pi->ColumnSize)
-            {
-                // DAE
-                DAEParam *pParam = (DAEParam*)*outbuf;
-                pParam->cell = encoded.Detach();
-                pParam->maxlen = cur->cnxn->GetMaxLength(pi->ValueType);
-                *outbuf += sizeof(DAEParam);
-                ind = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len) : SQL_DATA_AT_EXEC;
-            }
-            else
-            {
-                if (len > pi->BufferLength)
-                {
-                    RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                    return false;
-                }
-                memcpy(*outbuf, PyBytes_AS_STRING((PyObject*)encoded), len);
-                *outbuf += pi->BufferLength;
-                ind = len;
-            }
+        len = PyBytes_GET_SIZE(encoded);
+        if (!pi->ColumnSize)
+        {
+            // DAE
+            DAEParam *pParam = (DAEParam*)*outbuf;
+            pParam->cell = encoded.Detach();
+            pParam->maxlen = cur->cnxn->GetMaxLength(pi->ValueType);
+            *outbuf += sizeof(DAEParam);
+            ind = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len) : SQL_DATA_AT_EXEC;
         }
         else
         {
-            len *= sizeof(SQLWCHAR);
-
-            if (!pi->ColumnSize) // DAE
+            if (len > pi->BufferLength)
             {
-                Py_INCREF(cell);
-                DAEParam *pParam = (DAEParam*)*outbuf;
-                pParam->cell = cell;
-                pParam->maxlen= cur->cnxn->GetMaxLength(pi->ValueType);
-                *outbuf += sizeof(DAEParam);
-                ind = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)len) : SQL_DATA_AT_EXEC;
+                RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
+                return false;
             }
-            else
-            {
-                if (len > pi->BufferLength)
-                {
-                    RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
-                    return false;
-                }
-                memcpy(*outbuf, PyUnicode_AS_DATA(cell), len);
-                *outbuf += pi->BufferLength;
-                ind = len;
-            }
+            memcpy(*outbuf, PyBytes_AS_STRING((PyObject*)encoded), len);
+            *outbuf += pi->BufferLength;
+            ind = len;
         }
     }
     else if (PyDateTime_Check(cell))

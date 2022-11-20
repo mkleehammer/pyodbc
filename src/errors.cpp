@@ -314,7 +314,7 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
     // Raw message buffer not needed anymore
     PyMem_Free(szMsg);
 
-    if (!msg || PyUnicode_GetSize(msg.Get()) == 0)
+    if (!msg || PyUnicode_GET_LENGTH(msg.Get()) == 0)
     {
         // This only happens using unixODBC.  (Haven't tried iODBC yet.)  Either the driver or the driver manager is
         // buggy and has signaled a fault without recording error information.

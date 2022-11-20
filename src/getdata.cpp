@@ -331,17 +331,24 @@ static PyObject* GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
 
 static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 {
-    // The SQL_NUMERIC_STRUCT support is hopeless (SQL Server ignores scale on input parameters and output columns,
-    // Oracle does something else weird, and many drivers don't support it at all), so we'll rely on the Decimal's
-    // string parsing.  Unfortunately, the Decimal author does not pay attention to the locale, so we have to modify
-    // the string ourselves.
+    // The SQL_NUMERIC_STRUCT support is hopeless (SQL Server ignores scale on input parameters
+    // and output columns, Oracle does something else weird, and many drivers don't support it
+    // at all), so we'll rely on the Decimal's string parsing.  Unfortunately, the Decimal
+    // author does not pay attention to the locale, so we have to modify the string ourselves.
     //
-    // Oracle inserts group separators (commas in US, periods in some countries), so leave room for that too.
+    // Oracle inserts group separators (commas in US, periods in some countries), so leave room
+    // for that too.
     //
-    // Some databases support a 'money' type which also inserts currency symbols.  Since we don't want to keep track of
-    // all these, we'll ignore all characters we don't recognize.  We will look for digits, negative sign (which I hope
-    // is universal), and a decimal point ('.' or ',' usually).  We'll do everything as Unicode in case currencies,
-    // etc. are too far out.
+    // Some databases support a 'money' type which also inserts currency symbols.  Since we
+    // don't want to keep track of all these, we'll ignore all characters we don't recognize.
+    // We will look for digits, negative sign (which I hope is universal), and a decimal point
+    // ('.' or ',' usually).  We'll do everything as Unicode in case currencies, etc. are too
+    // far out.
+    //
+    // This seems very inefficient.  We know the characters we are interested in are ASCII
+    // since they are -, ., and 0-9.  There /could/ be a Unicode currency symbol, but I'm going
+    // to ignore that for right now.  Therefore if we ask for the data in SQLCHAR, it should be
+    // ASCII even if the encoding is UTF-8.
 
     const TextEnc& enc = cur->cnxn->sqlwchar_enc;
     // I'm going to request the data as Unicode in case there is a weird currency symbol.  If
