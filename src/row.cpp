@@ -264,16 +264,16 @@ static PyObject* Row_repr(PyObject* o)
 
     Row* self = (Row*)o;
 
-    Object tmp(PyTuple_New(self->cValues));
-    if (!tmp)
-        return 0;
+    Object t(PyTuple_New(self->cValues));
+    if (!t)
+      return 0;
 
     for (Py_ssize_t i = 0; i < self->cValues; i++) {
         Py_INCREF(self->apValues[i]);
         PyTuple_SET_ITEM(tmp.Get(), i, self->apValues[i]);
     }
 
-    return PyObject_Repr(tmp);
+    return PyObject_Repr(t);
 }
 
 static PyObject* Row_richcompare(PyObject* olhs, PyObject* orhs, int op)
