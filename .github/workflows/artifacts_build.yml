@@ -23,7 +23,7 @@ jobs:
       - name: Upload sdist
         uses: actions/upload-artifact@v3
         with:
-          name: sdist__${{ github.ref_type }}__${{ github.ref_name }}__${{ github.sha }}
+          name: sdist_${{ github.sha }}
           path: ./dist/*.gz
 
   build_wheels:
@@ -70,5 +70,5 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
-          name: wheels__${{ github.ref_type }}__${{ github.ref_name }}__${{ github.sha }}
+          name: wheels_${{ github.sha }}
           path: ./wheelhouse/*.whl
