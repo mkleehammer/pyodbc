@@ -63,7 +63,7 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
                     Object& encoding)
 {
     // This should have been checked by the global connect function.
-    I(PyUnicode_Check(pConnectString) || PyUnicode_Check(pConnectString));
+    assert(PyUnicode_Check(pConnectString) || PyUnicode_Check(pConnectString));
 
     // The driver manager determines if the app is a Unicode app based on whether we call SQLDriverConnectA or
     // SQLDriverConnectW.  Some drivers, notably Microsoft Access/Jet, change their behavior based on this, so we try
@@ -1460,7 +1460,7 @@ static PyObject* Connection_exit(PyObject* self, PyObject* args)
     Connection* cnxn = (Connection*)self;
 
     // If an error has occurred, `args` will be a tuple of 3 values.  Otherwise it will be a tuple of 3 `None`s.
-    I(PyTuple_Check(args));
+    assert(PyTuple_Check(args));
 
     if (cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF)
     {

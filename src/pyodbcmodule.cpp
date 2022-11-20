@@ -163,7 +163,7 @@ PyObject* GetClassForThread(const char* szModule, const char* szClass)
     // modules.)
 
     PyObject* dict = PyThreadState_GetDict();
-    I(dict);
+    assert(dict);
     if (dict == 0)
     {
         // I don't know why there wouldn't be thread state so I'm going to raise an exception
@@ -782,16 +782,6 @@ static char getdecimalsep_doc[] =
     "Gets the decimal separator character used when parsing NUMERIC from the database.";
 
 
-#ifdef PYODBC_LEAK_CHECK
-static PyObject* mod_leakcheck(PyObject* self, PyObject* args)
-{
-    UNUSED(self, args);
-    pyodbc_leak_check();
-    Py_RETURN_NONE;
-}
-#endif
-
-
 static PyMethodDef pyodbc_methods[] =
 {
     { "connect",            (PyCFunction)mod_connect,            METH_VARARGS|METH_KEYWORDS, connect_doc },
@@ -802,11 +792,6 @@ static PyMethodDef pyodbc_methods[] =
     { "TimestampFromTicks", (PyCFunction)mod_timestampfromticks, METH_VARARGS,               timestampfromticks_doc },
     { "drivers",            (PyCFunction)mod_drivers,            METH_NOARGS,                drivers_doc },
     { "dataSources",        (PyCFunction)mod_datasources,        METH_NOARGS,                datasources_doc },
-
-#ifdef PYODBC_LEAK_CHECK
-    { "leakcheck", (PyCFunction)mod_leakcheck, METH_NOARGS, 0 },
-#endif
-
     { 0, 0, 0, 0 }
 };
 
@@ -1235,7 +1220,7 @@ PyMODINIT_FUNC PyInit_pyodbc()
     PyModule_AddObject(module, "Binary", binary_type);
     Py_INCREF(binary_type);
 
-    I(null_binary != 0);        // must be initialized first
+    assert(null_binary != 0);        // must be initialized first
     PyModule_AddObject(module, "BinaryNull", null_binary);
 
     PyModule_AddIntConstant(module, "UNICODE_SIZE", sizeof(Py_UNICODE));
@@ -1277,7 +1262,7 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
     // parts
     //   A dictionary of text keywords and text values that will be appended.
 
-    I(PyUnicode_Check(existing));
+    assert(PyUnicode_Check(existing));
 
     Py_ssize_t pos = 0;
     PyObject* key = 0;
@@ -1342,7 +1327,7 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
         PyUnicode_WriteChar(result, offset++, (Py_UCS4)';');
     }
 
-    I(offset == length);
+    assert(offset == length);
 
     return result;
 }

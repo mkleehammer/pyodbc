@@ -108,23 +108,6 @@ inline void _strlwr(char* name)
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 
-// Building an actual debug version of Python is so much of a pain that it never happens.  I'm providing release-build
-// versions of assertions.
-
-#if defined(PYODBC_ASSERT) && defined(_MSC_VER)
-  #include <crtdbg.h>
-  inline void FailAssert(const char* szFile, size_t line, const char* szExpr)
-  {
-      printf("assertion failed: %s(%d)\n%s\n", szFile, (int)line, szExpr);
-      __debugbreak(); // _CrtDbgBreak();
-  }
-  #define I(expr) if (!(expr)) FailAssert(__FILE__, __LINE__, #expr);
-  #define N(expr) if (expr) FailAssert(__FILE__, __LINE__, #expr);
-#else
-  #define I(expr)
-  #define N(expr)
-#endif
-
 #ifdef PYODBC_TRACE
 void DebugTrace(const char* szFmt, ...);
 #else

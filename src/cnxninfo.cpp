@@ -22,9 +22,6 @@ bool CnxnInfo_init()
     // Called during startup to give us a chance to import the hash code.  If we can't find it, we'll print a warning
     // to the console and not cache anything.
 
-    // First try hashlib which was added in 2.5.  2.6 complains using warnings which we don't want affecting the
-    // caller.
-
     map_hash_to_info = PyDict_New();
 
     update = PyUnicode_FromString("update");
@@ -32,7 +29,6 @@ bool CnxnInfo_init()
         return false;
 
     hashlib = PyImport_ImportModule("hashlib");
-
     if (!hashlib)
         return false;
 
@@ -105,7 +101,7 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
     // WARNING: The GIL lock is released for the *entire* function here.  Do not
     // touch any objects, call Python APIs, etc.  We are simply making ODBC
     // calls and setting atomic values (ints & chars).  Also, make sure the lock
-    // gets released -- do not add an early exit.
+    // gets reaquired -- do not add an early exit.
 
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS

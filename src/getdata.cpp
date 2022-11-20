@@ -262,7 +262,7 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
 
     if (isNull)
     {
-        I(pbData == 0 && cbData == 0);
+        assert(pbData == 0 && cbData == 0);
         Py_RETURN_NONE;
     }
 
@@ -287,7 +287,7 @@ static PyObject* GetBinary(Cursor* cur, Py_ssize_t iCol)
 
     if (isNull)
     {
-        I(pbData == 0 && cbData == 0);
+        assert(pbData == 0 && cbData == 0);
         Py_RETURN_NONE;
     }
 
@@ -311,7 +311,7 @@ static PyObject* GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
 
     if (isNull)
     {
-        I(pbData == 0 && cbData == 0);
+        assert(pbData == 0 && cbData == 0);
         Py_RETURN_NONE;
     }
 
@@ -355,7 +355,7 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 
     if (isNull)
     {
-        I(pbData == 0 && cbData == 0);
+        assert(pbData == 0 && cbData == 0);
         Py_RETURN_NONE;
     }
 

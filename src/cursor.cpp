@@ -134,12 +134,12 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
     ODBCCHAR *szName = NULL;
     SQLRETURN ret;
 
-    I(cur->hstmt != SQL_NULL_HANDLE && cur->colinfos != 0);
+    assert(cur->hstmt != SQL_NULL_HANDLE && cur->colinfos != 0);
 
     // These are the values we expect after free_results.  If this function fails, we do not modify any members, so
     // they should be set to something Cursor_close can deal with.
-    I(cur->description == Py_None);
-    I(cur->map_name_to_index == 0);
+    assert(cur->description == Py_None);
+    assert(cur->map_name_to_index == 0);
 
     if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
     {
@@ -327,8 +327,8 @@ static bool free_results(Cursor* self, int flags)
     // If we ran out of memory, it is possible that we have a cursor but colinfos is zero.  However, we should be
     // deleting this object, so the cursor will be freed when the HSTMT is destroyed. */
 
-    I((flags & STATEMENT_MASK) != 0);
-    I((flags & PREPARED_MASK) != 0);
+    assert((flags & STATEMENT_MASK) != 0);
+    assert((flags & PREPARED_MASK) != 0);
 
     if ((flags & PREPARED_MASK) == FREE_PREPARED)
     {
@@ -554,7 +554,7 @@ static bool PrepareResults(Cursor* cur, int cCols)
     // Allocates the ColumnInfo structures describing the returned data.
 
     int i;
-    I(cur->colinfos == 0);
+    assert(cur->colinfos == 0);
 
     cur->colinfos = (ColumnInfo*)PyMem_Malloc(sizeof(ColumnInfo) * cCols);
     if (cur->colinfos == 0)
@@ -2368,7 +2368,7 @@ static PyObject* Cursor_exit(PyObject* self, PyObject* args)
         return 0;
 
     // If an error has occurred, `args` will be a tuple of 3 values.  Otherwise it will be a tuple of 3 `None`s.
-    I(PyTuple_Check(args));
+    assert(PyTuple_Check(args));
 
     if (cursor->cnxn->nAutoCommit == SQL_AUTOCOMMIT_OFF && PyTuple_GetItem(args, 0) == Py_None)
     {

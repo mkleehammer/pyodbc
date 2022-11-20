@@ -850,7 +850,7 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
         }
     }
 
-    I(pch == 0 || (int)(strlen(pch) + 1) == len);
+    assert(pch == 0 || (int)(strlen(pch) + 1) == len);
 
     return pch;
 }
@@ -925,7 +925,7 @@ static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
         info.DecimalDigits = (SQLSMALLINT)info.ColumnSize;
     }
 
-    I(info.ColumnSize >= (SQLULEN)info.DecimalDigits);
+    assert(info.ColumnSize >= (SQLULEN)info.DecimalDigits);
 
     info.ParameterValuePtr = CreateDecimalString(sign, digits, exp);
     if (!info.ParameterValuePtr)
