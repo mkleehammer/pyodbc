@@ -89,7 +89,7 @@ public:
 
     PyObject*& operator[](int i)
     {
-        I(p != 0);
+        assert(p != 0);
         return PyTuple_GET_ITEM(p, i);
     }
 

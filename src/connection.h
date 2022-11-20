@@ -75,7 +75,7 @@ struct Connection
 
     SQLLEN GetMaxLength(SQLSMALLINT ctype) const
     {
-        I(ctype == SQL_C_BINARY || ctype == SQL_C_WCHAR || ctype == SQL_C_CHAR);
+        assert(ctype == SQL_C_BINARY || ctype == SQL_C_WCHAR || ctype == SQL_C_CHAR);
         if (maxwrite != 0)
             return maxwrite;
         if (ctype == SQL_C_BINARY)
