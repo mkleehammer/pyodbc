@@ -19,7 +19,7 @@
 //  * pinfo->column_size, from SQLDescribeCol, does not include a NULL terminator.  For example, column_size for a
 //    char(10) column would be 10.  (Also, when dealing with SQLWCHAR, it is the number of *characters*, not bytes.)
 //
-//  * When passing a length to PyString_FromStringAndSize and similar Unicode functions, do not add the NULL
+//  * When passing a length to PyUnicode_FromStringAndSize and similar Unicode functions, do not add the NULL
 //    terminator -- it will be added automatically.  See objects/stringobject.c
 //
 //  * SQLGetData does not return the NULL terminator in the length indicator.  (Therefore, you can pass this value
@@ -66,7 +66,6 @@ inline bool IsWideType(SQLSMALLINT sqltype)
     return false;
 }
 
-// TODO: Won't pyodbc_free crash if we didn't use pyodbc_realloc.
 
 static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool& isNull, byte*& pbResult, Py_ssize_t& cbResult)
 {
@@ -78,7 +77,7 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
     //
     // If a non-null and non-empty value was read, pbResult will be set to a buffer containing
     // the data and cbResult will be set to the byte length.  This length does *not* include a
-    // null terminator.  In this case the data *must* be freed using pyodbc_free.
+    // null terminator.  In this case the data *must* be freed using PyMem_Free.
     //
     // If a null value was read, isNull is set to true and pbResult and cbResult will be set to
     // 0.
@@ -96,7 +95,7 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
     // TODO: Make the initial allocation size configurable?
     Py_ssize_t cbAllocated = 4096;
     Py_ssize_t cbUsed = 0;
-    byte* pb = (byte*)malloc((size_t)cbAllocated);
+    byte* pb = (byte*)PyMem_Malloc((size_t)cbAllocated);
     if (!pb)
     {
         PyErr_NoMemory();
@@ -180,6 +179,8 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
 
             cbUsed += cbRead;
 
+            TRACE("Memory Need: cbRemaining=%ld cbRead=%ld\n", (long)cbRemaining, (long)cbRead);
+
             if (cbRemaining > 0)
             {
                 // This is a tiny bit complicated by the fact that the data is null terminated,
@@ -214,7 +215,7 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
     }
     else
     {
-        pyodbc_free(pb);
+        PyMem_Free(pb);
     }
 
     return true;
@@ -226,10 +227,10 @@ static byte* ReallocOrFreeBuffer(byte* pb, Py_ssize_t cbNeed)
     // is freed, a memory exception is set, and 0 is returned.  Otherwise the new pointer is
     // returned.
 
-    byte* pbNew = (byte*)realloc(pb, (size_t)cbNeed);
+    byte* pbNew = (byte*)PyMem_Realloc(pb, (size_t)cbNeed);
     if (pbNew == 0)
     {
-        pyodbc_free(pb);
+        PyMem_Free(pb);
         PyErr_NoMemory();
         return 0;
     }
@@ -267,7 +268,7 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
 
     PyObject* result = TextBufferToObject(enc, pbData, cbData);
 
-    pyodbc_free(pbData);
+    PyMem_Free(pbData);
 
     return result;
 }
@@ -292,7 +293,7 @@ static PyObject* GetBinary(Cursor* cur, Py_ssize_t iCol)
 
     PyObject* obj;
     obj = PyBytes_FromStringAndSize((char*)pbData, cbData);
-    pyodbc_free(pbData);
+    PyMem_Free(pbData);
     return obj;
 }
 
@@ -315,7 +316,7 @@ static PyObject* GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
     }
 
     PyObject* value = PyBytes_FromStringAndSize((char*)pbData, cbData);
-    pyodbc_free(pbData);
+    PyMem_Free(pbData);
     if (!value)
         return 0;
 
@@ -360,7 +361,7 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 
     Object result(DecimalFromText(enc, pbData, cbData));
 
-    pyodbc_free(pbData);
+    PyMem_Free(pbData);
 
     return result.Detach();
 }
@@ -408,9 +409,9 @@ static PyObject* GetDataLong(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
 
     if (pinfo->is_unsigned)
-        return PyInt_FromLong(*(SQLINTEGER*)&value);
+        return PyLong_FromLong(*(SQLINTEGER*)&value);
 
-    return PyInt_FromLong(value);
+    return PyLong_FromLong(value);
 }
 
 
@@ -598,7 +599,7 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
 
     int conv_index = GetUserConvIndex(cur, type);
     if (conv_index != -1)
-        return (PyObject*)&PyString_Type;
+        return (PyObject*)&PyUnicode_Type;
 
     PyObject* pytype = 0;
     bool incref = true;
@@ -646,7 +647,7 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
     case SQL_SMALLINT:
     case SQL_INTEGER:
     case SQL_TINYINT:
-        pytype = (PyObject*)&PyInt_Type;
+        pytype = (PyObject*)&PyLong_Type;
         break;
 
     case SQL_TYPE_DATE:

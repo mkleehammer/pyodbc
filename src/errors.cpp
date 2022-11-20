@@ -68,11 +68,11 @@ PyObject* RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* for
         exc_class = ExceptionFromSqlState(sqlstate);
 
     // Note: Don't use any native strprintf routines.  With Py_ssize_t, we need "%zd", but VC .NET doesn't support it.
-    // PyString_FromFormatV already takes this into account.
+    // PyUnicode_FromFormatV already takes this into account.
 
     va_list marker;
     va_start(marker, format);
-    PyObject* pMsg = PyString_FromFormatV(format, marker);
+    PyObject* pMsg = PyUnicode_FromFormatV(format, marker);
     va_end(marker);
     if (!pMsg)
     {
@@ -101,7 +101,7 @@ PyObject* RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* for
 }
 
 
-#define PyString_CompareWithASCIIString(lhs, rhs) _strcmpi(PyString_AS_STRING(lhs), rhs)
+#define PyUnicode_CompareWithASCIIString(lhs, rhs) _strcmpi(PyUnicode_AS_STRING(lhs), rhs)
 
 
 bool HasSqlState(PyObject* ex, const char* szSqlState)
@@ -148,7 +148,7 @@ static PyObject* GetError(const char* sqlstate, PyObject* exc_class, PyObject* p
 
     PyTuple_SetItem(pAttrs, 1, pMsg); // pAttrs now owns the pMsg reference; steals a reference, does not increment
 
-    pSqlState = PyString_FromString(sqlstate);
+    pSqlState = PyUnicode_FromString(sqlstate);
     if (!pSqlState)
     {
         Py_DECREF(pAttrs);
@@ -207,7 +207,7 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 
     ODBCCHAR sqlstateT[6];
     SQLSMALLINT msgLen = 1023;
-    ODBCCHAR *szMsg = (ODBCCHAR*) pyodbc_malloc((msgLen + 1) * sizeof(ODBCCHAR));
+    ODBCCHAR *szMsg = (ODBCCHAR*) PyMem_Malloc((msgLen + 1) * sizeof(ODBCCHAR));
 
     if (!szMsg) {
         PyErr_NoMemory();
@@ -254,9 +254,9 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
         // If needed, allocate a bigger error message buffer and retry.
         if (cchMsg > msgLen - 1) {
             msgLen = cchMsg + 1;
-            if (!pyodbc_realloc((BYTE**) &szMsg, (msgLen + 1) * sizeof(ODBCCHAR))) {
+            if (!PyMem_Realloc((BYTE**) &szMsg, (msgLen + 1) * sizeof(ODBCCHAR))) {
                 PyErr_NoMemory();
-                pyodbc_free(szMsg);
+                PyMem_Free(szMsg);
                 return 0;
             }
             Py_BEGIN_ALLOW_THREADS
@@ -284,7 +284,7 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
                 msg = PyUnicode_FromFormat("[%s] %V (%ld) (%s)", sqlstate, msgStr.Get(), "(null)", (long)nNativeError, szFunction);
                 if (!msg) {
                     PyErr_NoMemory();
-                    pyodbc_free(szMsg);
+                    PyMem_Free(szMsg);
                     return 0;
                 }
             }
@@ -312,14 +312,14 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
     }
 
     // Raw message buffer not needed anymore
-    pyodbc_free(szMsg);
+    PyMem_Free(szMsg);
 
     if (!msg || PyUnicode_GetSize(msg.Get()) == 0)
     {
         // This only happens using unixODBC.  (Haven't tried iODBC yet.)  Either the driver or the driver manager is
         // buggy and has signaled a fault without recording error information.
         sqlstate[0] = '\0';
-        msg = PyString_FromString(DEFAULT_ERROR);
+        msg = PyUnicode_FromString(DEFAULT_ERROR);
         if (!msg)
         {
             PyErr_NoMemory();

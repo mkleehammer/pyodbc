@@ -45,7 +45,7 @@ void FreeRowValues(Py_ssize_t cValues, PyObject** apValues)
     {
         for (Py_ssize_t i = 0; i < cValues; i++)
             Py_XDECREF(apValues[i]);
-        pyodbc_free(apValues);
+        PyMem_Free(apValues);
     }
 }
 
@@ -110,7 +110,7 @@ static PyObject* new_check(PyObject* args)
     if (PyDict_Size(map) != cols || PyTuple_GET_SIZE(args) - 2 != cols)
         return 0;
 
-    PyObject** apValues = (PyObject**)pyodbc_malloc(sizeof(PyObject*) * cols);
+    PyObject** apValues = (PyObject**)PyMem_Malloc(sizeof(PyObject*) * cols);
     if (!apValues)
         return 0;
 

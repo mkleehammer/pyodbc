@@ -149,7 +149,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
     desc   = PyTuple_New((Py_ssize_t)field_count);
     colmap = PyDict_New();
-    szName = (ODBCCHAR*) pyodbc_malloc((nameLen + 1) * sizeof(ODBCCHAR));
+    szName = (ODBCCHAR*) PyMem_Malloc((nameLen + 1) * sizeof(ODBCCHAR));
     if (!desc || !colmap || !szName)
         goto done;
 
@@ -182,7 +182,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
         // If needed, allocate a bigger column name message buffer and retry.
         if (cchName > nameLen - 1) {
             nameLen = cchName + 1;
-            if (!pyodbc_realloc((BYTE**) &szName, (nameLen + 1) * sizeof(ODBCCHAR))) {
+            if (!PyMem_Realloc((BYTE**) &szName, (nameLen + 1) * sizeof(ODBCCHAR))) {
                 PyErr_NoMemory();
                 goto done;
             }
@@ -275,7 +275,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
         nullable_obj = 0;
 
-        index = PyInt_FromLong(i);
+        index = PyLong_FromLong(i);
         if (!index)
             goto done;
 
@@ -301,7 +301,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
     Py_XDECREF(colmap);
     Py_XDECREF(index);
     Py_XDECREF(colinfo);
-    pyodbc_free(szName);
+    PyMem_Free(szName);
 
     return success;
 }
@@ -338,7 +338,7 @@ static bool free_results(Cursor* self, int flags)
 
     if (self->colinfos)
     {
-        pyodbc_free(self->colinfos);
+        PyMem_Free(self->colinfos);
         self->colinfos = 0;
     }
 
@@ -556,7 +556,7 @@ static bool PrepareResults(Cursor* cur, int cCols)
     int i;
     I(cur->colinfos == 0);
 
-    cur->colinfos = (ColumnInfo*)pyodbc_malloc(sizeof(ColumnInfo) * cCols);
+    cur->colinfos = (ColumnInfo*)PyMem_Malloc(sizeof(ColumnInfo) * cCols);
     if (cur->colinfos == 0)
     {
         PyErr_NoMemory();
@@ -567,7 +567,7 @@ static bool PrepareResults(Cursor* cur, int cCols)
     {
         if (!InitColumnInfo(cur, (SQLUSMALLINT)(i + 1), &cur->colinfos[i]))
         {
-            pyodbc_free(cur->colinfos);
+            PyMem_Free(cur->colinfos);
             cur->colinfos = 0;
             return false;
         }
@@ -587,7 +587,7 @@ static int GetDiagRecs(Cursor* cur)
     ODBCCHAR    cSQLState[6];  // five-character SQLSTATE code (plus terminating NULL)
     SQLINTEGER  iNativeError;
     SQLSMALLINT iMessageLen = 1023;
-    ODBCCHAR    *cMessageText = (ODBCCHAR*) pyodbc_malloc((iMessageLen + 1) * sizeof(ODBCCHAR));
+    ODBCCHAR    *cMessageText = (ODBCCHAR*) PyMem_Malloc((iMessageLen + 1) * sizeof(ODBCCHAR));
     SQLSMALLINT iTextLength;
 
     SQLRETURN ret;
@@ -621,8 +621,8 @@ static int GetDiagRecs(Cursor* cur)
         // If needed, allocate a bigger error message buffer and retry.
         if (iTextLength > iMessageLen - 1) {
             iMessageLen = iTextLength + 1;
-            if (!pyodbc_realloc((BYTE**) &cMessageText, (iMessageLen + 1) * sizeof(ODBCCHAR))) {
-                pyodbc_free(cMessageText);
+            if (!PyMem_Realloc((BYTE**) &cMessageText, (iMessageLen + 1) * sizeof(ODBCCHAR))) {
+                PyMem_Free(cMessageText);
                 PyErr_NoMemory();
                 return 0;
             }
@@ -671,7 +671,7 @@ static int GetDiagRecs(Cursor* cur)
 
         iRecNumber++;
     }
-    pyodbc_free(cMessageText);
+    PyMem_Free(cMessageText);
 
     Py_XDECREF(cur->messages);
     cur->messages = msg_list;  // cur->messages now owns the msg_list reference
@@ -869,7 +869,7 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                         }
 
                         if (prevParam->allocated)
-                            pyodbc_free(prevParam->ParameterValuePtr);
+                            PyMem_Free(prevParam->ParameterValuePtr);
                         Py_XDECREF(prevParam->pObject);
                         newParam.BufferLength = newParam.StrLen_or_Ind;
                         newParam.StrLen_or_Ind = SQL_DATA_AT_EXEC;
@@ -1006,7 +1006,7 @@ PyObject* Cursor_execute(PyObject* self, PyObject* args)
 
     PyObject* pSql = PyTuple_GET_ITEM(args, 0);
 
-    if (!PyString_Check(pSql) && !PyUnicode_Check(pSql))
+    if (!PyUnicode_Check(pSql) && !PyUnicode_Check(pSql))
     {
         PyErr_SetString(PyExc_TypeError, "The first argument to execute must be a string or unicode query.");
         return 0;
@@ -1048,7 +1048,7 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
     if (!PyArg_ParseTuple(args, "OO", &pSql, &param_seq))
         return 0;
 
-    if (!PyString_Check(pSql) && !PyUnicode_Check(pSql))
+    if (!PyUnicode_Check(pSql) && !PyUnicode_Check(pSql))
     {
         PyErr_SetString(PyExc_TypeError, "The first argument to execute must be a string or unicode query.");
         return 0;
@@ -1189,7 +1189,7 @@ static PyObject* Cursor_fetch(Cursor* cur)
 
     field_count = PyTuple_GET_SIZE(cur->description);
 
-    apValues = (PyObject**)pyodbc_malloc(sizeof(PyObject*) * field_count);
+    apValues = (PyObject**)PyMem_Malloc(sizeof(PyObject*) * field_count);
 
     if (apValues == 0)
         return PyErr_NoMemory();
@@ -2450,11 +2450,7 @@ PyTypeObject CursorType =
     0,                                                      // tp_getattro
     0,                                                      // tp_setattro
     0,                                                      // tp_as_buffer
-#if defined(Py_TPFLAGS_HAVE_ITER)
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_ITER,
-#else
     Py_TPFLAGS_DEFAULT,
-#endif
     cursor_doc,                                             // tp_doc
     0,                                                      // tp_traverse
     0,                                                      // tp_clear

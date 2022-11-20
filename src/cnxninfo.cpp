@@ -27,7 +27,7 @@ bool CnxnInfo_init()
 
     map_hash_to_info = PyDict_New();
 
-    update = PyString_FromString("update");
+    update = PyUnicode_FromString("update");
     if (!map_hash_to_info || !update)
         return false;
 
