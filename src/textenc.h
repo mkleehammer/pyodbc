@@ -7,15 +7,14 @@ enum {
     BYTEORDER_BE = 1,
 
     OPTENC_NONE    = 0,         // No optimized encoding - use the named encoding
-    OPTENC_RAW     = 1,         // In Python 2, pass bytes directly to string - no decoder
-    OPTENC_UTF8    = 2,
-    OPTENC_UTF16   = 3,         // "Native", so check for BOM and default to BE
-    OPTENC_UTF16BE = 4,
-    OPTENC_UTF16LE = 5,
-    OPTENC_LATIN1  = 6,
-    OPTENC_UTF32   = 7,
-    OPTENC_UTF32LE = 8,
-    OPTENC_UTF32BE = 9,
+    OPTENC_UTF8    = 1,
+    OPTENC_UTF16   = 2,         // "Native", so check for BOM and default to BE
+    OPTENC_UTF16BE = 3,
+    OPTENC_UTF16LE = 4,
+    OPTENC_LATIN1  = 5,
+    OPTENC_UTF32   = 6,
+    OPTENC_UTF32LE = 7,
+    OPTENC_UTF32BE = 8,
 };
 
 #ifdef WORDS_BIGENDIAN
@@ -26,16 +25,6 @@ enum {
 # define ENCSTR_UTF16NE "utf-16le"
 #endif
 
-typedef unsigned short ODBCCHAR;
-// I'm not sure why, but unixODBC seems to define SQLWCHAR as wchar_t even with
-// the size is incorrect.  So we might get 4-byte SQLWCHAR on 64-bit Linux even
-// though it requires 2-byte characters.  We have to define our own type to
-// operate on.
-
-enum {
-    ODBCCHAR_SIZE = 2
-};
-
 struct TextEnc
 {
     // Holds encoding information for reading or writing text.  Since some drivers / databases
@@ -45,7 +34,10 @@ struct TextEnc
     // * reading SQL_CHAR
     // * reading SQL_WCHAR
     // * writing unicode strings
-    // * writing non-unicode strings (Python 2.7 only)
+    // * reading metadata like column names
+    //
+    // I would have expected the metadata to follow the SQLCHAR / SQLWCHAR based on whether the
+    // ANSI or wide API was called, but it does not.
 
     int optenc;
     // Set to one of the OPTENC constants to indicate whether an optimized encoding is to be
@@ -61,48 +53,39 @@ struct TextEnc
     // SQL_WCHAR data even when configured for UTF-8 which is better suited for SQL_C_CHAR.
 
     PyObject* Encode(PyObject*) const;
-    // Given a string (unicode or str for 2.7), return a bytes object encoded.  This is used
-    // for encoding a Python object for passing to a function expecting SQLCHAR* or SQLWCHAR*.
+    // Given a string, return a bytes object encoded.  This is used for encoding a Python
+    // object for passing to a function expecting SQLCHAR* or SQLWCHAR*.
 };
 
 
-struct SQLWChar
+class SQLWChar
 {
-    // Encodes a Python string to a SQLWCHAR pointer.  This should eventually replace the
-    // SQLWchar structure.
+    // A convenience object that encodes a Unicode string to a given encoding.  It can be cast
+    // to a SQLWCHAR* to return the pointer.
     //
-    // Note: This does *not* increment the refcount!
-
-    // IMPORTANT: I've made the conscious decision *not* to determine the character count.  If
-    // we only had to follow the ODBC specification, it would simply be the number of
-    // characters in the string and would be the bytelen / 2.  The problem is drivers that
-    // don't follow the specification and expect things like UTF-8.  What length do these
-    // drivers expect?  Very, very likely they want the number of *bytes*, not the actual
-    // number of characters.  I'm simply going to null terminate and pass SQL_NTS.
+    // This is designed to be created on the stack, perform the conversion, and cleanup any
+    // temporary objects in the destructor.
     //
-    // This is a performance penalty when using utf16 since we have to copy the string just to
-    // add the null terminator bytes, but we don't use it very often.  If this becomes a
-    // bottleneck, we'll have to revisit this design.
+    // The SQLWCHAR pointer is *only* valid during the lifetime of this object.  It may point
+    // into a temporary `bytes` object that is deleted by the constructor.
 
-    SQLWCHAR* psz;
-    bool isNone;
-
-    Object bytes;
-    // A temporary object holding the decoded bytes if we can't use a pointer into the original
-    // object.
+public:
+    SQLWChar()
+    {
+        psz = 0;
+        isNone = true;
+    }
 
     SQLWChar(PyObject* src, const char* szEncoding)
     {
-        TextEnc enc;
-        enc.name = szEncoding;
-        enc.ctype = SQL_C_WCHAR;
-        enc.optenc = (strcmp(szEncoding, "raw") == 0) ? OPTENC_RAW : OPTENC_NONE;
-        init(src, enc);
+        psz = 0;
+        isNone = true;
+        set(src, szEncoding);
     }
 
     SQLWChar(PyObject* src, const TextEnc* penc)
+        : SQLWChar(src, *penc)
     {
-        init(src, *penc);
     }
 
     SQLWChar(PyObject* src, const TextEnc& enc)
@@ -121,7 +104,30 @@ struct SQLWChar
         return psz != 0;
     }
 
+    void set(PyObject* src, const char* szEncoding) {
+        bytes.Attach(0);  // free old, if any
+        psz = 0;
+        isNone = true;
+
+        TextEnc enc;
+        enc.name = szEncoding;
+        enc.ctype = SQL_C_WCHAR;
+        enc.optenc = OPTENC_NONE;
+        init(src, enc);
+    }
+
+    SQLWCHAR* get() { return psz; }
+
+    operator SQLWCHAR*() { return psz; }
+
 private:
+    SQLWCHAR* psz;
+    bool isNone;
+
+    Object bytes;
+    // A temporary object holding the decoded bytes if we can't use a pointer into the original
+    // object.
+
     void init(PyObject* src, const TextEnc& enc);
 
     SQLWChar(const SQLWChar&) {}
@@ -132,7 +138,8 @@ private:
 PyObject* TextBufferToObject(const TextEnc& enc, const byte* p, Py_ssize_t len);
 // Convert a text buffer to a Python object using the given encoding.
 //
-// The buffer can be a SQLCHAR array or SQLWCHAR array.  The text encoding
-// should match it.
+// - pbData :: The buffer, which is an array of SQLCHAR or SQLWCHAR.  We treat it as bytes here
+//   since the encoding `enc` tells us how to treat it.
+// - cbData :: The length of `pbData` in *bytes*.
 
 #endif // _TEXTENC_H

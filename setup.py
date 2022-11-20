@@ -2,7 +2,7 @@
 
 VERSION = '5.0.0'
 
-import sys, os, re, shlex
+import sys, os, re, shlex, subprocess
 from os.path import exists, abspath, dirname, join, isdir, relpath, expanduser
 from inspect import cleandoc
 
@@ -11,6 +11,11 @@ from setuptools.extension import Extension
 from setuptools.errors import *
 
 from configparser import ConfigParser
+
+
+def _run(cmd):
+    return subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          encoding='utf_8', shell=True).stdout
 
 
 def main():

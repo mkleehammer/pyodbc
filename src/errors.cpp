@@ -101,9 +101,6 @@ PyObject* RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* for
 }
 
 
-#define PyUnicode_CompareWithASCIIString(lhs, rhs) _strcmpi(PyUnicode_AS_STRING(lhs), rhs)
-
-
 bool HasSqlState(PyObject* ex, const char* szSqlState)
 {
   // Returns true if `ex` is an exception and has the given SQLSTATE.  It is safe to pass 0 for
@@ -205,9 +202,9 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
     SQLINTEGER nNativeError;
     SQLSMALLINT cchMsg;
 
-    ODBCCHAR sqlstateT[6];
+    uint16_t sqlstateT[6];
     SQLSMALLINT msgLen = 1023;
-    ODBCCHAR *szMsg = (ODBCCHAR*) PyMem_Malloc((msgLen + 1) * sizeof(ODBCCHAR));
+    uint16_t *szMsg = (uint16_t*) PyMem_Malloc((msgLen + 1) * sizeof(uint16_t));
 
     if (!szMsg) {
         PyErr_NoMemory();
@@ -254,7 +251,7 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
         // If needed, allocate a bigger error message buffer and retry.
         if (cchMsg > msgLen - 1) {
             msgLen = cchMsg + 1;
-            if (!PyMem_Realloc((BYTE**) &szMsg, (msgLen + 1) * sizeof(ODBCCHAR))) {
+            if (!PyMem_Realloc((BYTE**) &szMsg, (msgLen + 1) * sizeof(uint16_t))) {
                 PyErr_NoMemory();
                 PyMem_Free(szMsg);
                 return 0;
@@ -272,7 +269,7 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
         // For now, default to UTF-16 if this is not in the context of a connection.
         // Note that this will not work if the DM is using a different wide encoding (e.g. UTF-32).
         const char *unicode_enc = conn ? conn->metadata_enc.name : ENCSTR_UTF16NE;
-        Object msgStr(PyUnicode_Decode((char*)szMsg, cchMsg * sizeof(ODBCCHAR), unicode_enc, "strict"));
+        Object msgStr(PyUnicode_Decode((char*)szMsg, cchMsg * sizeof(uint16_t), unicode_enc, "strict"));
 
         if (cchMsg != 0 && msgStr.Get())
         {
@@ -314,7 +311,7 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
     // Raw message buffer not needed anymore
     PyMem_Free(szMsg);
 
-    if (!msg || PyUnicode_GetSize(msg.Get()) == 0)
+    if (!msg || PyUnicode_GET_LENGTH(msg.Get()) == 0)
     {
         // This only happens using unixODBC.  (Haven't tried iODBC yet.)  Either the driver or the driver manager is
         // buggy and has signaled a fault without recording error information.

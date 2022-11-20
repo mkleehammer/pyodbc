@@ -57,6 +57,13 @@ public:
         return p;
     }
 
+    operator PyTupleObject*()
+    {
+        // This is a bit weird.  I'm surprised the PyTuple_ functions and macros don't just use
+        // PyObject.
+        return (PyTupleObject*)p;
+    }
+
     operator PyVarObject*() { return (PyVarObject*)p; }
 
     operator const bool() { return p != 0; }
@@ -65,35 +72,6 @@ public:
     {
         return p;
     }
-};
-
-
-class Tuple
-    : public Object
-{
-private:
-    Tuple(const Tuple& other) {}
-    void operator=(const Tuple& other) {}
-
-public:
-
-    Tuple(PyObject* _p = 0)
-        : Object(_p)
-    {
-    }
-
-    operator PyTupleObject*()
-    {
-        return (PyTupleObject*)p;
-    }
-
-    PyObject*& operator[](int i)
-    {
-        assert(p != 0);
-        return PyTuple_GET_ITEM(p, i);
-    }
-
-    Py_ssize_t size() { return p ? PyTuple_GET_SIZE(p) : 0; }
 };
 
 

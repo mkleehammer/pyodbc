@@ -5,9 +5,9 @@
 
 void SQLWChar::init(PyObject* src, const TextEnc& enc)
 {
-  // Initialization code common to all of the constructors.
-  //
-  // Convert `src` to SQLWCHAR.
+    // Initialization code common to all of the constructors.
+    //
+    // Convert `src` to SQLWCHAR.
 
     static PyObject* nulls = NULL;
 
@@ -53,10 +53,10 @@ void SQLWChar::init(PyObject* src, const TextEnc& enc)
             return;
         }
     } else {
-      // If the encoding failed (possibly due to "strict"), it will generate an exception, but
-      // we're going to continue.
-      PyErr_Clear();
-      psz = 0;
+        // If the encoding failed (possibly due to "strict"), it will generate an exception, but
+        // we're going to continue.
+        PyErr_Clear();
+        psz = 0;
     }
 
     if (pb) {
@@ -102,38 +102,32 @@ PyObject* TextBufferToObject(const TextEnc& enc, const byte* pbData, Py_ssize_t 
     PyObject* str;
 
     if (cbData == 0)
+        return PyUnicode_FromStringAndSize("", 0);
+
+    switch (enc.optenc)
     {
-        str = PyUnicode_FromStringAndSize("", 0);
-    }
-    else
-    {
-        int byteorder = 0;
-        switch (enc.optenc)
-        {
         case OPTENC_UTF8:
-            str = PyUnicode_DecodeUTF8((char*)pbData, cbData, "strict");
-            break;
-        case OPTENC_UTF16:
-            byteorder = BYTEORDER_NATIVE;
-            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-            break;
-        case OPTENC_UTF16LE:
-            byteorder = BYTEORDER_LE;
-            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-            break;
-        case OPTENC_UTF16BE:
-            byteorder = BYTEORDER_BE;
-            str = PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
-            break;
-        case OPTENC_LATIN1:
-            str = PyUnicode_DecodeLatin1((char*)pbData, cbData, "strict");
-            break;
-        default:
-            // The user set an encoding by name.
-            str = PyUnicode_Decode((char*)pbData, cbData, enc.name, "strict");
-            break;
+            return PyUnicode_DecodeUTF8((char*)pbData, cbData, "strict");
+
+        case OPTENC_UTF16: {
+            int byteorder = BYTEORDER_NATIVE;
+            return PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
         }
+
+        case OPTENC_UTF16LE: {
+            int byteorder = BYTEORDER_LE;
+            return PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
+        }
+
+        case OPTENC_UTF16BE: {
+            int byteorder = BYTEORDER_BE;
+            return PyUnicode_DecodeUTF16((char*)pbData, cbData, "strict", &byteorder);
+        }
+
+        case OPTENC_LATIN1:
+            return PyUnicode_DecodeLatin1((char*)pbData, cbData, "strict");
     }
 
-    return str;
+    // The user set an encoding by name.
+    return PyUnicode_Decode((char*)pbData, cbData, enc.name, "strict");
 }

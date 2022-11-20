@@ -74,17 +74,17 @@ static PyObject* Row_getstate(PyObject* self)
     if (row->description == 0)
         return PyTuple_New(0);
 
-    Tuple state(PyTuple_New(2 + row->cValues));
+    Object state(PyTuple_New(2 + row->cValues));
     if (!state.IsValid())
         return 0;
 
-    state[0] = row->description;
-    state[1] = row->map_name_to_index;
+    PyTuple_SET_ITEM(state, 0, row->description);
+    PyTuple_SET_ITEM(state, 1, row->map_name_to_index);
     for (int i = 0; i < row->cValues; i++)
-        state[i+2] = row->apValues[i];
+      PyTuple_SET_ITEM(state, i+2, row->apValues[i]);
 
-    for (int i = 0; i < 2 + row->cValues; i++)
-        Py_XINCREF(state[i]);
+    for (int i = 0; i < PyTuple_GET_SIZE(state); i++)
+      Py_XINCREF(PyTuple_GET_ITEM(state, i));
 
     return state.Detach();
 }
