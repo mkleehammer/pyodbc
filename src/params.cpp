@@ -225,8 +225,8 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                 if (!scaler_table[pi->DecimalDigits - 1])
                 {
                     if (!tenObject)
-                        tenObject = PyInt_FromLong(10);
-                    PyObject *scaleObj = PyInt_FromLong(pi->DecimalDigits);
+                        tenObject = PyLong_FromLong(10);
+                    PyObject *scaleObj = PyLong_FromLong(pi->DecimalDigits);
                     scaler_table[pi->DecimalDigits - 1] = PyNumber_Power(tenObject, scaleObj, Py_None);
                     Py_XDECREF(scaleObj);
                 }
@@ -462,9 +462,9 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         Py_XDECREF(normCell);
 
         SQL_NUMERIC_STRUCT *pNum = (SQL_NUMERIC_STRUCT*)*outbuf;
-        pNum->sign = !PyInt_AsLong(PyTuple_GET_ITEM(cellParts, 0));
+        pNum->sign = !PyLong_AsLong(PyTuple_GET_ITEM(cellParts, 0));
         PyObject*  digits = PyTuple_GET_ITEM(cellParts, 1);
-        long       exp    = PyInt_AsLong(PyTuple_GET_ITEM(cellParts, 2));
+        long       exp    = PyLong_AsLong(PyTuple_GET_ITEM(cellParts, 2));
         Py_ssize_t numDigits = PyTuple_GET_SIZE(digits);
 
         // PyDecimal is digits * 10**exp = digits / 10**-exp
@@ -480,11 +480,11 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         PyObject *newDigits = PyTuple_New(numDigits + scaleDiff);
         for (Py_ssize_t i = 0; i < numDigits; i++)
         {
-            PyTuple_SET_ITEM(newDigits, i, PyInt_FromLong(PyNumber_AsSsize_t(PyTuple_GET_ITEM(digits, i), 0)));
+            PyTuple_SET_ITEM(newDigits, i, PyLong_FromLong(PyNumber_AsSsize_t(PyTuple_GET_ITEM(digits, i), 0)));
         }
         for (Py_ssize_t i = numDigits; i < scaleDiff + numDigits; i++)
         {
-            PyTuple_SET_ITEM(newDigits, i, PyInt_FromLong(0));
+            PyTuple_SET_ITEM(newDigits, i, PyLong_FromLong(0));
         }
         PyObject *args = Py_BuildValue("((iOi))", 0, newDigits, 0);
         PyObject *scaledDecimal = PyObject_CallObject((PyObject*)cell->ob_type, args);
@@ -531,12 +531,12 @@ static void FreeInfos(ParamInfo* a, Py_ssize_t count)
     for (Py_ssize_t i = 0; i < count; i++)
     {
         if (a[i].allocated)
-            pyodbc_free(a[i].ParameterValuePtr);
+            PyMem_Free(a[i].ParameterValuePtr);
         if (a[i].ParameterType == SQL_SS_TABLE && a[i].nested)
             FreeInfos(a[i].nested, a[i].maxlength);
         Py_XDECREF(a[i].pObject);
     }
-    pyodbc_free(a);
+    PyMem_Free(a);
 }
 
 static bool GetNullInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
@@ -793,14 +793,14 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
         // (1 2 3) exp = 2 --> '12300'
 
         len = sign + count + exp + 1; // 1: NULL
-        pch = (char*)pyodbc_malloc((size_t)len);
+        pch = (char*)PyMem_Malloc((size_t)len);
         if (pch)
         {
             char* p = pch;
             if (sign)
                 *p++ = '-';
             for (long i = 0; i < count; i++)
-                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
+                *p++ = (char)('0' + PyLong_AS_LONG(PyTuple_GET_ITEM(digits, i)));
             for (long i = 0; i < exp; i++)
                 *p++ = '0';
             *p = 0;
@@ -811,7 +811,7 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
         // (1 2 3) exp = -2 --> 1.23 : prec = 3, scale = 2
 
         len = sign + count + 2; // 2: decimal + NULL
-        pch = (char*)pyodbc_malloc((size_t)len);
+        pch = (char*)PyMem_Malloc((size_t)len);
         if (pch)
         {
             char* p = pch;
@@ -819,10 +819,10 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
                 *p++ = '-';
             int i = 0;
             for (; i < (count + exp); i++)
-                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
+                *p++ = (char)('0' + PyLong_AS_LONG(PyTuple_GET_ITEM(digits, i)));
             *p++ = '.';
             for (; i < count; i++)
-                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
+                *p++ = (char)('0' + PyLong_AS_LONG(PyTuple_GET_ITEM(digits, i)));
             *p++ = 0;
         }
     }
@@ -832,7 +832,7 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
 
         len = sign + -exp + 3; // 3: leading zero + decimal + NULL
 
-        pch = (char*)pyodbc_malloc((size_t)len);
+        pch = (char*)PyMem_Malloc((size_t)len);
         if (pch)
         {
             char* p = pch;
@@ -845,7 +845,7 @@ static char* CreateDecimalString(long sign, PyObject* digits, long exp)
                 *p++ = '0';
 
             for (int i = 0; i < count; i++)
-                *p++ = (char)('0' + PyInt_AS_LONG(PyTuple_GET_ITEM(digits, i)));
+                *p++ = (char)('0' + PyLong_AS_LONG(PyTuple_GET_ITEM(digits, i)));
             *p++ = 0;
         }
     }
@@ -865,7 +865,7 @@ static bool GetUUIDInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInf
     info.ColumnSize = 16;
 
     info.allocated = true;
-    info.ParameterValuePtr = pyodbc_malloc(sizeof(SQLGUID));
+    info.ParameterValuePtr = PyMem_Malloc(sizeof(SQLGUID));
     if (!info.ParameterValuePtr)
     {
         PyErr_NoMemory();
@@ -895,9 +895,9 @@ static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     if (!t)
         return false;
 
-    long       sign   = PyInt_AsLong(PyTuple_GET_ITEM(t.Get(), 0));
+    long       sign   = PyLong_AsLong(PyTuple_GET_ITEM(t.Get(), 0));
     PyObject*  digits = PyTuple_GET_ITEM(t.Get(), 1);
-    long       exp    = PyInt_AsLong(PyTuple_GET_ITEM(t.Get(), 2));
+    long       exp    = PyLong_AsLong(PyTuple_GET_ITEM(t.Get(), 2));
 
     Py_ssize_t count = PyTuple_GET_SIZE(digits);
 
@@ -1267,7 +1267,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
             PyObject *row = PySequence_GetItem(info.pObject, PySequence_Size(info.pObject) - info.ColumnSize);
             Py_XDECREF(row);
 
-            info.nested = (ParamInfo*)pyodbc_malloc(ncols * sizeof(ParamInfo));
+            info.nested = (ParamInfo*)PyMem_Malloc(ncols * sizeof(ParamInfo));
             info.maxlength = ncols;
             memset(info.nested, 0, ncols * sizeof(ParamInfo));
 
@@ -1340,7 +1340,7 @@ void FreeParameterInfo(Cursor* cur)
     // since this information is also freed in the less granular free_results function that clears everything.
 
     Py_XDECREF(cur->pPreparedSQL);
-    pyodbc_free(cur->paramtypes);
+    PyMem_Free(cur->paramtypes);
     cur->pPreparedSQL = 0;
     cur->paramtypes   = 0;
     cur->paramcount   = 0;
@@ -1428,7 +1428,7 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
         return false;
     }
 
-    cur->paramInfos = (ParamInfo*)pyodbc_malloc(sizeof(ParamInfo) * cParams);
+    cur->paramInfos = (ParamInfo*)PyMem_Malloc(sizeof(ParamInfo) * cParams);
     if (cur->paramInfos == 0)
     {
         PyErr_NoMemory();
@@ -1471,7 +1471,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
     if (!Prepare(cur, pSql))
         return false;
 
-    if (!(cur->paramInfos = (ParamInfo*)pyodbc_malloc(sizeof(ParamInfo) * cur->paramcount)))
+    if (!(cur->paramInfos = (ParamInfo*)PyMem_Malloc(sizeof(ParamInfo) * cur->paramcount)))
     {
         PyErr_NoMemory();
         return 0;
@@ -1571,7 +1571,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         // Assume parameters are homogeneous between rows in the common case, to avoid
         // another rescan for determining the array height.
         // Subtract number of rows processed as an upper bound.
-        if (!(cur->paramArray = (unsigned char*)pyodbc_malloc(rowlen * (rowcount - r))))
+        if (!(cur->paramArray = (unsigned char*)PyMem_Malloc(rowlen * (rowcount - r))))
         {
             PyErr_NoMemory();
             goto ErrorRet4;
@@ -1610,7 +1610,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             if (!colseq)
             {
             ErrorRet5:
-                pyodbc_free(cur->paramArray);
+                PyMem_Free(cur->paramArray);
                 cur->paramArray = 0;
                 goto ErrorRet4;
             }
@@ -1778,7 +1778,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
 
         SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAMSET_SIZE, (SQLPOINTER)1, SQL_IS_UINTEGER);
         SQLSetStmtAttr(cur->hstmt, SQL_ATTR_PARAM_BIND_OFFSET_PTR, 0, SQL_IS_POINTER);
-        pyodbc_free(cur->paramArray);
+        PyMem_Free(cur->paramArray);
         cur->paramArray = 0;
     }
 
@@ -1806,7 +1806,7 @@ static bool GetParamType(Cursor* cur, Py_ssize_t index, SQLSMALLINT& type)
 
     if (cur->paramtypes == 0)
     {
-        cur->paramtypes = reinterpret_cast<SQLSMALLINT*>(pyodbc_malloc(sizeof(SQLSMALLINT) * cur->paramcount));
+        cur->paramtypes = reinterpret_cast<SQLSMALLINT*>(PyMem_Malloc(sizeof(SQLSMALLINT) * cur->paramcount));
         if (cur->paramtypes == 0)
         {
             PyErr_NoMemory();

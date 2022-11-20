@@ -10,3 +10,9 @@ will be in the path for your test:
 
     python setup.py build_ext --inplace
     pytest test/test_postgresql.py -vxk test_text
+
+If a segmentation fault occurs while running tests, pytest will have eaten the output.  Add
+-s to the command line:
+
+    python setup.py build_ext --inplace -D PYODBC_TRACE
+    pytest test/test_postgresql.py -vxk test_text -vs

@@ -44,11 +44,26 @@ static Connection* Connection_Validate(PyObject* self)
     return cnxn;
 }
 
+
+static char* StrDup(const char* text) {
+  // Like StrDup but uses PyMem_Malloc for the memory.  This is only used for internal
+  // encodings which are known to be ASCII.
+  ssize_t cb = strlen(text) + 1;
+  char* pb = (char*)PyMem_Malloc(cb);
+  if (!pb) {
+    PyErr_NoMemory();
+    return 0;
+  }
+  memcpy(pb, text, cb);
+  return pb;
+}
+
+
 static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeout,
                     Object& encoding)
 {
     // This should have been checked by the global connect function.
-    I(PyString_Check(pConnectString) || PyUnicode_Check(pConnectString));
+    I(PyUnicode_Check(pConnectString) || PyUnicode_Check(pConnectString));
 
     // The driver manager determines if the app is a Unicode app based on whether we call SQLDriverConnectA or
     // SQLDriverConnectW.  Some drivers, notably Microsoft Access/Jet, change their behavior based on this, so we try
@@ -287,15 +302,15 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     // Server the encoding is based on the database's collation.  We ask the driver / DB to
     // convert to SQL_C_WCHAR and use the ODBC default of UTF-16LE.
     cnxn->sqlchar_enc.optenc = OPTENC_UTF16NE;
-    cnxn->sqlchar_enc.name   = _strdup(ENCSTR_UTF16NE);
+    cnxn->sqlchar_enc.name   = StrDup(ENCSTR_UTF16NE);
     cnxn->sqlchar_enc.ctype  = SQL_C_WCHAR;
 
     cnxn->sqlwchar_enc.optenc = OPTENC_UTF16NE;
-    cnxn->sqlwchar_enc.name   = _strdup(ENCSTR_UTF16NE);
+    cnxn->sqlwchar_enc.name   = StrDup(ENCSTR_UTF16NE);
     cnxn->sqlwchar_enc.ctype  = SQL_C_WCHAR;
 
     cnxn->metadata_enc.optenc = OPTENC_UTF16NE;
-    cnxn->metadata_enc.name   = _strdup(ENCSTR_UTF16NE);
+    cnxn->metadata_enc.name   = StrDup(ENCSTR_UTF16NE);
     cnxn->metadata_enc.ctype  = SQL_C_WCHAR;
 
     // Note: I attempted to use UTF-8 here too since it can hold any type, but SQL Server fails
@@ -303,7 +318,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
     // character.  I don't know if this is a bug in SQL Server's driver or if I'm missing
     // something, so we'll stay with the default ODBC conversions.
     cnxn->unicode_enc.optenc = OPTENC_UTF16NE;
-    cnxn->unicode_enc.name   = _strdup(ENCSTR_UTF16NE);
+    cnxn->unicode_enc.name   = StrDup(ENCSTR_UTF16NE);
     cnxn->unicode_enc.ctype  = SQL_C_WCHAR;
 
     if (!cnxn->sqlchar_enc.name || !cnxn->sqlwchar_enc.name || !cnxn->metadata_enc.name || !cnxn->unicode_enc.name)
@@ -349,8 +364,6 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
         }
     }
 
-    TRACE("cnxn.new cnxn=%p hdbc=%d\n", cnxn, cnxn->hdbc);
-
     //
     // Gather connection-level information we'll need later.
     //
@@ -380,12 +393,12 @@ static void _clear_conv(Connection* cnxn)
 {
     if (cnxn->conv_count != 0)
     {
-        pyodbc_free(cnxn->conv_types);
+        PyMem_Free(cnxn->conv_types);
         cnxn->conv_types = 0;
 
         for (int i = 0; i < cnxn->conv_count; i++)
             Py_XDECREF(cnxn->conv_funcs[i]);
-        pyodbc_free(cnxn->conv_funcs);
+        PyMem_Free(cnxn->conv_funcs);
         cnxn->conv_funcs = 0;
 
         cnxn->conv_count = 0;
@@ -458,13 +471,13 @@ static int Connection_clear(PyObject* self)
     Py_XDECREF(cnxn->searchescape);
     cnxn->searchescape = 0;
 
-    free((void*)cnxn->sqlchar_enc.name);
+    PyMem_Free((void*)cnxn->sqlchar_enc.name);
     cnxn->sqlchar_enc.name = 0;
-    free((void*)cnxn->sqlwchar_enc.name);
+    PyMem_Free((void*)cnxn->sqlwchar_enc.name);
     cnxn->sqlwchar_enc.name = 0;
-    free((void*)cnxn->metadata_enc.name);
+    PyMem_Free((void*)cnxn->metadata_enc.name);
     cnxn->metadata_enc.name = 0;
-    free((void*)cnxn->unicode_enc.name);
+    PyMem_Free((void*)cnxn->unicode_enc.name);
     cnxn->unicode_enc.name = 0;
 
     Py_XDECREF(cnxn->attrs_before);
@@ -766,7 +779,7 @@ static PyObject* Connection_getinfo(PyObject* self, PyObject* args)
         break;
 
     case GI_STRING:
-        result = PyString_FromStringAndSize(szBuffer, (Py_ssize_t)cch);
+        result = PyUnicode_FromStringAndSize(szBuffer, (Py_ssize_t)cch);
         break;
 
     case GI_UINTEGER:
@@ -777,7 +790,7 @@ static PyObject* Connection_getinfo(PyObject* self, PyObject* args)
     }
 
     case GI_USMALLINT:
-        result = PyInt_FromLong(*(SQLUSMALLINT*)szBuffer);
+        result = PyLong_FromLong(*(SQLUSMALLINT*)szBuffer);
         break;
     }
 
@@ -940,7 +953,7 @@ static PyObject* Connection_getsearchescape(PyObject* self, void* closure)
         if (!SQL_SUCCEEDED(ret))
             return RaiseErrorFromHandle(cnxn, "SQLGetInfo", cnxn->hdbc, SQL_NULL_HANDLE);
 
-        cnxn->searchescape = PyString_FromStringAndSize(sz, (Py_ssize_t)cch);
+        cnxn->searchescape = PyUnicode_FromStringAndSize(sz, (Py_ssize_t)cch);
     }
 
     Py_INCREF(cnxn->searchescape);
@@ -997,7 +1010,7 @@ static PyObject* Connection_gettimeout(PyObject* self, void* closure)
     if (!cnxn)
         return 0;
 
-    return PyInt_FromLong(cnxn->timeout);
+    return PyLong_FromLong(cnxn->timeout);
 }
 
 static int Connection_settimeout(PyObject* self, PyObject* value, void* closure)
@@ -1013,7 +1026,7 @@ static int Connection_settimeout(PyObject* self, PyObject* value, void* closure)
         PyErr_SetString(PyExc_TypeError, "Cannot delete the timeout attribute.");
         return -1;
     }
-    long timeout = PyInt_AsLong(value);
+    long timeout = PyLong_AsLong(value);
     if (timeout == -1 && PyErr_Occurred())
         return -1;
     if (timeout < 0)
@@ -1074,8 +1087,8 @@ static bool _remove_converter(PyObject* self, SQLSMALLINT sqltype)
 
     // Note: If the realloc fails, the old array is still around and is 1 element too long but
     // everything will still work, so we ignore.
-    pyodbc_realloc((BYTE**)&types, count * sizeof(SQLSMALLINT));
-    pyodbc_realloc((BYTE**)&funcs, count * sizeof(PyObject*));
+    PyMem_Realloc((BYTE**)&types, count * sizeof(SQLSMALLINT));
+    PyMem_Realloc((BYTE**)&funcs, count * sizeof(PyObject*));
 
     cnxn->conv_count = count;
     cnxn->conv_types = types;
@@ -1109,15 +1122,15 @@ static bool _add_converter(PyObject* self, SQLSMALLINT sqltype, PyObject* func)
     PyObject**   oldfuncs = cnxn->conv_funcs;
 
     int          newcount = oldcount + 1;
-    SQLSMALLINT* newtypes = (SQLSMALLINT*)pyodbc_malloc(sizeof(SQLSMALLINT) * newcount);
-    PyObject**   newfuncs = (PyObject**)pyodbc_malloc(sizeof(PyObject*) * newcount);
+    SQLSMALLINT* newtypes = (SQLSMALLINT*)PyMem_Malloc(sizeof(SQLSMALLINT) * newcount);
+    PyObject**   newfuncs = (PyObject**)PyMem_Malloc(sizeof(PyObject*) * newcount);
 
     if (newtypes == 0 || newfuncs == 0)
     {
         if (newtypes)
-            pyodbc_free(newtypes);
+            PyMem_Free(newtypes);
         if (newfuncs)
-            pyodbc_free(newfuncs);
+            PyMem_Free(newfuncs);
         PyErr_NoMemory();
         return false;
     }
@@ -1136,8 +1149,8 @@ static bool _add_converter(PyObject* self, SQLSMALLINT sqltype, PyObject* func)
         memcpy(&newtypes[1], oldtypes, sizeof(SQLSMALLINT) * oldcount);
         memcpy(&newfuncs[1], oldfuncs, sizeof(PyObject*) * oldcount);
 
-        pyodbc_free(oldtypes);
-        pyodbc_free(oldfuncs);
+        PyMem_Free(oldtypes);
+        PyMem_Free(oldfuncs);
     }
 
     return true;
@@ -1313,14 +1326,14 @@ static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype, bool
         return false;
     }
 
-    char* cpy = _strdup(encoding);
+    char* cpy = StrDup(encoding);
     if (!cpy)
     {
         PyErr_NoMemory();
         return false;
     }
 
-    free((void*)enc.name);
+    PyMem_Free((void*)enc.name);
     enc.name = cpy;
 
     if (strstr("|utf-8|utf8|", lower))
