@@ -291,11 +291,7 @@ static PyObject* GetBinary(Cursor* cur, Py_ssize_t iCol)
     }
 
     PyObject* obj;
-#if PY_MAJOR_VERSION >= 3
     obj = PyBytes_FromStringAndSize((char*)pbData, cbData);
-#else
-    obj = PyByteArray_FromStringAndSize((char*)pbData, cbData);
-#endif
     pyodbc_free(pbData);
     return obj;
 }
@@ -331,26 +327,6 @@ static PyObject* GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
     return result;
 }
 
-
-#if PY_VERSION_HEX < 0x02060000
-static PyObject* GetDataBuffer(Cursor* cur, Py_ssize_t iCol)
-{
-    PyObject* str = GetDataString(cur, iCol);
-
-    if (str == Py_None)
-        return str;
-
-    PyObject* buffer = 0;
-
-    if (str)
-    {
-        buffer = PyBuffer_FromObject(str, 0, PyString_GET_SIZE(str));
-        Py_DECREF(str);         // If no buffer, release it.  If buffer, the buffer owns it.
-    }
-
-    return buffer;
-}
-#endif
 
 static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 {
@@ -520,11 +496,7 @@ static PyObject* GetUUID(Cursor* cur, Py_ssize_t iCol)
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
 
-#if PY_MAJOR_VERSION >= 3
     const char* szFmt = "(yyy#)";
-#else
-    const char* szFmt = "(sss#)";
-#endif
     Object args(Py_BuildValue(szFmt, NULL, NULL, &guid, (int)sizeof(guid)));
     if (!args)
         return 0;
@@ -636,14 +608,7 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
     case SQL_CHAR:
     case SQL_VARCHAR:
     case SQL_LONGVARCHAR:
-#if PY_MAJOR_VERSION < 3
-        if (cur->cnxn->str_enc.ctype == SQL_C_CHAR)
-            pytype = (PyObject*)&PyString_Type;
-        else
-            pytype = (PyObject*)&PyUnicode_Type;
-#else
         pytype = (PyObject*)&PyUnicode_Type;
-#endif
         break;
 
     case SQL_GUID:
@@ -654,14 +619,7 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
         }
         else
         {
-#if PY_MAJOR_VERSION < 3
-            if (cur->cnxn->str_enc.ctype == SQL_C_CHAR)
-                pytype = (PyObject*)&PyString_Type;
-            else
-                pytype = (PyObject*)&PyUnicode_Type;
-#else
-            pytype = (PyObject*)&PyUnicode_Type;
-#endif
+          pytype = (PyObject*)&PyUnicode_Type;
         }
         break;
 
@@ -716,11 +674,7 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
     case SQL_VARBINARY:
     case SQL_LONGVARBINARY:
     default:
-#if PY_VERSION_HEX >= 0x02060000
         pytype = (PyObject*)&PyByteArray_Type;
-#else
-        pytype = (PyObject*)&PyBuffer_Type;
-#endif
         break;
     }
 

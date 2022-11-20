@@ -19,7 +19,6 @@
 #include "pyodbcmodule.h"
 #include "connection.h"
 #include "row.h"
-#include "buffer.h"
 #include "params.h"
 #include "errors.h"
 #include "getdata.h"
@@ -740,17 +739,7 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         szLastFunction = "SQLExecDirect";
 
         const TextEnc* penc = 0;
-
-#if PY_MAJOR_VERSION < 3
-        if (PyString_Check(pSql))
-        {
-            penc = &cur->cnxn->str_enc;
-        }
-        else
-#endif
-        {
-            penc = &cur->cnxn->unicode_enc;
-        }
+        penc = &cur->cnxn->unicode_enc;
 
         Object query(penc->Encode(pSql));
         if (!query)
@@ -815,22 +804,17 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         if (ret == SQL_NEED_DATA)
         {
             szLastFunction = "SQLPutData";
-            if (pInfo->pObject && (PyBytes_Check(pInfo->pObject)
-    #if PY_VERSION_HEX >= 0x02060000
-             || PyByteArray_Check(pInfo->pObject)
-    #endif
+            if (pInfo->pObject && (PyBytes_Check(pInfo->pObject) || PyByteArray_Check(pInfo->pObject)
             ))
             {
                 char *(*pGetPtr)(PyObject*);
                 Py_ssize_t (*pGetLen)(PyObject*);
-    #if PY_VERSION_HEX >= 0x02060000
                 if (PyByteArray_Check(pInfo->pObject))
                 {
                     pGetPtr = PyByteArray_AsString;
                     pGetLen = PyByteArray_Size;
                 }
                 else
-    #endif
                 {
                     pGetPtr = PyBytes_AsString;
                     pGetLen = PyBytes_Size;
@@ -853,25 +837,6 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                 }
                 while (offset < cb);
             }
-#if PY_MAJOR_VERSION < 3
-            else if (pInfo->pObject && PyBuffer_Check(pInfo->pObject))
-            {
-                // Buffers can have multiple segments, so we might need multiple writes.  Looping through buffers isn't
-                // difficult, but we've wrapped it up in an iterator object to keep this loop simple.
-
-                BufferSegmentIterator it(pInfo->pObject);
-                byte* pb;
-                SQLLEN cb;
-                while (it.Next(pb, cb))
-                {
-                    Py_BEGIN_ALLOW_THREADS
-                    ret = SQLPutData(cur->hstmt, pb, cb);
-                    Py_END_ALLOW_THREADS
-                    if (!SQL_SUCCEEDED(ret))
-                        return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
-                }
-            }
-#endif
             else if (pInfo->ParameterType == SQL_SS_TABLE)
             {
                 // TVP

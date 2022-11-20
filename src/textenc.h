@@ -16,11 +16,6 @@ enum {
     OPTENC_UTF32   = 7,
     OPTENC_UTF32LE = 8,
     OPTENC_UTF32BE = 9,
-
-#if PY_MAJOR_VERSION < 3
-    TO_UNICODE = 1,
-    TO_STR     = 2
-#endif
 };
 
 #ifdef WORDS_BIGENDIAN
@@ -51,11 +46,6 @@ struct TextEnc
     // * reading SQL_WCHAR
     // * writing unicode strings
     // * writing non-unicode strings (Python 2.7 only)
-
-#if PY_MAJOR_VERSION < 3
-    int to;
-    // The type of object to return if reading from the database: str or unicode.
-#endif
 
     int optenc;
     // Set to one of the OPTENC constants to indicate whether an optimized encoding is to be

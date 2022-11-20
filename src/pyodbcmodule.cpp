@@ -308,12 +308,7 @@ static bool AllocateEnv()
 static bool CheckAttrsVal(PyObject *val, bool allowSeq)
 {
     if (IntOrLong_Check(val)
-#if PY_MAJOR_VERSION < 3
-     || PyBuffer_Check(val)
-#endif
-#if PY_VERSION_HEX >= 0x02060000
      || PyByteArray_Check(val)
-#endif
      || PyBytes_Check(val)
      || PyUnicode_Check(val))
         return true;
@@ -465,13 +460,8 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
             }
             if (Text_EqualsI(key, "encoding"))
             {
-#if PY_MAJOR_VERSION < 3
-                if (!PyString_Check(value) && !PyUnicode_Check(value))
-                    return PyErr_Format(PyExc_TypeError, "encoding must be a string or unicode object");
-#else
                 if (!PyUnicode_Check(value))
                     return PyErr_Format(PyExc_TypeError, "encoding must be a string");
-#endif
                 encoding = value;
                 continue;
             }
@@ -1174,7 +1164,6 @@ static bool CreateExceptions()
     return true;
 }
 
-#if PY_MAJOR_VERSION >= 3
 static struct PyModuleDef moduledef = {
     PyModuleDef_HEAD_INIT,
     "pyodbc",                   // m_name
@@ -1185,36 +1174,24 @@ static struct PyModuleDef moduledef = {
     0,                          // m_traverse
     0,                          // m_clear
     0,                          // m_free
-    };
-  #define MODRETURN(v) v
-#else
-  #define MODRETURN(v)
-#endif
+};
 
-PyMODINIT_FUNC
-#if PY_MAJOR_VERSION >= 3
-PyInit_pyodbc()
-#else
-initpyodbc(void)
-#endif
+
+PyMODINIT_FUNC PyInit_pyodbc()
 {
     ErrorInit();
 
     if (PyType_Ready(&ConnectionType) < 0 || PyType_Ready(&CursorType) < 0 || PyType_Ready(&RowType) < 0 || PyType_Ready(&CnxnInfoType) < 0)
-        return MODRETURN(0);
+        return 0;
 
     Object module;
 
-#if PY_MAJOR_VERSION >= 3
     module.Attach(PyModule_Create(&moduledef));
-#else
-    module.Attach(Py_InitModule4("pyodbc", pyodbc_methods, module_doc, NULL, PYTHON_API_VERSION));
-#endif
 
     pModule = module.Get();
 
     if (!module || !import_types() || !CreateExceptions())
-        return MODRETURN(0);
+        return 0;
 
     const char* szVersion = TOSTRING(PYODBC_VERSION);
     PyModule_AddStringConstant(module, "version", (char*)szVersion);
@@ -1256,11 +1233,7 @@ initpyodbc(void)
     Py_INCREF((PyObject*)&PyInt_Type);
 
     PyObject* binary_type;
-#if PY_VERSION_HEX >= 0x02060000
     binary_type = (PyObject*)&PyByteArray_Type;
-#else
-    binary_type = (PyObject*)&PyBuffer_Type;
-#endif
     PyModule_AddObject(module, "BINARY", binary_type);
     Py_INCREF(binary_type);
     PyModule_AddObject(module, "Binary", binary_type);
@@ -1281,20 +1254,18 @@ initpyodbc(void)
         ErrorCleanup();
     }
 
-    return MODRETURN(pModule);
+    return pModule;
 }
 
+
 #ifdef WINVER
-BOOL WINAPI DllMain(
-  HINSTANCE hMod,
-  DWORD fdwReason,
-  LPVOID lpvReserved
-  )
+BOOL WINAPI DllMain(HINSTANCE hMod, DWORD fdwReason, LPVOID lpvReserved)
 {
     UNUSED(hMod, fdwReason, lpvReserved);
     return TRUE;
 }
 #endif
+
 
 static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
 {
@@ -1316,38 +1287,6 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
     PyObject* key = 0;
     PyObject* value = 0;
     Py_ssize_t length = 0;      // length in *characters*
-#if PY_MAJOR_VERSION < 3
-    if (existing)
-        length = Text_Size(existing) + 1; // + 1 to add a trailing semicolon
-
-    while (PyDict_Next(parts, &pos, &key, &value))
-    {
-        length += Text_Size(key) + 1 + Text_Size(value) + 1; // key=value;
-    }
-
-    PyObject* result = PyUnicode_FromUnicode(0, length);
-    if (!result)
-        return 0;
-
-    Py_UNICODE* buffer = PyUnicode_AS_UNICODE(result);
-    Py_ssize_t offset = 0;
-
-    if (existing)
-    {
-        offset += TextCopyToUnicode(&buffer[offset], existing);
-        buffer[offset++] = (Py_UNICODE)';';
-    }
-
-    pos = 0;
-    while (PyDict_Next(parts, &pos, &key, &value))
-    {
-        offset += TextCopyToUnicode(&buffer[offset], key);
-        buffer[offset++] = (Py_UNICODE)'=';
-
-        offset += TextCopyToUnicode(&buffer[offset], value);
-        buffer[offset++] = (Py_UNICODE)';';
-    }
-#else // >= Python 3.3
     int result_kind = PyUnicode_1BYTE_KIND;
     if (existing) {
         length = PyUnicode_GET_LENGTH(existing) + 1; // + 1 to add a trailing semicolon
@@ -1406,7 +1345,7 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
         offset += count;
         PyUnicode_WriteChar(result, offset++, (Py_UCS4)';');
     }
-#endif
+
     I(offset == length);
 
     return result;
