@@ -1298,7 +1298,7 @@ static void NormalizeCodecName(const char* src, char* dest, size_t cbDest)
     *pch = '\0';
 }
 
-static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype, bool allow_raw)
+static bool SetTextEncCommon(TextEnc& enc, const char* encoding, int ctype)
 {
     // Code common to setencoding and setdecoding.
 
@@ -1396,9 +1396,8 @@ static PyObject* Connection_setencoding(PyObject* self, PyObject* args, PyObject
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|si", kwlist, &encoding, &ctype))
         return 0;
     TextEnc& enc = cnxn->unicode_enc;
-    bool allow_raw = false;
 
-    if (!SetTextEncCommon(enc, encoding, ctype, allow_raw))
+    if (!SetTextEncCommon(enc, encoding, ctype))
         return 0;
 
     Py_RETURN_NONE;
@@ -1426,7 +1425,6 @@ static PyObject* Connection_setdecoding(PyObject* self, PyObject* args, PyObject
     int sqltype;
     char* encoding = 0;
     int ctype = 0;
-    bool allow_raw = false;
 
     static char *kwlist[] = {"sqltype", "encoding", "ctype", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i|si", kwlist, &sqltype, &encoding, &ctype))
@@ -1438,7 +1436,7 @@ static PyObject* Connection_setdecoding(PyObject* self, PyObject* args, PyObject
     TextEnc& enc = (sqltype == SQL_CHAR) ? cnxn->sqlchar_enc :
         ((sqltype == SQL_WMETADATA) ? cnxn->metadata_enc : cnxn->sqlwchar_enc);
 
-    if (!SetTextEncCommon(enc, encoding, ctype, allow_raw))
+    if (!SetTextEncCommon(enc, encoding, ctype))
         return 0;
 
     Py_RETURN_NONE;

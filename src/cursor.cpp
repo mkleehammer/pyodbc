@@ -131,7 +131,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
     bool success = false;
     PyObject *desc = 0, *colmap = 0, *colinfo = 0, *type = 0, *index = 0, *nullable_obj=0;
     SQLSMALLINT nameLen = 300;
-    ODBCCHAR *szName = NULL;
+    uint16_t *szName = NULL;
     SQLRETURN ret;
 
     assert(cur->hstmt != SQL_NULL_HANDLE && cur->colinfos != 0);
@@ -149,7 +149,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
     desc   = PyTuple_New((Py_ssize_t)field_count);
     colmap = PyDict_New();
-    szName = (ODBCCHAR*) PyMem_Malloc((nameLen + 1) * sizeof(ODBCCHAR));
+    szName = (uint16_t*) PyMem_Malloc((nameLen + 1) * sizeof(uint16_t));
     if (!desc || !colmap || !szName)
         goto done;
 
@@ -182,7 +182,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
         // If needed, allocate a bigger column name message buffer and retry.
         if (cchName > nameLen - 1) {
             nameLen = cchName + 1;
-            if (!PyMem_Realloc((BYTE**) &szName, (nameLen + 1) * sizeof(ODBCCHAR))) {
+            if (!PyMem_Realloc((BYTE**) &szName, (nameLen + 1) * sizeof(uint16_t))) {
                 PyErr_NoMemory();
                 goto done;
             }
@@ -584,10 +584,10 @@ static int GetDiagRecs(Cursor* cur)
     PyObject* msg_list;  // the "messages" as a Python list of diagnostic records
 
     SQLSMALLINT iRecNumber = 1;  // the index of the diagnostic records (1-based)
-    ODBCCHAR    cSQLState[6];  // five-character SQLSTATE code (plus terminating NULL)
+    uint16_t    cSQLState[6];  // five-character SQLSTATE code (plus terminating NULL)
     SQLINTEGER  iNativeError;
     SQLSMALLINT iMessageLen = 1023;
-    ODBCCHAR    *cMessageText = (ODBCCHAR*) PyMem_Malloc((iMessageLen + 1) * sizeof(ODBCCHAR));
+    uint16_t    *cMessageText = (uint16_t*) PyMem_Malloc((iMessageLen + 1) * sizeof(uint16_t));
     SQLSMALLINT iTextLength;
 
     SQLRETURN ret;
@@ -621,7 +621,7 @@ static int GetDiagRecs(Cursor* cur)
         // If needed, allocate a bigger error message buffer and retry.
         if (iTextLength > iMessageLen - 1) {
             iMessageLen = iTextLength + 1;
-            if (!PyMem_Realloc((BYTE**) &cMessageText, (iMessageLen + 1) * sizeof(ODBCCHAR))) {
+            if (!PyMem_Realloc((BYTE**) &cMessageText, (iMessageLen + 1) * sizeof(uint16_t))) {
                 PyMem_Free(cMessageText);
                 PyErr_NoMemory();
                 return 0;
@@ -643,13 +643,13 @@ static int GetDiagRecs(Cursor* cur)
         // Default to UTF-16, which may not work if the driver/manager is using some other encoding
         const char *unicode_enc = cur->cnxn ? cur->cnxn->metadata_enc.name : ENCSTR_UTF16NE;
         PyObject* msg_value = PyUnicode_Decode(
-            (char*)cMessageText, iTextLength * sizeof(ODBCCHAR), unicode_enc, "strict"
+            (char*)cMessageText, iTextLength * sizeof(uint16_t), unicode_enc, "strict"
         );
         if (!msg_value)
         {
             // If the char cannot be decoded, return something rather than nothing.
             Py_XDECREF(msg_value);
-            msg_value = PyBytes_FromStringAndSize((char*)cMessageText, iTextLength * sizeof(ODBCCHAR));
+            msg_value = PyBytes_FromStringAndSize((char*)cMessageText, iTextLength * sizeof(uint16_t));
         }
 
         PyObject* msg_tuple = PyTuple_New(2);  // the message as a Python tuple of class and value
@@ -748,7 +748,7 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         bool isWide = (penc->ctype == SQL_C_WCHAR);
 
         const char* pch = PyBytes_AS_STRING(query.Get());
-        SQLINTEGER  cch = (SQLINTEGER)(PyBytes_GET_SIZE(query.Get()) / (isWide ? sizeof(ODBCCHAR) : 1));
+        SQLINTEGER  cch = (SQLINTEGER)(PyBytes_GET_SIZE(query.Get()) / (isWide ? sizeof(uint16_t) : 1));
 
         Py_BEGIN_ALLOW_THREADS
         if (isWide)

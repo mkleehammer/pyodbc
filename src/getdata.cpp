@@ -89,7 +89,7 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
     pbResult = 0;
     cbResult = 0;
 
-    const Py_ssize_t cbElement = (Py_ssize_t)(IsWideType(ctype) ? sizeof(ODBCCHAR) : 1);
+    const Py_ssize_t cbElement = (Py_ssize_t)(IsWideType(ctype) ? sizeof(uint16_t) : 1);
     const Py_ssize_t cbNullTerminator = IsBinaryType(ctype) ? 0 : cbElement;
 
     // TODO: Make the initial allocation size configurable?
@@ -266,7 +266,7 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
     }
 
-    PyObject* result = TextBufferToObject(enc, pbData, cbData);
+    PyObject* result = StringFromBuffer(enc, pbData, cbData);
 
     PyMem_Free(pbData);
 

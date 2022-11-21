@@ -205,9 +205,9 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
     SQLINTEGER nNativeError;
     SQLSMALLINT cchMsg;
 
-    ODBCCHAR sqlstateT[6];
+    uint16_t sqlstateT[6];
     SQLSMALLINT msgLen = 1023;
-    ODBCCHAR *szMsg = (ODBCCHAR*) PyMem_Malloc((msgLen + 1) * sizeof(ODBCCHAR));
+    uint16_t *szMsg = (uint16_t*) PyMem_Malloc((msgLen + 1) * sizeof(uint16_t));
 
     if (!szMsg) {
         PyErr_NoMemory();
@@ -254,7 +254,7 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
         // If needed, allocate a bigger error message buffer and retry.
         if (cchMsg > msgLen - 1) {
             msgLen = cchMsg + 1;
-            if (!PyMem_Realloc((BYTE**) &szMsg, (msgLen + 1) * sizeof(ODBCCHAR))) {
+            if (!PyMem_Realloc((BYTE**) &szMsg, (msgLen + 1) * sizeof(uint16_t))) {
                 PyErr_NoMemory();
                 PyMem_Free(szMsg);
                 return 0;
@@ -272,7 +272,7 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
         // For now, default to UTF-16 if this is not in the context of a connection.
         // Note that this will not work if the DM is using a different wide encoding (e.g. UTF-32).
         const char *unicode_enc = conn ? conn->metadata_enc.name : ENCSTR_UTF16NE;
-        Object msgStr(PyUnicode_Decode((char*)szMsg, cchMsg * sizeof(ODBCCHAR), unicode_enc, "strict"));
+        Object msgStr(PyUnicode_Decode((char*)szMsg, cchMsg * sizeof(uint16_t), unicode_enc, "strict"));
 
         if (cchMsg != 0 && msgStr.Get())
         {

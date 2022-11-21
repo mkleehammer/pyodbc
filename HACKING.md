@@ -16,3 +16,13 @@ If a segmentation fault occurs while running tests, pytest will have eaten the o
 
     python setup.py build_ext --inplace -D PYODBC_TRACE
     pytest test/test_postgresql.py -vxk test_text -vs
+
+
+# Notes
+
+## uint16_t
+
+You'll notice we use uint16_t instead of SQLWCHAR.  The unixODBC headers would define SQLWCHAR
+as wchar_t even when wchar_t as defined by the C library as uint32_t.  The data in the buffer
+was still 16 bit however.
+
