@@ -451,5 +451,5 @@ def connect(connstring: Optional[str] = None,
             ansi: bool = False,
             readonly: bool = False,
             timeout: int = 0,
-            attrs_before: Dict[Any, Any] = {},
+            attrs_before: Dict[int, Any] = {},
             **kwargs: Any) -> Connection: ...
