@@ -74,6 +74,13 @@ jobs:
         echo "*** cat /etc/odbc.ini"
         cat /etc/odbc.ini
 
+    - name: Install ODBC driver for SQL Server
+      run: |
+        echo "*** apt-get install the driver"
+        sudo ACCEPT_EULA=Y apt-get install --yes msodbcsql18
+        echo '*** ls -l /usr/lib/x86_64-linux-gnu/odbc'
+        ls -l /opt/microsoft/msodbcsql18/lib64 || true
+
     - name: Install ODBC driver for PostgreSQL
       run: |
         echo "*** apt-get install the driver"
@@ -115,6 +122,8 @@ jobs:
         cat /etc/odbc.ini
         echo '*** ls -l /opt/microsoft/msodbcsql17/lib64'
         ls -l /opt/microsoft/msodbcsql17/lib64 || true
+        echo '*** ls -l /opt/microsoft/msodbcsql18/lib64'
+        ls -l /opt/microsoft/msodbcsql18/lib64 || true
         echo '*** ls -l /usr/lib/x86_64-linux-gnu/odbc'
         ls -l /usr/lib/x86_64-linux-gnu/odbc || true
 
@@ -173,6 +182,8 @@ jobs:
         python -m pip freeze --all
         echo "*** pyodbc version"
         python -c "import pyodbc; print(pyodbc.version)"
+        echo "*** pyodbc drivers"
+        python -c "import pyodbc; print('\n'.join(sorted(pyodbc.drivers())))"
 
     - name: Run SQL Server 2017 tests
       run: |
@@ -182,7 +193,7 @@ jobs:
     - name: Run SQL Server 2019 tests
       run: |
         cd "$GITHUB_WORKSPACE"
-        python "./${{ matrix.tests-dir }}/sqlservertests.py" "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost,1402;UID=sa;PWD=StrongPassword2019;DATABASE=test"
+        python "./${{ matrix.tests-dir }}/sqlservertests.py" "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1402;UID=sa;PWD=StrongPassword2019;DATABASE=test;Encrypt=Optional"
 
     - name: Run PostgreSQL tests
       run: |
