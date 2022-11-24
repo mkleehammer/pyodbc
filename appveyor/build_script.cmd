@@ -20,10 +20,15 @@ ECHO *** Get build info and compiler for the current Python installation:
 "%PYTHON_HOME%\python" -c "import platform; print(platform.python_build(), platform.python_compiler())"
 
 ECHO.
-ECHO *** Update pip and setuptools...
+ECHO *** Install test requirements...
 "%PYTHON_HOME%\python" -m pip install --upgrade pip setuptools --quiet --no-warn-script-location
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: pip/setuptools update failed
+  EXIT 1
+)
+"%PYTHON_HOME%\python" -m pip install -r requirements-test.txt --no-warn-script-location
+IF ERRORLEVEL 1 (
+  ECHO *** ERROR: install test requirements failed
   EXIT 1
 )
 "%PYTHON_HOME%\python" -m pip freeze --all

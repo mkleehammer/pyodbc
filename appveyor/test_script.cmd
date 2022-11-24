@@ -64,11 +64,11 @@ IF ERRORLEVEL 1 (
   ECHO "%CONN_STR%"
   GOTO :mssql2
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=--sqlserver "%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "%TESTS_DIR%\run_tests.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql2
@@ -84,11 +84,11 @@ IF ERRORLEVEL 1 (
   ECHO "%CONN_STR%"
   GOTO :mssql3
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=--sqlserver "%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "%TESTS_DIR%\run_tests.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql3
@@ -103,11 +103,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :mssql4
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=--sqlserver "%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "%TESTS_DIR%\run_tests.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql4
@@ -122,11 +122,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :mssql5
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=--sqlserver "%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "%TESTS_DIR%\run_tests.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql5
@@ -141,11 +141,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :mssql6
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=--sqlserver "%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "%TESTS_DIR%\run_tests.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql6
@@ -160,11 +160,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :postgresql
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=--sqlserver "%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "%TESTS_DIR%\run_tests.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 
@@ -197,11 +197,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :mysql
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=--postgresql "%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\pgtests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "%TESTS_DIR%\run_tests.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 
@@ -237,11 +237,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :end
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=--mysql "%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\mysqltests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "%TESTS_DIR%\run_tests.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 

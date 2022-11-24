@@ -28,7 +28,7 @@ from decimal import Decimal
 if __name__ != '__main__':
     import pyodbc
 
-import testutils
+from tests3 import testutils
 
 
 _TESTSTR = '0123456789-abcdefghijklmnopqrstuvwxyz-'

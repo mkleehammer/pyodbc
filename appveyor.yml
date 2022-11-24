@@ -51,23 +51,6 @@ environment:
     # all the Python versions to be tested, both 32-bit and 64-bit
     # ref: https://www.appveyor.com/docs/windows-images-software/#python
 
-    # Python 2.7 must be built with Visual Studio 9.0, which is available only
-    # on AppVeyor Windows images Visual Studio 2013 and Visual Studio 2015
-
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON_HOME: "C:\\Python27"
-
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-      PYTHON_HOME: "C:\\Python27-x64"
-
-    # Python 3.5+ need at least the Visual Studio 2015 image
-
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      PYTHON_HOME: "C:\\Python36"
-
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      PYTHON_HOME: "C:\\Python36-x64"
-
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
       PYTHON_HOME: "C:\\Python37"
 
