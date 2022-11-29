@@ -43,11 +43,11 @@ IF ERRORLEVEL 1 (
 
 ECHO.
 ECHO *** Installing pyodbc...
-SET PYTHON_ARGS=""
+SET PYTHON_ARGS=.
 IF "%APVYR_VERBOSE%" == "true" (
-  SET PYTHON_ARGS=--verbose
+  SET PYTHON_ARGS=--verbose %PYTHON_ARGS%
 )
-"%PYTHON_HOME%\python" -m pip install %PYTHON_ARGS% .
+"%PYTHON_HOME%\python" -m pip install %PYTHON_ARGS%
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: pyodbc install failed
   EXIT 1
