@@ -1,9 +1,9 @@
 IF "%APVYR_GENERATE_WHEELS%" == "true" (
-  ECHO *** pip install the "wheel" module
-  "%PYTHON_HOME%\python" -m pip install wheel --quiet --no-warn-script-location
+  ECHO *** pip install build/wheel modules
+  "%PYTHON_HOME%\python" -m pip install build wheel --no-warn-script-location
   ECHO.
   ECHO *** Generate the wheel file
-  %WITH_COMPILER% "%PYTHON_HOME%\python" setup.py bdist_wheel
+  "%PYTHON_HOME%\python" -m build --wheel --no-isolation
   ECHO.
   ECHO *** \dist directory listing:
   DIR /B dist

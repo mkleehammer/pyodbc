@@ -3,7 +3,7 @@
 name: Build the release artifacts
 
 # include "workflow_dispatch" so this workflow can be run manually from the Actions portal
-on: [push, pull_request, workflow_dispatch]
+on: [workflow_dispatch]
 
 jobs:
   build_sdist:

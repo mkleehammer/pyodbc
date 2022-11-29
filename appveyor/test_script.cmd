@@ -15,18 +15,12 @@ IF NOT "%APVYR_RUN_TESTS%" == "true" (
 )
 
 
-REM Extract the major version of the current Python interpreter, and bitness
-FOR /F "tokens=* USEBACKQ" %%F IN (`%PYTHON_HOME%\python -c "import sys; sys.stdout.write(str(sys.version_info.major))"`) DO (
-SET PYTHON_MAJOR_VERSION=%%F
-)
+REM Extract the bitness of the current Python interpreter
 FOR /F "tokens=* USEBACKQ" %%F IN (`%PYTHON_HOME%\python -c "import sys; sys.stdout.write('64' if sys.maxsize > 2**32 else '32')"`) DO (
 SET PYTHON_ARCH=%%F
 )
-IF %PYTHON_MAJOR_VERSION% EQU 2 (
-    SET TESTS_DIR=tests2
-) ELSE (
-    SET TESTS_DIR=tests3
-)
+
+SET TESTS_DIR=tests3
 
 
 :mssql
@@ -39,22 +33,24 @@ IF NOT "%APVYR_RUN_MSSQL_TESTS%" == "true" (
   GOTO :postgresql
 )
 ECHO *** Get MS SQL Server version:
-sqlcmd -S "%MSSQL_INSTANCE%" -U sa -P "Password12!" -Q "SELECT @@VERSION"
+sqlcmd -S "%MSSQL_INSTANCE%" -U sa -P "%MSSQL_PASSWORD%" -Q "SELECT @@VERSION"
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: Could not connect to instance
+  SET OVERALL_RESULT=1
   GOTO :postgresql
 )
 ECHO *** Create test database
-sqlcmd -S "%MSSQL_INSTANCE%" -U sa -P "Password12!" -Q "CREATE DATABASE test_db"
+sqlcmd -S "%MSSQL_INSTANCE%" -U sa -P "%MSSQL_PASSWORD%" -Q "CREATE DATABASE test_db"
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: Could not create the test database
+  SET OVERALL_RESULT=1
   GOTO :postgresql
 )
 
 :mssql1
 REM Native Client 10.0 is so old, it might not be available on the server
 SET DRIVER={SQL Server Native Client 10.0}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
+SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=%MSSQL_USER%;PWD=%MSSQL_PASSWORD%;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
 "%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
@@ -74,7 +70,7 @@ IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 :mssql2
 REM Native Client 11.0 is so old, it might not be available on the server
 SET DRIVER={SQL Server Native Client 11.0}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
+SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=%MSSQL_USER%;PWD=%MSSQL_PASSWORD%;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
 "%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
@@ -93,7 +89,7 @@ IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql3
 SET DRIVER={ODBC Driver 11 for SQL Server}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
+SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=%MSSQL_USER%;PWD=%MSSQL_PASSWORD%;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
 "%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
@@ -112,7 +108,7 @@ IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql4
 SET DRIVER={ODBC Driver 13 for SQL Server}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
+SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=%MSSQL_USER%;PWD=%MSSQL_PASSWORD%;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
 "%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
@@ -131,7 +127,7 @@ IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql5
 SET DRIVER={ODBC Driver 17 for SQL Server}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
+SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=%MSSQL_USER%;PWD=%MSSQL_PASSWORD%;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
 "%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
@@ -150,7 +146,7 @@ IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql6
 SET DRIVER={ODBC Driver 18 for SQL Server}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;Encrypt=Optional;
+SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=%MSSQL_USER%;PWD=%MSSQL_PASSWORD%;Encrypt=Optional;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
 "%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
@@ -179,15 +175,15 @@ IF NOT "%APVYR_RUN_POSTGRES_TESTS%" == "true" (
   GOTO :mysql
 )
 ECHO *** Get PostgreSQL version
-SET PGPASSWORD=Password12!
-"%POSTGRES_PATH%\bin\psql" -U postgres -d postgres -c "SELECT version()"
+SET PGPASSWORD=%POSTGRES_PASSWORD%
+"%POSTGRES_PATH%\bin\psql" -U %POSTGRES_USER% -d postgres -c "SELECT version()"
 
 IF %PYTHON_ARCH% EQU 32 (
   SET DRIVER={PostgreSQL Unicode}
 ) ELSE (
   SET DRIVER={PostgreSQL Unicode^(x64^)}
 )
-SET CONN_STR=Driver=%DRIVER%;Server=localhost;Port=5432;Database=postgres;Uid=postgres;Pwd=Password12!;
+SET CONN_STR=Driver=%DRIVER%;Server=localhost;Port=%POSTGRES_PORT%;Database=postgres;Uid=%POSTGRES_USER%;Pwd=%POSTGRES_PASSWORD%;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
 "%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
@@ -218,16 +214,11 @@ IF NOT "%APVYR_RUN_MYSQL_TESTS%" == "true" (
   GOTO :end
 )
 ECHO *** Get MySQL version
-"%MYSQL_PATH%\bin\mysql" -u root -pPassword12! -e "STATUS"
+"%MYSQL_PATH%\bin\mysql" -u %MYSQL_USER% -p%MYSQL_PASSWORD% -e "STATUS"
 
 :mysql1
-REM MySQL 8.0 drivers apparently don't work on Python 2.7 ("system error 126") so use 5.3 instead.
-IF %PYTHON_MAJOR_VERSION% EQU 2 (
-  SET DRIVER={MySQL ODBC 5.3 ANSI Driver}
-) ELSE (
-  SET DRIVER={MySQL ODBC 8.0 ANSI Driver}
-)
-SET CONN_STR=Driver=%DRIVER%;Charset=utf8mb4;Server=localhost;Port=3306;Database=mysql;Uid=root;Pwd=Password12!;
+SET DRIVER={MySQL ODBC 8.0 ANSI Driver}
+SET CONN_STR=Driver=%DRIVER%;Charset=utf8mb4;Server=localhost;Port=%MYSQL_PORT%;Database=mysql;Uid=%MYSQL_USER%;Pwd=%MYSQL_PASSWORD%;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
 "%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"

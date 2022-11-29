@@ -10,10 +10,18 @@ ECHO APVYR_RUN_POSTGRES_TESTS: %APVYR_RUN_POSTGRES_TESTS%
 ECHO APVYR_RUN_MYSQL_TESTS   : %APVYR_RUN_MYSQL_TESTS%
 ECHO APVYR_GENERATE_WHEELS   : %APVYR_GENERATE_WHEELS%
 ECHO APVYR_VERBOSE           : %APVYR_VERBOSE%
-ECHO PYTHON_HOME   : %PYTHON_HOME%
-ECHO MSSQL_INSTANCE: %MSSQL_INSTANCE%
-ECHO POSTGRES_PATH : %POSTGRES_PATH%
-ECHO MYSQL_PATH    : %MYSQL_PATH%
+ECHO PYTHON_HOME: %PYTHON_HOME%
+ECHO MSSQL_INSTANCE   : %MSSQL_INSTANCE%
+ECHO MSSQL_USER       : %MSSQL_USER%
+ECHO MSSQL_PASSWORD   : %MSSQL_PASSWORD%
+ECHO POSTGRES_PATH    : %POSTGRES_PATH%
+ECHO POSTGRES_PORT    : %POSTGRES_PORT%
+ECHO POSTGRES_USER    : %POSTGRES_USER%
+ECHO POSTGRES_PASSWORD: %POSTGRES_PASSWORD%
+ECHO MYSQL_PATH       : %MYSQL_PATH%
+ECHO MYSQL_PORT       : %MYSQL_PORT%
+ECHO MYSQL_USER       : %MYSQL_USER%
+ECHO MYSQL_PASSWORD   : %MYSQL_PASSWORD%
 
 ECHO.
 ECHO *** Get build info and compiler for the current Python installation:
@@ -21,7 +29,7 @@ ECHO *** Get build info and compiler for the current Python installation:
 
 ECHO.
 ECHO *** Install test requirements...
-"%PYTHON_HOME%\python" -m pip install --upgrade pip setuptools --quiet --no-warn-script-location
+"%PYTHON_HOME%\python" -m pip install --upgrade pip setuptools --no-warn-script-location
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: pip/setuptools update failed
   EXIT 1
@@ -34,16 +42,12 @@ IF ERRORLEVEL 1 (
 "%PYTHON_HOME%\python" -m pip freeze --all
 
 ECHO.
-ECHO *** Building the pyodbc module...
-%WITH_COMPILER% "%PYTHON_HOME%\python" setup.py build
-IF ERRORLEVEL 1 (
-  ECHO *** ERROR: pyodbc build failed
-  EXIT 1
-)
-
-ECHO.
 ECHO *** Installing pyodbc...
-"%PYTHON_HOME%\python" -m pip install .
+SET PYTHON_ARGS=""
+IF "%APVYR_VERBOSE%" == "true" (
+  SET PYTHON_ARGS=--verbose
+)
+"%PYTHON_HOME%\python" -m pip install %PYTHON_ARGS% .
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: pyodbc install failed
   EXIT 1
