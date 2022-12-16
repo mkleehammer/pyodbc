@@ -3,7 +3,7 @@
 name: Build the release artifacts
 
 # include "workflow_dispatch" so this workflow can be run manually from the Actions portal
-on: [push, pull_request, workflow_dispatch]
+on: [workflow_dispatch]
 
 jobs:
   build_sdist:
@@ -37,6 +37,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Set up QEMU
+        if: runner.os == 'Linux'
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: all
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.11.2
         # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
@@ -52,7 +58,7 @@ jobs:
           # Linux - based on CentOS 7; glibc 64-bit builds only; no bundled libraries
           # https://github.com/pypa/manylinux#docker-images
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
-          CIBW_ARCHS_LINUX: x86_64
+          CIBW_ARCHS_LINUX: x86_64 aarch64
           # this installs unixODBC 2.3.1 which is quite old but it has the latest ABI so should be fine
           CIBW_BEFORE_ALL_LINUX: yum -y install unixODBC-devel
           # the raw wheel filename is not PyPi compliant so the wheel must be repaired but
