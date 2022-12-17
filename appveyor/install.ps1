@@ -1,24 +1,28 @@
 # check that all the required ODBC drivers are available, and install any that are missing
 
 Function DownloadFileFromUrl ($url, $file_path) {
+    $curl_params = "-f -sS -L -o `"$file_path`" `"$url`""
     # try multiple times to download the file
-    $success = $false
     $attempt_number = 1
     $max_attempts = 5
-    while ($true) {
+    while ($attempt_number -le $max_attempts) {
         try {
-            Start-FileDownload -Url $url -FileName $file_path
-            $success = $true
+            Write-Output "Downloading ""$url""..."
+            # use curl because Start-FileDownload and Invoke-WebRequest don't seem to work with MySQL anymore
+            $result = Start-Process curl.exe -ArgumentList $curl_params -NoNewWindow -Wait -PassThru -ErrorAction Stop
+            if ($result.ExitCode -eq 0) {return}
+            Write-Output $("curl failed with exit code: " + $result.ExitCode.ToString())
+            # FYI, alternate way to invoke curl using the call operator (&)
+            #   & curl.exe -f -sS -L -o $file_path $url
+            #   IF ($LASTEXITCODE -eq 0) {return}
         } catch {
-            Write-Error $_
+            Write-Error $_.Exception.Message
             Write-Output "WARNING: download attempt number $attempt_number of $max_attempts failed"
         }
-        if ($success) {return}
-        if ($attempt_number -ge $max_attempts) {break}
         Start-Sleep -Seconds 10
         $attempt_number += 1
     }
-    # delete the file, just in case, to indicate failure
+    # if a downloaded file exists at all it is probably a partial file, so delete it
     if (Test-Path $file_path) {
         Remove-Item $file_path
     }
@@ -60,8 +64,12 @@ Function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, 
     if ($result.ExitCode -ne 0) {
         Write-Output "ERROR: Driver installation failed"
         Write-Output $result
+        # if the msi file can't be installed, delete it
+        if (Test-Path $msifile_path) {
+            Write-Output "Deleting the msi file from the cache: ""$msifile_path""..."
+            Remove-Item $msifile_path
+        }
         return
-
     }
     Write-Output "...driver installed successfully"
 }
@@ -93,6 +101,11 @@ Function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver
     if ($result.ExitCode -ne 0) {
         Write-Output "ERROR: Driver installation failed"
         Write-Output $result
+        # if the msi file can't be installed, delete it
+        if (Test-Path $msifile_path) {
+            Write-Output "Deleting the msi file from the cache: ""$msifile_path""..."
+            Remove-Item $msifile_path
+        }
         return
     }
     Write-Output "...driver installed successfully"
@@ -125,7 +138,7 @@ If (-Not (Test-Path $temp_dir)) {
 If (${env:APVYR_VERBOSE} -eq "true") {
     Write-Output ""
     Write-Output "*** Installed ODBC drivers:"
-    Get-OdbcDriver
+    Get-OdbcDriver | ForEach-Object -Process {Write-Output "$_"} | Sort-Object
 }
 
 
@@ -237,5 +250,5 @@ If (${env:APVYR_VERBOSE} -eq "true") {
     Get-ChildItem $temp_dir
     Write-Output ""
     Write-Output "*** Installed ODBC drivers:"
-    Get-OdbcDriver
+    Get-OdbcDriver | ForEach-Object -Process {Write-Output "$_"} | Sort-Object
 }
