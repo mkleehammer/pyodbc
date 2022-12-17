@@ -2,23 +2,28 @@
 
 Function DownloadFileFromUrl ($url, $file_path) {
     $curl_params = "-f -sS -L -o `"$file_path`" `"$url`""
+    If (${env:APVYR_VERBOSE} -eq "true") {
+        $curl_params = "-v " + $curl_params
+    }
     # try multiple times to download the file
     $attempt_number = 1
     $max_attempts = 5
     while ($attempt_number -le $max_attempts) {
         try {
             Write-Output "Downloading ""$url""..."
-            # use curl because Start-FileDownload and Invoke-WebRequest don't seem to work with MySQL anymore
             $result = Start-Process curl.exe -ArgumentList $curl_params -NoNewWindow -Wait -PassThru -ErrorAction Stop
-            if ($result.ExitCode -eq 0) {return}
-            Write-Output $("curl failed with exit code: " + $result.ExitCode.ToString())
+            if ($result.ExitCode -eq 0) {
+                Write-Output "...downloaded succeeded"
+                return
+            }
+            Write-Output "...download failed with exit code: $($result.ExitCode)" 
             # FYI, alternate way to invoke curl using the call operator (&)
             #   & curl.exe -f -sS -L -o $file_path $url
             #   IF ($LASTEXITCODE -eq 0) {return}
         } catch {
             Write-Error $_.Exception.Message
-            Write-Output "WARNING: download attempt number $attempt_number of $max_attempts failed"
         }
+        Write-Output "WARNING: download attempt number $attempt_number of $max_attempts failed"
         Start-Sleep -Seconds 10
         $attempt_number += 1
     }
@@ -129,17 +134,16 @@ If (Test-Path $cache_dir) {
 }
 $temp_dir = "$env:APPVEYOR_BUILD_FOLDER\apvyr_tmp"
 If (-Not (Test-Path $temp_dir)) {
+    Write-Output ""
     Write-Output "*** Creating directory ""$temp_dir""..."
     New-Item -ItemType Directory -Path $temp_dir | out-null
 }
 
 
 # output the already available ODBC drivers before installation
-If (${env:APVYR_VERBOSE} -eq "true") {
-    Write-Output ""
-    Write-Output "*** Installed ODBC drivers:"
-    Get-OdbcDriver | ForEach-Object -Process {Write-Output "$_"} | Sort-Object
-}
+Write-Output ""
+Write-Output "*** Installed ODBC drivers:"
+Get-OdbcDriver | ForEach-Object -Process {Write-Output "$_"} | Sort-Object
 
 
 # Microsoft SQL Server
@@ -241,14 +245,12 @@ if ($python_arch -eq "64") {
 
 # output the contents of the temporary AppVeyor directories and
 # the ODBC drivers now available after installation
-If (${env:APVYR_VERBOSE} -eq "true") {
-    Write-Output ""
-    Write-Output "*** Contents of the cache directory: $cache_dir"
-    Get-ChildItem $cache_dir
-    Write-Output ""
-    Write-Output "*** Contents of the temporary directory: $temp_dir"
-    Get-ChildItem $temp_dir
-    Write-Output ""
-    Write-Output "*** Installed ODBC drivers:"
-    Get-OdbcDriver | ForEach-Object -Process {Write-Output "$_"} | Sort-Object
-}
+Write-Output ""
+Write-Output "*** Contents of the cache directory: $cache_dir"
+Get-ChildItem $cache_dir
+Write-Output ""
+Write-Output "*** Contents of the temporary directory: $temp_dir"
+Get-ChildItem $temp_dir
+Write-Output ""
+Write-Output "*** Installed ODBC drivers:"
+Get-OdbcDriver | ForEach-Object -Process {Write-Output "$_"} | Sort-Object
