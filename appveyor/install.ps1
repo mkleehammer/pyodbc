@@ -1,30 +1,39 @@
 # check that all the required ODBC drivers are available, and install any that are missing
 
-Function DownloadFileFromUrl ($url, $file_path) {
+function DownloadFileFromUrl ($url, $file_path) {
+    $curl_params = "-f -sS -L -o `"$file_path`" `"$url`""
+    if (${env:APVYR_VERBOSE} -eq "true") {
+        $curl_params = "-v " + $curl_params
+    }
     # try multiple times to download the file
-    $success = $false
     $attempt_number = 1
     $max_attempts = 5
-    while ($true) {
+    while ($attempt_number -le $max_attempts) {
         try {
-            Start-FileDownload -Url $url -FileName $file_path
-            $success = $true
+            Write-Output "Downloading ""$url""..."
+            $result = Start-Process curl.exe -ArgumentList $curl_params -NoNewWindow -Wait -PassThru -ErrorAction Stop
+            if ($result.ExitCode -eq 0) {
+                Write-Output "...downloaded succeeded"
+                return
+            }
+            Write-Output "...download failed with exit code: $($result.ExitCode)"
+            # FYI, alternate way to invoke curl using the call operator (&)
+            #   & curl.exe -f -sS -L -o $file_path $url
+            #   IF ($LASTEXITCODE -eq 0) {return}
         } catch {
-            Write-Error $_
-            Write-Output "WARNING: download attempt number $attempt_number of $max_attempts failed"
+            Write-Error $_.Exception.Message
         }
-        if ($success) {return}
-        if ($attempt_number -ge $max_attempts) {break}
+        Write-Output "WARNING: download attempt number $attempt_number of $max_attempts failed"
         Start-Sleep -Seconds 10
         $attempt_number += 1
     }
-    # delete the file, just in case, to indicate failure
+    # if a downloaded file exists at all it is probably a partial file, so delete it
     if (Test-Path $file_path) {
         Remove-Item $file_path
     }
 }
 
-Function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, $msifile_path, $msiexec_paras) {
+function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, $msifile_path, $msiexec_paras) {
     Write-Output ""
 
     # check whether the driver is already installed
@@ -41,7 +50,7 @@ Function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, 
         Write-Output "Driver's msi file found in the cache"
     } else {
         DownloadFileFromUrl -url $driver_url -file_path $msifile_path
-        If (-Not (Test-Path $msifile_path)) {
+        if (-not (Test-Path $msifile_path)) {
             Write-Output "ERROR: Could not download the msi file from ""$driver_url"""
             return
         }
@@ -60,13 +69,17 @@ Function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, 
     if ($result.ExitCode -ne 0) {
         Write-Output "ERROR: Driver installation failed"
         Write-Output $result
+        # if the msi file can't be installed, delete it
+        if (Test-Path $msifile_path) {
+            Write-Output "Deleting the msi file from the cache: ""$msifile_path""..."
+            Remove-Item $msifile_path
+        }
         return
-
     }
     Write-Output "...driver installed successfully"
 }
 
-Function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver_url, $zipfile_path, $zip_internal_msi_file, $msifile_path) {
+function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver_url, $zipfile_path, $zip_internal_msi_file, $msifile_path) {
     Write-Output ""
     # check whether the driver is already installed
     if ($d = Get-OdbcDriver -Name $driver_name -Platform $driver_bitness -ErrorAction:SilentlyContinue) {
@@ -79,7 +92,7 @@ Function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver
         Write-Output "Driver's msi file found in the cache"
     } else {
         DownloadFileFromUrl -url $driver_url -file_path $zipfile_path
-        If (-Not (Test-Path $zipfile_path)) {
+        if (-not (Test-Path $zipfile_path)) {
             Write-Output "ERROR: Could not download the zip file from $driver_url"
             return
         }
@@ -93,6 +106,11 @@ Function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver
     if ($result.ExitCode -ne 0) {
         Write-Output "ERROR: Driver installation failed"
         Write-Output $result
+        # if the msi file can't be installed, delete it
+        if (Test-Path $msifile_path) {
+            Write-Output "Deleting the msi file from the cache: ""$msifile_path""..."
+            Remove-Item $msifile_path
+        }
         return
     }
     Write-Output "...driver installed successfully"
@@ -101,13 +119,12 @@ Function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver
 
 # get Python version and bitness
 $python_major_version = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write(str(sys.version_info.major))"
-$python_minor_version = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write(str(sys.version_info.minor))"
 $python_arch = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write('64' if sys.maxsize > 2**32 else '32')"
 
 
 # directories used exclusively by AppVeyor
 $cache_dir = "$env:APPVEYOR_BUILD_FOLDER\apvyr_cache"
-If (Test-Path $cache_dir) {
+if (Test-Path $cache_dir) {
     Write-Output "*** Contents of the cache directory: $cache_dir"
     Get-ChildItem $cache_dir
 } else {
@@ -115,18 +132,17 @@ If (Test-Path $cache_dir) {
     New-Item -ItemType Directory -Path $cache_dir | out-null
 }
 $temp_dir = "$env:APPVEYOR_BUILD_FOLDER\apvyr_tmp"
-If (-Not (Test-Path $temp_dir)) {
+if (-not (Test-Path $temp_dir)) {
+    Write-Output ""
     Write-Output "*** Creating directory ""$temp_dir""..."
     New-Item -ItemType Directory -Path $temp_dir | out-null
 }
 
 
 # output the already available ODBC drivers before installation
-If (${env:APVYR_VERBOSE} -eq "true") {
-    Write-Output ""
-    Write-Output "*** Installed ODBC drivers:"
-    Get-OdbcDriver
-}
+Write-Output ""
+Write-Output "*** Installed ODBC drivers:"
+Get-OdbcDriver | ForEach-Object -Process {Write-Output "$_"} | Sort-Object
 
 
 # Microsoft SQL Server
@@ -228,14 +244,12 @@ if ($python_arch -eq "64") {
 
 # output the contents of the temporary AppVeyor directories and
 # the ODBC drivers now available after installation
-If (${env:APVYR_VERBOSE} -eq "true") {
-    Write-Output ""
-    Write-Output "*** Contents of the cache directory: $cache_dir"
-    Get-ChildItem $cache_dir
-    Write-Output ""
-    Write-Output "*** Contents of the temporary directory: $temp_dir"
-    Get-ChildItem $temp_dir
-    Write-Output ""
-    Write-Output "*** Installed ODBC drivers:"
-    Get-OdbcDriver
-}
+Write-Output ""
+Write-Output "*** Contents of the cache directory: $cache_dir"
+Get-ChildItem $cache_dir
+Write-Output ""
+Write-Output "*** Contents of the temporary directory: $temp_dir"
+Get-ChildItem $temp_dir
+Write-Output ""
+Write-Output "*** Installed ODBC drivers:"
+Get-OdbcDriver | ForEach-Object -Process {Write-Output "$_"} | Sort-Object

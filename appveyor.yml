@@ -45,6 +45,8 @@ environment:
     MSSQL_INSTANCE: "(local)\\SQL2017"
     POSTGRES_PATH: "C:\\Program Files\\PostgreSQL\\11"
     MYSQL_PATH: "C:\\Program Files\\MySQL\\MySQL Server 5.7"
+    # the cache should always be saved, even on failure, to be available for the next run
+    APPVEYOR_SAVE_CACHE_ON_ERROR: "true"
 
   matrix:
 
@@ -99,7 +101,7 @@ environment:
       PYTHON_HOME: "C:\\Python311-x64"
 
 cache:
-  - apvyr_cache -> appveyor\install.ps1
+  - apvyr_cache
 
 install:
   - ps: .\appveyor\install.ps1
