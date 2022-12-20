@@ -1,8 +1,8 @@
 # check that all the required ODBC drivers are available, and install any that are missing
 
-Function DownloadFileFromUrl ($url, $file_path) {
+function DownloadFileFromUrl ($url, $file_path) {
     $curl_params = "-f -sS -L -o `"$file_path`" `"$url`""
-    If (${env:APVYR_VERBOSE} -eq "true") {
+    if (${env:APVYR_VERBOSE} -eq "true") {
         $curl_params = "-v " + $curl_params
     }
     # try multiple times to download the file
@@ -16,7 +16,7 @@ Function DownloadFileFromUrl ($url, $file_path) {
                 Write-Output "...downloaded succeeded"
                 return
             }
-            Write-Output "...download failed with exit code: $($result.ExitCode)" 
+            Write-Output "...download failed with exit code: $($result.ExitCode)"
             # FYI, alternate way to invoke curl using the call operator (&)
             #   & curl.exe -f -sS -L -o $file_path $url
             #   IF ($LASTEXITCODE -eq 0) {return}
@@ -33,7 +33,7 @@ Function DownloadFileFromUrl ($url, $file_path) {
     }
 }
 
-Function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, $msifile_path, $msiexec_paras) {
+function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, $msifile_path, $msiexec_paras) {
     Write-Output ""
 
     # check whether the driver is already installed
@@ -50,7 +50,7 @@ Function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, 
         Write-Output "Driver's msi file found in the cache"
     } else {
         DownloadFileFromUrl -url $driver_url -file_path $msifile_path
-        If (-Not (Test-Path $msifile_path)) {
+        if (-not (Test-Path $msifile_path)) {
             Write-Output "ERROR: Could not download the msi file from ""$driver_url"""
             return
         }
@@ -79,7 +79,7 @@ Function CheckAndInstallMsiFromUrl ($driver_name, $driver_bitness, $driver_url, 
     Write-Output "...driver installed successfully"
 }
 
-Function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver_url, $zipfile_path, $zip_internal_msi_file, $msifile_path) {
+function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver_url, $zipfile_path, $zip_internal_msi_file, $msifile_path) {
     Write-Output ""
     # check whether the driver is already installed
     if ($d = Get-OdbcDriver -Name $driver_name -Platform $driver_bitness -ErrorAction:SilentlyContinue) {
@@ -92,7 +92,7 @@ Function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver
         Write-Output "Driver's msi file found in the cache"
     } else {
         DownloadFileFromUrl -url $driver_url -file_path $zipfile_path
-        If (-Not (Test-Path $zipfile_path)) {
+        if (-not (Test-Path $zipfile_path)) {
             Write-Output "ERROR: Could not download the zip file from $driver_url"
             return
         }
@@ -119,13 +119,12 @@ Function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver
 
 # get Python version and bitness
 $python_major_version = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write(str(sys.version_info.major))"
-$python_minor_version = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write(str(sys.version_info.minor))"
 $python_arch = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write('64' if sys.maxsize > 2**32 else '32')"
 
 
 # directories used exclusively by AppVeyor
 $cache_dir = "$env:APPVEYOR_BUILD_FOLDER\apvyr_cache"
-If (Test-Path $cache_dir) {
+if (Test-Path $cache_dir) {
     Write-Output "*** Contents of the cache directory: $cache_dir"
     Get-ChildItem $cache_dir
 } else {
@@ -133,7 +132,7 @@ If (Test-Path $cache_dir) {
     New-Item -ItemType Directory -Path $cache_dir | out-null
 }
 $temp_dir = "$env:APPVEYOR_BUILD_FOLDER\apvyr_tmp"
-If (-Not (Test-Path $temp_dir)) {
+if (-not (Test-Path $temp_dir)) {
     Write-Output ""
     Write-Output "*** Creating directory ""$temp_dir""..."
     New-Item -ItemType Directory -Path $temp_dir | out-null
