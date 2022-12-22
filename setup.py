@@ -21,7 +21,7 @@ OFFICIAL_BUILD = 9999
 
 # This version identifier should refer to the NEXT release, not the
 # current one.  After each release, the version should be incremented.
-VERSION = '4.0.35'
+VERSION = '5.0.0'
 
 
 def _print(s):
@@ -100,7 +100,7 @@ def main():
 
         'license': 'MIT',
 
-        'python_requires': '>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*',
+        'python_requires': '>=3.7',
 
         'classifiers': ['Development Status :: 5 - Production/Stable',
                        'Intended Audience :: Developers',
@@ -109,10 +109,7 @@ def main():
                        'Operating System :: Microsoft :: Windows',
                        'Operating System :: POSIX',
                        'Programming Language :: Python',
-                       'Programming Language :: Python :: 2',
-                       'Programming Language :: Python :: 2.7',
                        'Programming Language :: Python :: 3',
-                       'Programming Language :: Python :: 3.6',
                        'Programming Language :: Python :: 3.7',
                        'Programming Language :: Python :: 3.8',
                        'Programming Language :: Python :: 3.9',
