@@ -48,6 +48,8 @@ environment:
     MYSQL_PORT: "3306"
     MYSQL_USER: "root"
     MYSQL_PASSWORD: "Password12!"
+    # the cache should always be saved, even on failure, to be available for the next run
+    APPVEYOR_SAVE_CACHE_ON_ERROR: "true"
 
   matrix:
 
@@ -85,7 +87,7 @@ environment:
       PYTHON_HOME: "C:\\Python311-x64"
 
 cache:
-  - apvyr_cache -> appveyor\install.ps1
+  - apvyr_cache
 
 install:
   - ps: .\appveyor\install.ps1
