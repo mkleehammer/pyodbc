@@ -89,7 +89,7 @@ def main():
         'long_description': long_description,
         'long_description_content_type': 'text/markdown',
 
-        'maintainer':       "Michael Kleehammer",
+        'maintainer': "Michael Kleehammer",
         'maintainer_email': "michael@kleehammer.com",
 
         'ext_modules': [Extension('pyodbc', sorted(files), **settings)],
@@ -102,34 +102,35 @@ def main():
 
         'python_requires': '>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*',
 
-        'classifiers': ['Development Status :: 5 - Production/Stable',
-                       'Intended Audience :: Developers',
-                       'Intended Audience :: System Administrators',
-                       'License :: OSI Approved :: MIT License',
-                       'Operating System :: Microsoft :: Windows',
-                       'Operating System :: POSIX',
-                       'Programming Language :: Python',
-                       'Programming Language :: Python :: 2',
-                       'Programming Language :: Python :: 2.7',
-                       'Programming Language :: Python :: 3',
-                       'Programming Language :: Python :: 3.6',
-                       'Programming Language :: Python :: 3.7',
-                       'Programming Language :: Python :: 3.8',
-                       'Programming Language :: Python :: 3.9',
-                       'Programming Language :: Python :: 3.10',
-                       'Programming Language :: Python :: 3.11',
-                       'Topic :: Database',
-                       ],
+        'classifiers': [
+            'Development Status :: 5 - Production/Stable',
+            'Intended Audience :: Developers',
+            'Intended Audience :: System Administrators',
+            'License :: OSI Approved :: MIT License',
+            'Operating System :: Microsoft :: Windows',
+            'Operating System :: POSIX',
+            'Programming Language :: Python',
+            'Programming Language :: Python :: 2',
+            'Programming Language :: Python :: 2.7',
+            'Programming Language :: Python :: 3',
+            'Programming Language :: Python :: 3.6',
+            'Programming Language :: Python :: 3.7',
+            'Programming Language :: Python :: 3.8',
+            'Programming Language :: Python :: 3.9',
+            'Programming Language :: Python :: 3.10',
+            'Programming Language :: Python :: 3.11',
+            'Topic :: Database',
+        ],
 
         'url': 'https://github.com/mkleehammer/pyodbc',
-        'cmdclass': { 'version' : VersionCommand,
-                     'tags'    : TagsCommand }
-        }
+
+        'cmdclass': {'version': VersionCommand, 'tags': TagsCommand},
+    }
 
     if sys.hexversion >= 0x02060000:
         kwargs['options'] = {
-            'bdist_wininst': {'user_access_control' : 'auto'}
-            }
+            'bdist_wininst': {'user_access_control': 'auto'},
+        }
 
     setup(**kwargs)
 
@@ -137,11 +138,11 @@ def main():
 def get_compiler_settings(version_str):
 
     settings = {
-        'extra_compile_args' : [],
+        'extra_compile_args': [],
         'extra_link_args': [],
         'libraries': [],
         'include_dirs': [],
-        'define_macros' : [ ('PYODBC_VERSION', version_str) ]
+        'define_macros': [('PYODBC_VERSION', version_str)],
     }
 
     # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
@@ -156,13 +157,13 @@ def get_compiler_settings(version_str):
     if os.name == 'nt':
         settings['extra_compile_args'].extend([
             '/Wall',
-            '/wd4514',          # unreference inline function removed
-            '/wd4820',          # padding after struct member
-            '/wd4668',          # is not defined as a preprocessor macro
-            '/wd4711', # function selected for automatic inline expansion
-            '/wd4100', # unreferenced formal parameter
-            '/wd4127', # "conditional expression is constant" testing compilation constants
-            '/wd4191', # casts to PYCFunction which doesn't have the keywords parameter
+            '/wd4514',  # unreference inline function removed
+            '/wd4820',  # padding after struct member
+            '/wd4668',  # is not defined as a preprocessor macro
+            '/wd4711',  # function selected for automatic inline expansion
+            '/wd4100',  # unreferenced formal parameter
+            '/wd4127',  # "conditional expression is constant" testing compilation constants
+            '/wd4191',  # casts to PYCFunction which doesn't have the keywords parameter
         ])
 
         if '--windbg' in sys.argv:
@@ -197,7 +198,7 @@ def get_compiler_settings(version_str):
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].extend([
             '-Wno-write-strings',
-            '-Wno-deprecated-declarations'
+            '-Wno-deprecated-declarations',
         ])
 
         # Homebrew installs odbc_config
@@ -272,7 +273,7 @@ def get_version():
     # Since the 4 numbers are put into the Windows DLL, we want to make sure the beta versions sort *before* the
     # official, so we set the official build number to 9999, but we don't show it.
 
-    name    = None              # branch/feature name.  Should be None for official builds.
+    name = None                 # branch/feature name.  Should be None for official builds.
     numbers = None              # The 4 integers that make up the version.
 
     # If we are in the CICD pipeline, use the VERSION.  There is no tagging information available
@@ -296,7 +297,7 @@ def get_version():
 
     if not numbers:
         _print('WARNING: Unable to determine version.  Using 4.0.0.0')
-        name, numbers = '4.0.dev0', [4,0,0,0]
+        name, numbers = '4.0.dev0', [4, 0, 0, 0]
 
     return name, numbers
 
@@ -308,7 +309,7 @@ def _get_version_pkginfo():
         for line in open(filename):
             match = re_ver.search(line)
             if match:
-                name    = line.split(':', 1)[1].strip()
+                name = line.split(':', 1)[1].strip()
                 numbers = [int(n or 0) for n in match.groups()[:3]]
                 numbers.append(int(match.group(4) or OFFICIAL_BUILD)) # don't use 0 as a default for build
                 return name, numbers
@@ -360,9 +361,10 @@ def _get_version_git():
 
 def getoutput(cmd):
     pipe = os.popen(cmd, 'r')
-    text   = pipe.read().rstrip('\n')
+    text = pipe.read().rstrip('\n')
     status = pipe.close() or 0
     return status, text
+
 
 if __name__ == '__main__':
     main()
