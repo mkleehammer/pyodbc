@@ -218,7 +218,7 @@ def get_compiler_settings(version_str):
                 '/opt/homebrew/include',
                 expanduser('~/homebrew/include'),
             ]
-            settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
+            settings['include_dirs'].extend(d for d in dirs if isdir(d))
             # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
             # ( also OS/X since El Capitan prevents /usr/lib from being accessed )
             settings['library_dirs'] = ['/usr/local/lib', '/opt/homebrew/lib']
