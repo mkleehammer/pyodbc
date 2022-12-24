@@ -230,10 +230,10 @@ def get_compiler_settings(version_str):
 
         cflags = os.popen('odbc_config --cflags 2>/dev/null').read().strip()
         if cflags:
-            settings['extra_compile_args'].extend(cflags.split())
+            settings['extra_compile_args'].extend(shlex.split(cflags))
         ldflags = os.popen('odbc_config --libs 2>/dev/null').read().strip()
         if ldflags:
-            settings['extra_link_args'].extend(ldflags.split())
+            settings['extra_link_args'].extend(shlex.split(ldflags))
 
         from array import array
         UNICODE_WIDTH = array('u').itemsize
