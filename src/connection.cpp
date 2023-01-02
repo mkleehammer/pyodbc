@@ -59,28 +59,16 @@ static char* StrDup(const char* text) {
 }
 
 
-static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeout,
-                    Object& encoding)
+static bool Connect(PyObject* pConnectString, HDBC hdbc, long timeout, Object& encoding)
 {
-    // This should have been checked by the global connect function.
-    assert(PyUnicode_Check(pConnectString) || PyUnicode_Check(pConnectString));
-
-    // The driver manager determines if the app is a Unicode app based on whether we call SQLDriverConnectA or
-    // SQLDriverConnectW.  Some drivers, notably Microsoft Access/Jet, change their behavior based on this, so we try
-    // the Unicode version first.  (The Access driver only supports Unicode text, but SQLDescribeCol returns SQL_CHAR
-    // instead of SQL_WCHAR if we connect with the ANSI version.  Obviously this causes lots of errors since we believe
-    // what it tells us (SQL_CHAR).)
-
-    // Python supports only UCS-2 and UCS-4, so we shouldn't need to worry about receiving surrogate pairs.  However,
-    // Windows does use UCS-16, so it is possible something would be misinterpreted as one.  We may need to examine
-    // this more.
+    assert(PyUnicode_Check(pConnectString));
 
     SQLRETURN ret;
 
     if (timeout > 0)
     {
         Py_BEGIN_ALLOW_THREADS
-        ret = SQLSetConnectAttr(hdbc, SQL_ATTR_LOGIN_TIMEOUT, (SQLPOINTER)(uintptr_t)timeout, SQL_IS_UINTEGER);
+        ret = SQLSetConnectAttrW(hdbc, SQL_ATTR_LOGIN_TIMEOUT, (SQLPOINTER)(uintptr_t)timeout, SQL_IS_UINTEGER);
         Py_END_ALLOW_THREADS
         if (!SQL_SUCCEEDED(ret))
             RaiseErrorFromHandle(0, "SQLSetConnectAttr(SQL_ATTR_LOGIN_TIMEOUT)", hdbc, SQL_NULL_HANDLE);
@@ -96,28 +84,12 @@ static bool Connect(PyObject* pConnectString, HDBC hdbc, bool fAnsi, long timeou
         }
     }
 
-    if (!fAnsi)
-    {
-        // I want to call the W version when possible since the driver can use it as an
-        // indication that we can handle Unicode.
-
-        SQLWChar wchar(pConnectString, szEncoding ? szEncoding : ENCSTR_UTF16NE);
-        if (!wchar.isValid())
-            return false;
-
-        Py_BEGIN_ALLOW_THREADS
-        ret = SQLDriverConnectW(hdbc, 0, wchar.psz, SQL_NTS, 0, 0, 0, SQL_DRIVER_NOPROMPT);
-        Py_END_ALLOW_THREADS
-        if (SQL_SUCCEEDED(ret))
-            return true;
-    }
-
-    SQLWChar wchar(pConnectString, szEncoding ? szEncoding : "utf-8");
-    if (!wchar.isValid())
+    SQLWChar cstring(pConnectString, szEncoding ? szEncoding : ENCSTR_UTF16NE);
+    if (!cstring.isValid())
         return false;
 
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLDriverConnect(hdbc, 0, (SQLCHAR*)wchar.psz, SQL_NTS, 0, 0, 0, SQL_DRIVER_NOPROMPT);
+    ret = SQLDriverConnectW(hdbc, 0, cstring, SQL_NTS, 0, 0, 0, SQL_DRIVER_NOPROMPT);
     Py_END_ALLOW_THREADS
     if (SQL_SUCCEEDED(ret))
         return true;
@@ -132,6 +104,8 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
     SQLRETURN ret;
     SQLPOINTER ivalue = 0;
     SQLINTEGER vallen = 0;
+
+    SQLWChar sqlchar;
 
     if (PyLong_Check(value))
     {
@@ -150,31 +124,11 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
         ivalue = (SQLPOINTER)PyByteArray_AsString(value);
         vallen = SQL_IS_POINTER;
     }
-    else if (PyBytes_Check(value))
-    {
-        ivalue = PyBytes_AS_STRING(value);
-        vallen = SQL_IS_POINTER;
-    }
     else if (PyUnicode_Check(value))
     {
-        Object stringholder;
-        if (sizeof(Py_UNICODE) == 2 // This part should be compile-time.
-            && (!strencoding || !strcmp(strencoding, "utf-16le")))
-        {
-          // default or utf-16le is set, pass through directly
-          ivalue = PyUnicode_AS_UNICODE(value);
-        }
-        else
-        {
-          // use strencoding to convert, default to utf-16le if not set.
-          stringholder = PyCodec_Encode(value, strencoding ? strencoding : "utf-16le", "strict");
-          ivalue = PyBytes_AS_STRING(stringholder.Get());
-        }
+        sqlchar.set(value, strencoding ? strencoding : "utf-16le");
+        ivalue = sqlchar.get();
         vallen = SQL_NTS;
-        Py_BEGIN_ALLOW_THREADS
-        ret = SQLSetConnectAttrW(hdbc, ikey, ivalue, vallen);
-        Py_END_ALLOW_THREADS
-        goto checkSuccess;
     }
     else if (PySequence_Check(value))
     {
@@ -190,10 +144,9 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
     }
 
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLSetConnectAttr(hdbc, ikey, ivalue, vallen);
+    ret = SQLSetConnectAttrW(hdbc, ikey, ivalue, vallen);
     Py_END_ALLOW_THREADS
 
-checkSuccess:
     if (!SQL_SUCCEEDED(ret))
     {
         RaiseErrorFromHandle(0, "SQLSetConnectAttr", hdbc, SQL_NULL_HANDLE);
@@ -205,15 +158,9 @@ checkSuccess:
     return true;
 }
 
-PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi, long timeout, bool fReadOnly,
+PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeout, bool fReadOnly,
                          PyObject* attrs_before, Object& encoding)
 {
-    // pConnectString
-    //   A string or unicode object.  (This must be checked by the caller.)
-    //
-    // fAnsi
-    //   If true, do not attempt a Unicode connection.
-
     //
     // Allocate HDBC and connect
     //
@@ -255,7 +202,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, bool fAnsi,
         }
     }
 
-    if (!Connect(pConnectString, hdbc, fAnsi, timeout, encoding))
+    if (!Connect(pConnectString, hdbc, timeout, encoding))
     {
         // Connect has already set an exception.
         Py_BEGIN_ALLOW_THREADS

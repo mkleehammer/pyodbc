@@ -58,43 +58,34 @@ struct TextEnc
 };
 
 
-struct SQLWChar
+class SQLWChar
 {
-    // Encodes a Python string to a SQLWCHAR pointer.  This should eventually replace the
-    // SQLWchar structure.
+    // A convenience object that encodes a Unicode string to a given encoding.  It can be cast
+    // to a SQLWCHAR* to return the pointer.
     //
-    // Note: This does *not* increment the refcount!
-
-    // IMPORTANT: I've made the conscious decision *not* to determine the character count.  If
-    // we only had to follow the ODBC specification, it would simply be the number of
-    // characters in the string and would be the bytelen / 2.  The problem is drivers that
-    // don't follow the specification and expect things like UTF-8.  What length do these
-    // drivers expect?  Very, very likely they want the number of *bytes*, not the actual
-    // number of characters.  I'm simply going to null terminate and pass SQL_NTS.
+    // This is designed to be created on the stack, perform the conversion, and cleanup any
+    // temporary objects in the destructor.
     //
-    // This is a performance penalty when using utf16 since we have to copy the string just to
-    // add the null terminator bytes, but we don't use it very often.  If this becomes a
-    // bottleneck, we'll have to revisit this design.
+    // The SQLWCHAR pointer is *only* valid during the lifetime of this object.  It may point
+    // into a temporary `bytes` object that is deleted by the constructor.
 
-    SQLWCHAR* psz;
-    bool isNone;
-
-    Object bytes;
-    // A temporary object holding the decoded bytes if we can't use a pointer into the original
-    // object.
+public:
+    SQLWChar()
+    {
+        psz = 0;
+        isNone = true;
+    }
 
     SQLWChar(PyObject* src, const char* szEncoding)
     {
-        TextEnc enc;
-        enc.name = szEncoding;
-        enc.ctype = SQL_C_WCHAR;
-        enc.optenc = OPTENC_NONE;
-        init(src, enc);
+        psz = 0;
+        isNone = true;
+        set(src, szEncoding);
     }
 
     SQLWChar(PyObject* src, const TextEnc* penc)
+        : SQLWChar(src, *penc)
     {
-        init(src, *penc);
     }
 
     SQLWChar(PyObject* src, const TextEnc& enc)
@@ -113,7 +104,30 @@ struct SQLWChar
         return psz != 0;
     }
 
+    void set(PyObject* src, const char* szEncoding) {
+        bytes.Attach(0);  // free old, if any
+        psz = 0;
+        isNone = true;
+
+        TextEnc enc;
+        enc.name = szEncoding;
+        enc.ctype = SQL_C_WCHAR;
+        enc.optenc = OPTENC_NONE;
+        init(src, enc);
+    }
+
+    SQLWCHAR* get() { return psz; }
+
+    operator SQLWCHAR*() { return psz; }
+
 private:
+    SQLWCHAR* psz;
+    bool isNone;
+
+    Object bytes;
+    // A temporary object holding the decoded bytes if we can't use a pointer into the original
+    // object.
+
     void init(PyObject* src, const TextEnc& enc);
 
     SQLWChar(const SQLWChar&) {}

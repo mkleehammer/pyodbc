@@ -1255,7 +1255,6 @@ PyMODINIT_FUNC PyInit_pyodbc()
     assert(null_binary != 0);        // must be initialized first
     PyModule_AddObject(module, "BinaryNull", null_binary);
 
-    PyModule_AddIntConstant(module, "UNICODE_SIZE", sizeof(Py_UNICODE));
     PyModule_AddIntConstant(module, "SQLWCHAR_SIZE", sizeof(SQLWCHAR));
 
     if (!PyErr_Occurred())

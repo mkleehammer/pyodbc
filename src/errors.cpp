@@ -101,9 +101,6 @@ PyObject* RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* for
 }
 
 
-#define PyUnicode_CompareWithASCIIString(lhs, rhs) _strcmpi(PyUnicode_AS_STRING(lhs), rhs)
-
-
 bool HasSqlState(PyObject* ex, const char* szSqlState)
 {
   // Returns true if `ex` is an exception and has the given SQLSTATE.  It is safe to pass 0 for

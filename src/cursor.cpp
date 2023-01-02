@@ -1466,10 +1466,10 @@ static PyObject* Cursor_columns(PyObject* self, PyObject* args, PyObject* kwargs
 
     Py_BEGIN_ALLOW_THREADS
     ret = SQLColumnsW(cur->hstmt,
-                      catalog.psz, SQL_NTS,
-                      schema.psz, SQL_NTS,
-                      table.psz, SQL_NTS,
-                      column.psz, SQL_NTS);
+                      catalog, SQL_NTS,
+                      schema, SQL_NTS,
+                      table, SQL_NTS,
+                      column, SQL_NTS);
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))
