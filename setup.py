@@ -94,9 +94,9 @@ def main():
 
         'ext_modules': [Extension('pyodbc', sorted(files), **settings)],
 
-        'package_dir': {'': 'src'},
         'packages': [''],
-        'package_data': {'': ["pyodbc.pyi"]},  # places pyodbc.pyi alongside pyodbc.py in site-packages
+        'package_dir': {'': 'src'},
+        'package_data': {'': ['pyodbc.pyi']},  # places pyodbc.pyi alongside pyodbc.{platform}.{pyd|so} in site-packages
 
         'license': 'MIT',
 
