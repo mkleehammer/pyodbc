@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, os, shlex, re
+import sys, os, re, shlex, sysconfig
 from os.path import exists, join, isdir, relpath, expanduser
 from pathlib import Path
 from inspect import cleandoc
@@ -83,7 +83,14 @@ def get_compiler_settings():
         'define_macros': [('PYODBC_VERSION', VERSION)]
     }
 
-    if os.name == 'nt':
+    if 'mingw' in sysconfig.get_platform():
+        # Windows mingw (note that os.name == 'nt' is True)
+        settings['extra_compile_args'].extend([
+            '-Wno-write-strings',
+        ])
+        settings['libraries'].append('odbc32')
+
+    elif os.name == 'nt':
         settings['extra_compile_args'].extend([
             '/Wall',
             '/wd4514',     # unreference inline function removed

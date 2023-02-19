@@ -303,6 +303,7 @@ static bool AllocateEnv()
     }
 
     SQLPOINTER defaultVersion = (SQLPOINTER)SQL_OV_ODBC3;
+    #ifdef SQL_OV_ODBC3_80
     PyObject* odbcversion = PyObject_GetAttrString(pModule, "odbcversion");
     if (PyObject_TypeCheck(odbcversion, &PyUnicode_Type)) {
         if (PyUnicode_CompareWithASCIIString(odbcversion, "3.8") == 0)
@@ -311,7 +312,7 @@ static bool AllocateEnv()
         }
     }
     Py_DECREF(odbcversion);
-    
+    #endif
     if (!SQL_SUCCEEDED(SQLSetEnvAttr(henv, SQL_ATTR_ODBC_VERSION, defaultVersion, sizeof(int))))
     {
         PyErr_SetString(PyExc_RuntimeError, "Unable to set SQL_ATTR_ODBC_VERSION attribute.");
