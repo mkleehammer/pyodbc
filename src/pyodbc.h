@@ -28,7 +28,8 @@ typedef long long INT64;
 typedef unsigned long long UINT64;
 #define _strcmpi strcasecmp
 #define _strdup strdup
-  inline int max(int lhs, int rhs) { return (rhs > lhs) ? rhs : lhs; }
+inline int max(int lhs, int rhs) { return (rhs > lhs) ? rhs : lhs; }
+inline int min(int lhs, int rhs) { return (rhs < lhs) ? rhs : lhs; }
 #endif
 
 #ifdef __SUN__
