@@ -72,7 +72,7 @@ jobs:
               {wheel}
 
           # Build choices - disable musl Linux and PyPy builds
-          CIBW_SKIP: "*-musllinux_* pp*"
+          CIBW_SKIP: "pp*"
 
       - name: Upload wheels
         uses: actions/upload-artifact@v3
