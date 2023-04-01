@@ -227,10 +227,14 @@ def get_compiler_settings(version_str):
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].append('-Wno-write-strings')
 
-        cflags = os.popen('odbc_config --cflags 2>/dev/null').read().strip()
+        fd = os.popen('odbc_config --cflags 2>/dev/null')
+        cflags = fd.read().strip()
+        fd.close()
         if cflags:
             settings['extra_compile_args'].extend(cflags.split())
-        ldflags = os.popen('odbc_config --libs 2>/dev/null').read().strip()
+        fd = os.popen('odbc_config --libs 2>/dev/null')
+        ldflags = fd.read().strip()
+        fd.close()
         if ldflags:
             settings['extra_link_args'].extend(ldflags.split())
 

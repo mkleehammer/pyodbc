@@ -256,129 +256,23 @@ static int Row_setattro(PyObject* o, PyObject *name, PyObject* v)
 }
 
 
-#if PY_MAJOR_VERSION < 3
 static PyObject* Row_repr(PyObject* o)
 {
+    // We want to return the same representation as a tuple.  The easiest way is to create a
+    // temporary tuple.  I do not consider this something normally used in high performance
+    // areas.
+
     Row* self = (Row*)o;
 
-    if (self->cValues == 0)
-        return PyString_FromString("()");
-
-    Object pieces(PyTuple_New(self->cValues));
-    if (!pieces)
+    Object tmp(PyTuple_New(self->cValues));
+    if (!tmp)
         return 0;
 
-    Py_ssize_t length = 2 + (2 * (self->cValues-1)); // parens + ', ' separators
-
     for (Py_ssize_t i = 0; i < self->cValues; i++)
-    {
-        PyObject* piece = PyObject_Repr(self->apValues[i]);
-        if (!piece)
-            return 0;
+        PyTuple_SET_ITEM(tmp.Get(), i, self->apValues[i]);
 
-        length += Text_Size(piece);
-
-        PyTuple_SET_ITEM(pieces.Get(), i, piece);
-    }
-
-    if (self->cValues == 1)
-    {
-        // Need a trailing comma: (value,)
-        length += 2;
-    }
-
-    PyObject* result = Text_New(length);
-    if (!result)
-        return 0;
-    TEXT_T* buffer = Text_Buffer(result);
-    Py_ssize_t offset = 0;
-    buffer[offset++] = '(';
-    for (Py_ssize_t i = 0; i < self->cValues; i++)
-    {
-        PyObject* item = PyTuple_GET_ITEM(pieces.Get(), i);
-        memcpy(&buffer[offset], Text_Buffer(item), Text_Size(item) * sizeof(TEXT_T));
-        offset += Text_Size(item);
-
-        if (i != self->cValues-1 || self->cValues == 1)
-        {
-            buffer[offset++] = ',';
-            buffer[offset++] = ' ';
-        }
-    }
-    buffer[offset++] = ')';
-
-    I(offset == length);
-
-    return result;
+    return PyObject_Repr(tmp);
 }
-#else // >= Python 3.3
-static PyObject* Row_repr(PyObject* o)
-{
-    Row* self = (Row*)o;
-
-    if (self->cValues == 0)
-        return PyUnicode_FromString("()");
-
-    Object pieces(PyTuple_New(self->cValues));
-    if (!pieces)
-        return 0;
-
-    Py_ssize_t length = 2 + (2 * (self->cValues-1)); // parens + ', ' separators
-    int result_kind = PyUnicode_1BYTE_KIND;
-
-    for (Py_ssize_t i = 0; i < self->cValues; i++)
-    {
-        PyObject* piece = PyObject_Repr(self->apValues[i]);
-        if (!piece)
-            return 0;
-
-        length += PyUnicode_GET_LENGTH(piece);
-        int kind = PyUnicode_KIND(piece);
-        if (result_kind < kind)
-            result_kind = kind;
-
-        PyTuple_SET_ITEM(pieces.Get(), i, piece);
-    }
-
-    if (self->cValues == 1)
-    {
-        // Need a trailing comma: (value,)
-        length += 2;
-    }
-    Py_UCS4 maxchar = 0x10ffff;
-    if (result_kind == PyUnicode_2BYTE_KIND)
-        maxchar = 0xffff;
-    else if (result_kind == PyUnicode_1BYTE_KIND)
-        maxchar = 0xff;
-    PyObject* result = PyUnicode_New(length, maxchar);
-    if (!result)
-        return 0;
-    Py_ssize_t offset = 0;
-    PyUnicode_WriteChar(result, offset++, (Py_UCS4)'(');
-    for (Py_ssize_t i = 0; i < self->cValues; i++)
-    {
-        PyObject* item = PyTuple_GET_ITEM(pieces.Get(), i);
-        Py_ssize_t count = PyUnicode_GET_LENGTH(item);
-        Py_ssize_t n = PyUnicode_CopyCharacters(result, offset, item, 0, count);
-        if (n < 0)
-            return 0;
-        offset += count;
-
-        if (i != self->cValues-1 || self->cValues == 1)
-        {
-            PyUnicode_WriteChar(result, offset++, (Py_UCS4)',');
-            PyUnicode_WriteChar(result, offset++, (Py_UCS4)' ');
-        }
-    }
-    PyUnicode_WriteChar(result, offset++, (Py_UCS4)')');
-    if (PyUnicode_READY(result) < 0)
-        return 0;
-
-    I(offset == length);
-
-    return result;
-}
-#endif
 
 static PyObject* Row_richcompare(PyObject* olhs, PyObject* orhs, int op)
 {
