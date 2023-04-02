@@ -10,6 +10,7 @@
 #include "connection.h"
 #include "errors.h"
 #include "dbspecific.h"
+#include "decimal.h"
 #include <time.h>
 #include <datetime.h>
 
@@ -381,86 +382,11 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
     }
 
-    Object result(TextBufferToObject(enc, pbData, cbData));
+    Object result(DecimalFromText(enc, pbData, cbData));
 
     pyodbc_free(pbData);
 
-    if (!result)
-        return 0;
-
-    // Remove non-digits and convert the databases decimal to a '.' (required by decimal ctor).
-    //
-    // We are assuming that the decimal point and digits fit within the size of ODBCCHAR.
-
-    // If Unicode, convert to UTF-8 and copy the digits and punctuation out.  Since these are
-    // all ASCII characters, we can ignore any multiple-byte characters.  Fortunately, if a
-    // character is multi-byte all bytes will have the high bit set.
-
-    char* pch;
-    Py_ssize_t cch;
-
-#if PY_MAJOR_VERSION >= 3
-    if (PyUnicode_Check(result))
-    {
-        pch = (char*)PyUnicode_AsUTF8AndSize(result, &cch);
-    }
-    else
-    {
-        int n = PyBytes_AsStringAndSize(result, &pch, &cch);
-        if (n < 0)
-            pch = 0;
-    }
-#else
-    Object encoded;
-    if (PyUnicode_Check(result))
-    {
-        encoded = PyUnicode_AsUTF8String(result);
-        if (!encoded)
-            return 0;
-        result = encoded.Detach();
-    }
-    int n = PyString_AsStringAndSize(result, &pch, &cch);
-    if (n < 0)
-        pch = 0;
-#endif
-
-    if (!pch)
-        return 0;
-
-    // TODO: Why is this limited to 100?  Also, can we perform a check on the original and use
-    // it as-is?
-    char ascii[100];
-    size_t asciilen = 0;
-
-    const char* pchMax = pch + cch;
-    while (pch < pchMax)
-    {
-        if ((*pch & 0x80) == 0)
-        {
-            if (*pch == chDecimal)
-            {
-                // Must force it to use '.' since the Decimal class doesn't pay attention to the locale.
-                ascii[asciilen++] = '.';
-            }
-            else if ((*pch >= '0' && *pch <= '9') || *pch == '-')
-            {
-                ascii[asciilen++] = (char)(*pch);
-            }
-        }
-        pch++;
-    }
-
-    ascii[asciilen] = 0;
-
-    Object str(PyString_FromStringAndSize(ascii, (Py_ssize_t)asciilen));
-    if (!str)
-        return 0;
-    PyObject* decimal_type = GetClassForThread("decimal", "Decimal");
-    if (!decimal_type)
-        return 0;
-    PyObject* decimal = PyObject_CallFunction(decimal_type, "O", str.Get());
-    Py_DECREF(decimal_type);
-    return decimal;
+    return result.Detach();
 }
 
 static PyObject* GetDataBit(Cursor* cur, Py_ssize_t iCol)

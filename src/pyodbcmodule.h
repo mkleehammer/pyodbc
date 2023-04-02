@@ -56,8 +56,6 @@ inline bool lowercase()
     return PyObject_GetAttrString(pModule, "lowercase") == Py_True;
 }
 
-extern Py_UNICODE chDecimal;
-
 bool UseNativeUUID();
 // Returns True if pyodbc.native_uuid is true, meaning uuid.UUID objects should be returned.
 

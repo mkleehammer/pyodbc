@@ -139,7 +139,7 @@ private:
 };
 
 
-PyObject* TextBufferToObject(const TextEnc& enc, void* p, Py_ssize_t len);
+PyObject* TextBufferToObject(const TextEnc& enc, const byte* p, Py_ssize_t len);
 // Convert a text buffer to a Python object using the given encoding.
 //
 // The buffer can be a SQLCHAR array or SQLWCHAR array.  The text encoding

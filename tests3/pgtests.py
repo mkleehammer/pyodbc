@@ -108,14 +108,14 @@ class PGTestCase(unittest.TestCase):
             # If we've already closed the cursor or connection, exceptions are thrown.
             pass
 
-    def _simpletest(datatype, value):
+    def _simpletest(datatype, inval):
         # A simple test that can be used for any data type where the Python
         # type we write is also what we expect to receive.
         def _t(self):
-            self.cursor.execute('create table t1(value %s)' % datatype)
-            self.cursor.execute('insert into t1 values (?)', value)
-            result = self.cursor.execute("select value from t1").fetchone()[0]
-            self.assertEqual(result, value)
+            self.cursor.execute('create table t1(inval %s)' % datatype)
+            self.cursor.execute('insert into t1 values (?)', inval)
+            outval = self.cursor.execute("select inval from t1").fetchone()[0]
+            self.assertEqual(outval, inval)
         return _t
 
     def test_drivers(self):
@@ -266,6 +266,11 @@ class PGTestCase(unittest.TestCase):
     for value in "-1234.56  -1  0  1  1234.56  123456789.21".split():
         name = value.replace('.', '_').replace('-', 'neg_')
         locals()['test_numeric_%s' % name] = _simpletest('numeric(20,6)', Decimal(value))
+
+    def test_large_decimal(self):
+        # Version 4.0.35 had a buffer overflow here.
+        self.cursor.execute("SELECT 991113333311111333331111133333111113333311111333337711133333111113333311111333331111133333881113333321341235123512351123.1231245123512341241234::decimal AS n")
+        self.cursor.fetchone()
 
     def test_small_decimal(self):
         value = Decimal('100010')       # (I use this because the ODBC docs tell us how the bytes should look in the C struct)
@@ -500,7 +505,7 @@ class PGTestCase(unittest.TestCase):
 
 
     def test_row_slicing(self):
-        self.cursor.execute("create table t1(a int, b int, c int, d int)");
+        self.cursor.execute("create table t1(a int, b int, c int, d int)")
         self.cursor.execute("insert into t1 values(1,2,3,4)")
 
         row = self.cursor.execute("select * from t1").fetchone()
