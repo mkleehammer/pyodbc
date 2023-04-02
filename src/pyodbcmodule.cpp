@@ -153,9 +153,6 @@ bool UseNativeUUID()
 
 HENV henv = SQL_NULL_HANDLE;
 
-char chDecimal = '.';
-
-
 PyObject* GetClassForThread(const char* szModule, const char* szClass)
 {
     // Returns the given class, specific to the current thread's interpreter.  For performance
@@ -247,32 +244,6 @@ bool IsInstanceForThread(PyObject* param, const char* szModule, const char* szCl
 
     // n == -1; an exception occurred
     return false;
-}
-
-
-// Initialize the global decimal character and thousands separator character, used when parsing decimal
-// objects.
-//
-static void init_locale_info()
-{
-    Object module(PyImport_ImportModule("locale"));
-    if (!module)
-    {
-        PyErr_Clear();
-        return;
-    }
-
-    Object ldict(PyObject_CallMethod(module, "localeconv", 0));
-    if (!ldict)
-    {
-        PyErr_Clear();
-        return;
-    }
-
-    PyObject* value = PyDict_GetItemString(ldict, "decimal_point");
-    if (value && PyUnicode_GET_SIZE(value) == 1) {
-      chDecimal = *(char*)PyUnicode_1BYTE_DATA(value);
-    }
 }
 
 
@@ -692,16 +663,17 @@ static PyObject* mod_setdecimalsep(PyObject* self, PyObject* args)
 {
     UNUSED(self);
 
+#if PY_MAJOR_VERSION >= 3
+    const char* type = "U";
+#else
+    const char* type = "S";
+#endif
+
     PyObject* p;
-    if (!PyArg_ParseTuple(args, "U", &p))
+    if (!PyArg_ParseTuple(args, type, &p))
         return 0;
     if (!SetDecimalPoint(p))
         return 0;
-    const char* sz;
-    if (PyArg_ParseTuple(args, "s", &sz))
-      return 0;
-
-    chDecimal = sz[0];
     Py_RETURN_NONE;
 }
 
@@ -1189,7 +1161,7 @@ PyMODINIT_FUNC PyInit_pyodbc()
     pModule = module.Get();
 
     if (!module || !import_types() || !CreateExceptions())
-        return 0;
+        return MODRETURN(0);
 
     const char* szVersion = TOSTRING(PYODBC_VERSION);
     PyModule_AddStringConstant(module, "version", (char*)szVersion);

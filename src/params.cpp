@@ -25,6 +25,7 @@ inline Connection* GetConnection(Cursor* cursor)
     return (Connection*)cursor->cnxn;
 }
 
+/*
 struct DAEParam
 {
     PyObject *cell;
@@ -495,6 +496,8 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
     *outbuf += sizeof(SQLLEN);
     return true;
 }
+
+*/
 
 static bool GetParamType(Cursor* cur, Py_ssize_t iParam, SQLSMALLINT& type);
 
@@ -1435,6 +1438,7 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
     return true;
 }
 
+/*
 bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
 {
     bool ret = true;
@@ -1758,6 +1762,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
     FreeParameterData(cur);
   return ret;
 }
+*/
 
 static bool GetParamType(Cursor* cur, Py_ssize_t index, SQLSMALLINT& type)
 {
