@@ -1,13 +1,8 @@
 from __future__ import annotations
 from typing import (
     Any, Callable, Dict, Final, Generator, Iterable, Iterator,
-    List, Optional, Sequence, Tuple, TypeAlias, Union,
+    List, Optional, Sequence, Tuple, Union,
 )
-
-# ref: https://peps.python.org/pep-0249/#description
-FieldDescription: TypeAlias = Tuple[str, Any, int, int, int, int, bool]
-RowDescription: TypeAlias = Tuple[FieldDescription]
-
 
 
 # SQLSetConnectAttr attributes
@@ -533,7 +528,7 @@ class Cursor:
         ...
 
     @property
-    def description(self) -> RowDescription:
+    def description(self) -> Tuple[Tuple[str, Any, int, int, int, int, bool]]:
         """The metadata for the columns returned in the last SQL SELECT statement, in
         the form of a list of tuples.  Each tuple contains seven fields:
 
@@ -544,6 +539,8 @@ class Cursor:
         4. precision
         5. scale
         6. nullable (True/False)
+
+        ref: https://peps.python.org/pep-0249/#description
         """
         ...
 
@@ -912,7 +909,7 @@ class Row:
     """
 
     @property
-    def cursor_description(self) -> RowDescription:
+    def cursor_description(self) -> Tuple[Tuple[str, Any, int, int, int, int, bool]]:
         """The metadata for the columns in this Row, as retrieved from the parent Cursor object."""
         ...
 
