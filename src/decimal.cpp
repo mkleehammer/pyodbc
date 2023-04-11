@@ -140,7 +140,7 @@ PyObject* DecimalFromText(const TextEnc& enc, const byte* pb, Py_ssize_t cb)
     if (!text)
         return 0;
 
-    Object cleaned = PyObject_CallMethod(pRegExpRemove, "sub", "sO", "", text.Get());
+    Object cleaned(PyObject_CallMethod(pRegExpRemove, "sub", "sO", "", text.Get()));
     if (!cleaned)
         return 0;
 
@@ -152,6 +152,5 @@ PyObject* DecimalFromText(const TextEnc& enc, const byte* pb, Py_ssize_t cb)
         cleaned.Attach(c2.Detach());
     }
 
-    PyObject* result = PyObject_CallFunctionObjArgs(decimal, cleaned.Get(), 0);
-    return result;
+    return PyObject_CallFunctionObjArgs(decimal, cleaned.Get(), 0);
 }
