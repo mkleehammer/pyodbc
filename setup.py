@@ -21,7 +21,7 @@ OFFICIAL_BUILD = 9999
 
 # This version identifier should refer to the NEXT release, not the
 # current one.  After each release, the version should be incremented.
-VERSION = '4.0.35'
+VERSION = '4.0.38'
 
 
 def _print(s):
