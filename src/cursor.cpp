@@ -458,6 +458,10 @@ static void Cursor_dealloc(Cursor* cursor)
     if (Cursor_Validate((PyObject*)cursor, CURSOR_REQUIRE_CNXN))
     {
         closeimpl(cursor);
+        if (PyErr_Occurred()) {
+            // We are in a Cursor destructor (__del__) and should not raise exceptions.
+            PyErr_Clear();
+        }
     }
     Py_XDECREF(cursor->inputsizes);
     PyObject_Del(cursor);
