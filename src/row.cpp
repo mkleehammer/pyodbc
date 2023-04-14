@@ -268,8 +268,10 @@ static PyObject* Row_repr(PyObject* o)
     if (!tmp)
         return 0;
 
-    for (Py_ssize_t i = 0; i < self->cValues; i++)
+    for (Py_ssize_t i = 0; i < self->cValues; i++) {
+        Py_INCREF(self->apValues[i]);
         PyTuple_SET_ITEM(tmp.Get(), i, self->apValues[i]);
+    }
 
     return PyObject_Repr(tmp);
 }
