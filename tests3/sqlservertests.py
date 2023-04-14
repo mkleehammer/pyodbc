@@ -1203,7 +1203,7 @@ class SqlServerTestCase(unittest.TestCase):
 
     def test_row_repr(self):
         self.cursor.execute("create table t1(a int, b int, c int, d varchar(50))");
-        self.cursor.execute("insert into t1 values(1,2,3,4)")
+        self.cursor.execute("insert into t1 values(1,2,3,'four')")
 
         row = self.cursor.execute("select * from t1").fetchone()
 
