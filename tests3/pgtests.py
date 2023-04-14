@@ -530,13 +530,13 @@ class PGTestCase(unittest.TestCase):
         self.assertRaises(pyodbc.Error, self.cnxn.execute, "insert into t1 values (1)")
 
     def test_row_repr(self):
-        self.cursor.execute("create table t1(a int, b int, c int, d int)")
-        self.cursor.execute("insert into t1 values(1,2,3,4)")
+        self.cursor.execute("create table t1(a int, b int, c int, d text)")
+        self.cursor.execute("insert into t1 values(1,2,3,'four')")
 
         row = self.cursor.execute("select * from t1").fetchone()
 
         result = str(row)
-        self.assertEqual(result, "(1, 2, 3, 4)")
+        self.assertEqual(result, "(1, 2, 3, 'four')")
 
         result = str(row[:-1])
         self.assertEqual(result, "(1, 2, 3)")
