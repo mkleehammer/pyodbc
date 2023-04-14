@@ -266,7 +266,7 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
     }
 
-    PyObject* result = StringFromBuffer(enc, pbData, cbData);
+    PyObject* result = TextBufferToObject(enc, pbData, cbData);
 
     PyMem_Free(pbData);
 
