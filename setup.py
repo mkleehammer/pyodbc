@@ -356,7 +356,10 @@ def _get_version_git():
         pass
     else:
         if result != 'master' and not re.match(r'^v\d+$', result):
-            name = name + '+' + result.replace('-', '')
+            result = result.replace('-', '')
+            if '/' in result:
+                result = result.replace('/', '_')
+            name = name + '+' + result
 
     return name, numbers
 
