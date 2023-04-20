@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 usage = """\
-usage: %prog [options] connection_string
+%(prog)s [options] connection_string
 
 Unit tests for PostgreSQL.  To use, pass a connection string as the parameter.
 The tests will create and drop tables t1 and t2 as necessary.
@@ -19,11 +19,17 @@ You can also put the connection string into a tmp/setup.cfg file like so:
 Note: Be sure to use the "Unicode" (not the "ANSI") version of the PostgreSQL ODBC driver.
 """
 
+import os
 import sys
 import uuid
 import unittest
 from decimal import Decimal
-from testutils import *
+
+if __name__ != '__main__':
+    import pyodbc
+
+import testutils
+
 
 _TESTSTR = '0123456789-abcdefghijklmnopqrstuvwxyz-'
 
@@ -59,9 +65,14 @@ class PGTestCase(unittest.TestCase):
     SMALL_BYTES  = bytes(SMALL_STRING, 'utf-8')
     LARGE_BYTES  = bytes(LARGE_STRING, 'utf-8')
 
-    def __init__(self, connection_string, ansi, method_name):
+    def __init__(self, method_name, connection_string=None, ansi=False):
         unittest.TestCase.__init__(self, method_name)
-        self.connection_string = connection_string
+        if connection_string is not None:
+            self.connection_string = connection_string
+        else:
+            # if the connection string cannot be provided directly here, it can be
+            # provided in an environment variable
+            self.connection_string = os.environ['PYODBC_CONN_STR']
         self.ansi = ansi
 
     def setUp(self):
@@ -97,14 +108,14 @@ class PGTestCase(unittest.TestCase):
             # If we've already closed the cursor or connection, exceptions are thrown.
             pass
 
-    def _simpletest(datatype, value):
+    def _simpletest(datatype, inval):
         # A simple test that can be used for any data type where the Python
         # type we write is also what we expect to receive.
         def _t(self):
-            self.cursor.execute('create table t1(value %s)' % datatype)
-            self.cursor.execute('insert into t1 values (?)', value)
-            result = self.cursor.execute("select value from t1").fetchone()[0]
-            self.assertEqual(result, value)
+            self.cursor.execute('create table t1(inval %s)' % datatype)
+            self.cursor.execute('insert into t1 values (?)', inval)
+            outval = self.cursor.execute("select inval from t1").fetchone()[0]
+            self.assertEqual(outval, inval)
         return _t
 
     def test_drivers(self):
@@ -255,6 +266,11 @@ class PGTestCase(unittest.TestCase):
     for value in "-1234.56  -1  0  1  1234.56  123456789.21".split():
         name = value.replace('.', '_').replace('-', 'neg_')
         locals()['test_numeric_%s' % name] = _simpletest('numeric(20,6)', Decimal(value))
+
+    def test_large_decimal(self):
+        # Version 4.0.35 had a buffer overflow here.
+        self.cursor.execute("SELECT 991113333311111333331111133333111113333311111333337711133333111113333311111333331111133333881113333321341235123512351123.1231245123512341241234::decimal AS n")
+        self.cursor.fetchone()
 
     def test_small_decimal(self):
         value = Decimal('100010')       # (I use this because the ODBC docs tell us how the bytes should look in the C struct)
@@ -489,7 +505,7 @@ class PGTestCase(unittest.TestCase):
 
 
     def test_row_slicing(self):
-        self.cursor.execute("create table t1(a int, b int, c int, d int)");
+        self.cursor.execute("create table t1(a int, b int, c int, d int)")
         self.cursor.execute("insert into t1 values(1,2,3,4)")
 
         row = self.cursor.execute("select * from t1").fetchone()
@@ -514,13 +530,13 @@ class PGTestCase(unittest.TestCase):
         self.assertRaises(pyodbc.Error, self.cnxn.execute, "insert into t1 values (1)")
 
     def test_row_repr(self):
-        self.cursor.execute("create table t1(a int, b int, c int, d int)")
-        self.cursor.execute("insert into t1 values(1,2,3,4)")
+        self.cursor.execute("create table t1(a int, b int, c int, d text)")
+        self.cursor.execute("insert into t1 values(1,2,3,'four')")
 
         row = self.cursor.execute("select * from t1").fetchone()
 
         result = str(row)
-        self.assertEqual(result, "(1, 2, 3, 4)")
+        self.assertEqual(result, "(1, 2, 3, 'four')")
 
         result = str(row[:-1])
         self.assertEqual(result, "(1, 2, 3)")
@@ -707,56 +723,73 @@ class PGTestCase(unittest.TestCase):
         self.assertEqual(value, '123.45')
 
 def main():
-    from optparse import OptionParser
-    parser = OptionParser(usage="usage: %prog [options] connection_string")
-    parser.add_option("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
-    parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
-    parser.add_option("-t", "--test", help="Run only the named test")
-    parser.add_option('-a', '--ansi', help='ANSI only', default=False, action='store_true')
+    from argparse import ArgumentParser
+    parser = ArgumentParser(usage=usage)
+    parser.add_argument("-v", "--verbose", action="count", default=0, help="increment test verbosity (can be used multiple times)")
+    parser.add_argument("-d", "--debug", action="store_true", default=False, help="print debugging items")
+    parser.add_argument("-t", "--test", help="run only the named test")
+    parser.add_argument("-a", "--ansi", action="store_true", default=False, help="ANSI only")
+    parser.add_argument("--postgresql", nargs='*', help="connection string(s) for PostgreSQL")
+    # typically, the connection string is provided as the only parameter, so handle this case
+    parser.add_argument('conn_str', nargs='*', help="connection string for PostgreSQL")
+    args = parser.parse_args()
 
-    (options, args) = parser.parse_args()
-
-    if len(args) > 1:
+    if len(args.conn_str) > 1:
         parser.error('Only one argument is allowed.  Do you need quotes around the connection string?')
 
-    if not args:
-        connection_string = load_setup_connection_string('pgtests')
-
-        if not connection_string:
-            parser.print_help()
-            raise SystemExit()
+    if args.postgresql is not None:
+        connection_strings = args.postgresql
+    elif len(args.conn_str) == 1 and args.conn_str[0]:
+        connection_strings = [args.conn_str[0]]
     else:
-        connection_string = args[0]
+        config_conn_string = testutils.load_setup_connection_string('pgtests')
+        if config_conn_string is None:
+            parser.print_help()
+            return True  # no connection string, therefore nothing to do
+        else:
+            connection_strings = [config_conn_string]
 
-    if options.verbose:
-        cnxn = pyodbc.connect(connection_string, ansi=options.ansi)
-        print_library_info(cnxn)
+    if args.verbose:
+        cnxn = pyodbc.connect(connection_strings[0], ansi=args.ansi)
+        testutils.print_library_info(cnxn)
         cnxn.close()
 
-    if options.test:
-        # Run a single test
-        if not options.test.startswith('test_'):
-            options.test = 'test_%s' % (options.test)
+    overall_result = True
+    for connection_string in connection_strings:
+        print(f'Running tests with connection string: {connection_string}')
 
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, options.test) ])
-    else:
-        # Run all tests in the class
+        if args.test:
+            # Run a single test
+            if not args.test.startswith('test_'):
+                args.test = 'test_%s' % (args.test)
 
-        methods = [ m for m in dir(PGTestCase) if m.startswith('test_') ]
-        methods.sort()
-        s = unittest.TestSuite([ PGTestCase(connection_string, options.ansi, m) for m in methods ])
+            suite = unittest.TestSuite([
+                PGTestCase(method_name=args.test, connection_string=connection_string, ansi=args.ansi)
+            ])
+        else:
+            # Run all tests in the class
+            methods = [ m for m in dir(PGTestCase) if m.startswith('test_') ]
+            methods.sort()
+            suite = unittest.TestSuite([
+                PGTestCase( method_name=m, connection_string=connection_string, ansi=args.ansi) for m in methods
+            ])
 
-    testRunner = unittest.TextTestRunner(verbosity=options.verbose)
-    result = testRunner.run(s)
+        testRunner = unittest.TextTestRunner(verbosity=args.verbose)
+        result = testRunner.run(suite)
+        if not result.wasSuccessful():
+            overall_result = False
 
-    return result
+    return overall_result
 
 
 if __name__ == '__main__':
 
-    # Add the build directory to the path so we're testing the latest build, not the installed version.
+    # add the build directory to the Python path so we're testing the latest
+    # build, not the pip-installed version
+    testutils.add_to_path()
 
-    add_to_path()
-
+    # only after setting the Python path, import the pyodbc module
     import pyodbc
-    sys.exit(0 if main().wasSuccessful() else 1)
+
+    # run the tests
+    sys.exit(0 if main() else 1)

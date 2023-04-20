@@ -20,6 +20,7 @@
 #include "cnxninfo.h"
 #include "params.h"
 #include "dbspecific.h"
+#include "decimal.h"
 #include <datetime.h>
 
 #include <time.h>
@@ -152,9 +153,6 @@ bool UseNativeUUID()
 
 HENV henv = SQL_NULL_HANDLE;
 
-Py_UNICODE chDecimal = '.';
-
-
 PyObject* GetClassForThread(const char* szModule, const char* szClass)
 {
     // Returns the given class, specific to the current thread's interpreter.  For performance
@@ -249,36 +247,6 @@ bool IsInstanceForThread(PyObject* param, const char* szModule, const char* szCl
 }
 
 
-// Initialize the global decimal character and thousands separator character, used when parsing decimal
-// objects.
-//
-static void init_locale_info()
-{
-    Object module(PyImport_ImportModule("locale"));
-    if (!module)
-    {
-        PyErr_Clear();
-        return;
-    }
-
-    Object ldict(PyObject_CallMethod(module, "localeconv", 0));
-    if (!ldict)
-    {
-        PyErr_Clear();
-        return;
-    }
-
-    PyObject* value = PyDict_GetItemString(ldict, "decimal_point");
-    if (value)
-    {
-        if (PyBytes_Check(value) && PyBytes_Size(value) == 1)
-            chDecimal = (Py_UNICODE)PyBytes_AS_STRING(value)[0];
-        if (PyUnicode_Check(value) && PyUnicode_GET_SIZE(value) == 1)
-            chDecimal = PyUnicode_AS_UNICODE(value)[0];
-    }
-}
-
-
 static bool import_types()
 {
     // Note: We can only import types from C extensions since they are shared among all
@@ -299,6 +267,8 @@ static bool import_types()
         return false;
     GetData_init();
     if (!Params_init())
+        return false;
+    if (!InitializeDecimal())
         return false;
 
     return true;
@@ -708,24 +678,25 @@ static PyObject* mod_timestampfromticks(PyObject* self, PyObject* args)
 static PyObject* mod_setdecimalsep(PyObject* self, PyObject* args)
 {
     UNUSED(self);
-    if (!PyString_Check(PyTuple_GET_ITEM(args, 0)) && !PyUnicode_Check(PyTuple_GET_ITEM(args, 0)))
-        return PyErr_Format(PyExc_TypeError, "argument 1 must be a string or unicode object");
 
-    PyObject* value = PyUnicode_FromObject(PyTuple_GetItem(args, 0));
-    if (value)
-    {
-        if (PyBytes_Check(value) && PyBytes_Size(value) == 1)
-            chDecimal = (Py_UNICODE)PyBytes_AS_STRING(value)[0];
-        if (PyUnicode_Check(value) && PyUnicode_GET_SIZE(value) == 1)
-            chDecimal = PyUnicode_AS_UNICODE(value)[0];
-    }
+#if PY_MAJOR_VERSION >= 3
+    const char* type = "U";
+#else
+    const char* type = "S";
+#endif
+
+    PyObject* p;
+    if (!PyArg_ParseTuple(args, type, &p))
+        return 0;
+    if (!SetDecimalPoint(p))
+        return 0;
     Py_RETURN_NONE;
 }
 
 static PyObject* mod_getdecimalsep(PyObject* self)
 {
     UNUSED(self);
-    return PyUnicode_FromUnicode(&chDecimal, 1);
+    return GetDecimalPoint();
 }
 
 static char connect_doc[] =
@@ -1245,8 +1216,6 @@ initpyodbc(void)
     if (!module || !import_types() || !CreateExceptions())
         return MODRETURN(0);
 
-    init_locale_info();
-
     const char* szVersion = TOSTRING(PYODBC_VERSION);
     PyModule_AddStringConstant(module, "version", (char*)szVersion);
 
@@ -1327,7 +1296,6 @@ BOOL WINAPI DllMain(
 }
 #endif
 
-
 static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
 {
     // Creates a connection string from an optional existing connection string plus a dictionary of keyword value
@@ -1344,13 +1312,13 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
 
     I(PyUnicode_Check(existing));
 
-    Py_ssize_t length = 0;      // length in *characters*
-    if (existing)
-        length = Text_Size(existing) + 1; // + 1 to add a trailing semicolon
-
     Py_ssize_t pos = 0;
     PyObject* key = 0;
     PyObject* value = 0;
+    Py_ssize_t length = 0;      // length in *characters*
+#if PY_MAJOR_VERSION < 3
+    if (existing)
+        length = Text_Size(existing) + 1; // + 1 to add a trailing semicolon
 
     while (PyDict_Next(parts, &pos, &key, &value))
     {
@@ -1379,7 +1347,66 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
         offset += TextCopyToUnicode(&buffer[offset], value);
         buffer[offset++] = (Py_UNICODE)';';
     }
+#else // >= Python 3.3
+    int result_kind = PyUnicode_1BYTE_KIND;
+    if (existing) {
+        length = PyUnicode_GET_LENGTH(existing) + 1; // + 1 to add a trailing semicolon
+        int kind = PyUnicode_KIND(existing);
+        if (result_kind < kind)
+            result_kind = kind;
+    }
 
+    while (PyDict_Next(parts, &pos, &key, &value))
+    {
+        // key=value;
+        length += PyUnicode_GET_LENGTH(key) + 1;
+        length += PyUnicode_GET_LENGTH(value) + 1;
+        int kind = PyUnicode_KIND(key);
+        if (result_kind < kind)
+            result_kind = kind;
+        kind = PyUnicode_KIND(value);
+        if (result_kind < kind)
+            result_kind = kind;
+    }
+
+    Py_UCS4 maxchar = 0x10ffff;
+    if (result_kind == PyUnicode_2BYTE_KIND)
+        maxchar = 0xffff;
+    else if (result_kind == PyUnicode_1BYTE_KIND)
+        maxchar = 0xff;
+    PyObject* result = PyUnicode_New(length, maxchar);
+    if (!result)
+        return 0;
+
+    Py_ssize_t offset = 0;
+    if (existing)
+    {
+        Py_ssize_t count = PyUnicode_GET_LENGTH(existing);
+        Py_ssize_t n = PyUnicode_CopyCharacters(result, offset, existing, 0,
+                                                count);
+        if (n < 0)
+            return 0;
+        offset += count;
+        PyUnicode_WriteChar(result, offset++, (Py_UCS4)';');
+    }
+
+    pos = 0;
+    while (PyDict_Next(parts, &pos, &key, &value))
+    {
+        Py_ssize_t count = PyUnicode_GET_LENGTH(key);
+        Py_ssize_t n = PyUnicode_CopyCharacters(result, offset, key, 0, count);
+        if (n < 0)
+            return 0;
+        offset += count;
+        PyUnicode_WriteChar(result, offset++, (Py_UCS4)'=');
+        count = PyUnicode_GET_LENGTH(value);
+        n = PyUnicode_CopyCharacters(result, offset, value, 0, count);
+        if (n < 0)
+            return 0;
+        offset += count;
+        PyUnicode_WriteChar(result, offset++, (Py_UCS4)';');
+    }
+#endif
     I(offset == length);
 
     return result;

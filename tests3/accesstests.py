@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 usage="""\
-usage: %prog [options] filename
+%(prog)s [options] filename
 
 Unit tests for Microsoft Access
 
@@ -591,9 +591,9 @@ class AccessTestCase(unittest.TestCase):
 def main():
     from argparse import ArgumentParser
     parser = ArgumentParser(usage=usage)
-    parser.add_argument("-v", "--verbose", default=0, action="count", help="Increment test verbosity (can be used multiple times)")
-    parser.add_argument("-d", "--debug", action="store_true", default=False, help="Print debugging items")
-    parser.add_argument("-t", "--test", help="Run only the named test")
+    parser.add_argument("-v", "--verbose", action="count", default=0, help="increment test verbosity (can be used multiple times)")
+    parser.add_argument("-d", "--debug", action="store_true", default=False, help="print debugging items")
+    parser.add_argument("-t", "--test", help="run only the named test")
     parser.add_argument('type', choices=['accdb', 'mdb'], help='Which type of file to test')
 
     args = parser.parse_args()

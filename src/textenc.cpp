@@ -148,7 +148,7 @@ PyObject* EncodeStr(PyObject* str, const TextEnc& enc)
 }
 #endif
 
-PyObject* TextBufferToObject(const TextEnc& enc, void* pbData, Py_ssize_t cbData)
+PyObject* TextBufferToObject(const TextEnc& enc, const byte* pbData, Py_ssize_t cbData)
 {
     // cbData
     //   The length of data in bytes (cb == 'count of bytes').

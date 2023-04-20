@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, os, re
+import sys, os, re, shlex
 from os.path import exists, abspath, dirname, join, isdir, relpath, expanduser
 
 try:
@@ -18,6 +18,10 @@ else:
     from ConfigParser import ConfigParser
 
 OFFICIAL_BUILD = 9999
+
+# This version identifier should refer to the NEXT release, not the
+# current one.  After each release, the version should be incremented.
+VERSION = '4.0.39'
 
 
 def _print(s):
@@ -90,9 +94,9 @@ def main():
 
         'ext_modules': [Extension('pyodbc', sorted(files), **settings)],
 
-        'data_files': [
-            ('', ['src/pyodbc.pyi'])  # places pyodbc.pyi alongside pyodbc.py in site-packages
-        ],
+        'packages': [''],
+        'package_dir': {'': 'src'},
+        'package_data': {'': ['pyodbc.pyi']},  # places pyodbc.pyi alongside pyodbc.{platform}.{pyd|so} in site-packages
 
         'license': 'MIT',
 
@@ -113,6 +117,7 @@ def main():
                        'Programming Language :: Python :: 3.8',
                        'Programming Language :: Python :: 3.9',
                        'Programming Language :: Python :: 3.10',
+                       'Programming Language :: Python :: 3.11',
                        'Topic :: Database',
                        ],
 
@@ -189,38 +194,47 @@ def get_compiler_settings(version_str):
         settings['libraries'].append('odbc32')
 
     elif sys.platform == 'darwin':
-        # The latest versions of OS X no longer ship with iodbc.  Assume
-        # unixODBC for now.
-        settings['libraries'].append('odbc')
-
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].extend([
             '-Wno-write-strings',
             '-Wno-deprecated-declarations'
         ])
 
-        # Apple has decided they won't maintain the iODBC system in OS/X and has added
-        # deprecation warnings in 10.8.  For now target 10.7 to eliminate the warnings.
-        settings['define_macros'].append(('MAC_OS_X_VERSION_10_7',))
+        # Homebrew installs odbc_config
+        pipe = os.popen('odbc_config --cflags --libs 2>/dev/null')
+        cflags, ldflags = pipe.readlines()
+        exit_status = pipe.close()
 
-        # Add directories for MacPorts and Homebrew.
-        dirs = ['/usr/local/include', '/opt/local/include', expanduser('~/homebrew/include')]
-        settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
-
-        # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
-        # ( also OS/X since El Capitan prevents /usr/lib from being accessed )
-        settings['library_dirs'] = ['/usr/local/lib']
-
+        if exit_status is None:
+            settings['extra_compile_args'].extend(shlex.split(cflags))
+            settings['extra_link_args'].extend(shlex.split(ldflags))
+        else:
+            settings['libraries'].append('odbc')
+            # Add directories for MacPorts and Homebrew.
+            dirs = [
+                '/usr/local/include',
+                '/opt/local/include',
+                '/opt/homebrew/include',
+                expanduser('~/homebrew/include'),
+            ]
+            settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
+            # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
+            # ( also OS/X since El Capitan prevents /usr/lib from being accessed )
+            settings['library_dirs'] = ['/usr/local/lib', '/opt/homebrew/lib']
     else:
         # Other posix-like: Linux, Solaris, etc.
 
         # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
         settings['extra_compile_args'].append('-Wno-write-strings')
 
-        cflags = os.popen('odbc_config --cflags 2>/dev/null').read().strip()
+        fd = os.popen('odbc_config --cflags 2>/dev/null')
+        cflags = fd.read().strip()
+        fd.close()
         if cflags:
             settings['extra_compile_args'].extend(cflags.split())
-        ldflags = os.popen('odbc_config --libs 2>/dev/null').read().strip()
+        fd = os.popen('odbc_config --libs 2>/dev/null')
+        ldflags = fd.read().strip()
+        fd.close()
         if ldflags:
             settings['extra_link_args'].extend(ldflags.split())
 
@@ -264,6 +278,16 @@ def get_version():
     name    = None              # branch/feature name.  Should be None for official builds.
     numbers = None              # The 4 integers that make up the version.
 
+    # If we are in the CICD pipeline, use the VERSION.  There is no tagging information available
+    # because Github Actions fetches the repo with the options --no-tags and --depth=1.
+
+    # CI providers (Github Actions / Travis / CircleCI / AppVeyor / etc.) typically set CI to "true", but
+    # in cibuildwheel linux containers, the usual CI env vars are not available, only CIBUILDWHEEL.
+    if os.getenv('CI', 'false').lower() == 'true' or 'CIBUILDWHEEL' in os.environ:
+        name = VERSION
+        numbers = [int(p) for p in VERSION.split('.')]
+        return name, numbers
+
     # If this is a source release the version will have already been assigned and be in the PKG-INFO file.
 
     name, numbers = _get_version_pkginfo()
@@ -296,11 +320,16 @@ def _get_version_pkginfo():
 
 
 def _get_version_git():
+    """
+    If this is a git repo, returns the version as text and the version as a list of 4 subparts:
+    ("4.0.33", [4, 0, 33, 9999]).
+
+    If this is not a git repo, (None, None) is returned.
+    """
     n, result = getoutput("git describe --tags --match [0-9]*")
     if n:
         _print('WARNING: git describe failed with: %s %s' % (n, result))
         return None, None
-
     match = re.match(r'(\d+).(\d+).(\d+) (?: -(\d+)-g[0-9a-z]+)?', result, re.VERBOSE)
     if not match:
         return None, None
@@ -316,15 +345,20 @@ def _get_version_git():
     n, result = getoutput('git rev-parse --abbrev-ref HEAD')
 
     if result == 'HEAD':
-        # We are not on a branch, so use the last revision instead
-        n, result = getoutput('git rev-parse --short HEAD')
-        name = name + '+commit' + result
+        # We are not on a branch.  In the past we would add "+commitHHHH" to it, but this
+        # interferes with the CI system which checks out by tag name.  The goal of the version
+        # numbers is to be reproducible, so we may want to put this back if we detect the
+        # current commit is not on the master branch.
+
+        #  n, result = getoutput('git rev-parse --short HEAD')
+        #  name = name + '+commit' + result
+
+        pass
     else:
         if result != 'master' and not re.match(r'^v\d+$', result):
             name = name + '+' + result.replace('-', '')
 
     return name, numbers
-
 
 
 def getoutput(cmd):

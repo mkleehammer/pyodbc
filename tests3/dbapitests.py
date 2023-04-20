@@ -7,13 +7,15 @@ def main():
     add_to_path()
     import pyodbc
 
-    from optparse import OptionParser
-    parser = OptionParser(usage="usage: %prog [options] connection_string")
-    parser.add_option("-v", "--verbose", action="count", help="Increment test verbosity (can be used multiple times)")
-    parser.add_option("-d", "--debug", action="store_true", default=False, help="Print debugging items")
+    from argparse import ArgumentParser
+    parser = ArgumentParser(usage="%(prog)s [options] connection_string")
+    parser.add_argument("-v", "--verbose", action="count", help="increment test verbosity (can be used multiple times)")
+    parser.add_argument("-d", "--debug", action="store_true", default=False, help="print debugging items")
+    parser.add_argument("conn_str", nargs="*", help="database connection string")
 
-    (options, args) = parser.parse_args()
-    if len(args) > 1:
+    args = parser.parse_args()
+
+    if len(args.conn_str) > 1:
         parser.error('Only one argument is allowed.  Do you need quotes around the connection string?')
 
     if not args:
@@ -23,7 +25,7 @@ def main():
             parser.print_help()
             raise SystemExit()
     else:
-        connection_string = args[0]
+        connection_string = args.conn_str[0]
 
     class test_pyodbc(dbapi20.DatabaseAPI20Test):
         driver = pyodbc
@@ -35,7 +37,7 @@ def main():
         def test_ExceptionsAsConnectionAttributes(self): pass
     
     suite = unittest.makeSuite(test_pyodbc, 'test')
-    testRunner = unittest.TextTestRunner(verbosity=(options.verbose > 1) and 9 or 0)
+    testRunner = unittest.TextTestRunner(verbosity=(args.verbose > 1) and 9 or 0)
     result = testRunner.run(suite)
 
     return result

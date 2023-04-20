@@ -258,59 +258,23 @@ static int Row_setattro(PyObject* o, PyObject *name, PyObject* v)
 
 static PyObject* Row_repr(PyObject* o)
 {
+    // We want to return the same representation as a tuple.  The easiest way is to create a
+    // temporary tuple.  I do not consider this something normally used in high performance
+    // areas.
+
     Row* self = (Row*)o;
 
-    if (self->cValues == 0)
-        return PyString_FromString("()");
-
-    Object pieces(PyTuple_New(self->cValues));
-    if (!pieces)
+    Object tmp(PyTuple_New(self->cValues));
+    if (!tmp)
         return 0;
 
-    Py_ssize_t length = 2 + (2 * (self->cValues-1)); // parens + ', ' separators
-
-    for (Py_ssize_t i = 0; i < self->cValues; i++)
-    {
-        PyObject* piece = PyObject_Repr(self->apValues[i]);
-        if (!piece)
-            return 0;
-
-        length += Text_Size(piece);
-
-        PyTuple_SET_ITEM(pieces.Get(), i, piece);
+    for (Py_ssize_t i = 0; i < self->cValues; i++) {
+        Py_INCREF(self->apValues[i]);
+        PyTuple_SET_ITEM(tmp.Get(), i, self->apValues[i]);
     }
 
-    if (self->cValues == 1)
-    {
-        // Need a trailing comma: (value,)
-        length += 2;
-    }
-
-    PyObject* result = Text_New(length);
-    if (!result)
-        return 0;
-    TEXT_T* buffer = Text_Buffer(result);
-    Py_ssize_t offset = 0;
-    buffer[offset++] = '(';
-    for (Py_ssize_t i = 0; i < self->cValues; i++)
-    {
-        PyObject* item = PyTuple_GET_ITEM(pieces.Get(), i);
-        memcpy(&buffer[offset], Text_Buffer(item), Text_Size(item) * sizeof(TEXT_T));
-        offset += Text_Size(item);
-
-        if (i != self->cValues-1 || self->cValues == 1)
-        {
-            buffer[offset++] = ',';
-            buffer[offset++] = ' ';
-        }
-    }
-    buffer[offset++] = ')';
-
-    I(offset == length);
-
-    return result;
+    return PyObject_Repr(tmp);
 }
-
 
 static PyObject* Row_richcompare(PyObject* olhs, PyObject* orhs, int op)
 {
