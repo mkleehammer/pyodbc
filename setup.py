@@ -217,6 +217,9 @@ def get_compiler_settings(version_str):
                 '/opt/homebrew/include',
                 expanduser('~/homebrew/include'),
             ]
+            _HOMEBREW_PREFIX = os.environ.get('HOMEBREW_PREFIX')
+            if _HOMEBREW_PREFIX is not None:
+                dirs.insert(0, os.path.join(_HOMEBREW_PREFIX, 'include'))
             settings['include_dirs'].extend(dir for dir in dirs if isdir(dir))
             # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
             # ( also OS/X since El Capitan prevents /usr/lib from being accessed )
