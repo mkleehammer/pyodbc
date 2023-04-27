@@ -224,6 +224,8 @@ def get_compiler_settings(version_str):
             # unixODBC make/install places libodbc.dylib in /usr/local/lib/ by default
             # ( also OS/X since El Capitan prevents /usr/lib from being accessed )
             settings['library_dirs'] = ['/usr/local/lib', '/opt/homebrew/lib']
+            if _HOMEBREW_PREFIX is not None:
+                settings['library_dirs'].insert(1, os.path.join(_HOMEBREW_PREFIX, 'lib'))
     else:
         # Other posix-like: Linux, Solaris, etc.
 
