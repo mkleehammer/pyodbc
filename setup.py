@@ -154,12 +154,12 @@ def get_compiler_settings():
         if ldflags:
             settings['extra_link_args'].extend(ldflags.split())
 
-        from array import array
-        UNICODE_WIDTH = array('u').itemsize
-#        if UNICODE_WIDTH == 4:
-#            # This makes UnixODBC use UCS-4 instead of UCS-2, which works better with sizeof(wchar_t)==4.
-#            # Thanks to Marc-Antoine Parent
-#            settings['define_macros'].append(('SQL_WCHART_CONVERT', '1'))
+        #  from array import array
+        #  UNICODE_WIDTH = array('u').itemsize
+        #        if UNICODE_WIDTH == 4:
+        #            # This makes UnixODBC use UCS-4 instead of UCS-2, which works better with sizeof(wchar_t)==4.
+        #            # Thanks to Marc-Antoine Parent
+        #            settings['define_macros'].append(('SQL_WCHART_CONVERT', '1'))
 
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
         settings['libraries'].append('odbc')
