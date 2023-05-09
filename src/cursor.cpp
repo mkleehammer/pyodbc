@@ -1063,13 +1063,13 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
             PyErr_SetString(ProgrammingError, "The second parameter to executemany must not be empty.");
             return 0;
         }
-        if (cursor->fastexecmany)
-        {
-            free_results(cursor, FREE_STATEMENT | KEEP_PREPARED);
-            if (!ExecuteMulti(cursor, pSql, param_seq))
-                return 0;
-        }
-        else
+        //  if (cursor->fastexecmany)
+        //  {
+        //      free_results(cursor, FREE_STATEMENT | KEEP_PREPARED);
+        //      if (!ExecuteMulti(cursor, pSql, param_seq))
+        //          return 0;
+        //  }
+        //  else
         {
             for (Py_ssize_t i = 0; i < c; i++)
             {

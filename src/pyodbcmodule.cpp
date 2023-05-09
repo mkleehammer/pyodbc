@@ -1161,7 +1161,7 @@ PyMODINIT_FUNC PyInit_pyodbc()
     pModule = module.Get();
 
     if (!module || !import_types() || !CreateExceptions())
-        return MODRETURN(0);
+        return 0;
 
     const char* szVersion = TOSTRING(PYODBC_VERSION);
     PyModule_AddStringConstant(module, "version", (char*)szVersion);
