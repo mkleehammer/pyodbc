@@ -955,16 +955,15 @@ static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
 // TVP
 static bool GetTableInfo(Cursor *cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
 {
-    if (!PyIter_Check(param))
-    {
-        PyErr_SetString(PyExc_ValueError, "The given sequence was empty.");
-        return false;
-    }
     int nskip = 0;
     Py_ssize_t nrows = PySequence_Size(param);
     if (nrows > 0)
     {
         PyObject *cell0 = PySequence_GetItem(param, 0);
+        if (cell0 == NULL)
+        {
+          return false;
+        }
         Py_XDECREF(cell0);
         if (PyBytes_Check(cell0) || PyUnicode_Check(cell0))
         {
