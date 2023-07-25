@@ -1439,6 +1439,29 @@ class SqlServerTestCase(unittest.TestCase):
             self.cursor.fetchall()
         self.assertEqual(self.cursor.messages, [])
 
+    def test_cursor_messages_with_trigger(self):
+        self.cursor.execute("DROP TABLE IF EXISTS t1")
+        self.cursor.execute("CREATE TABLE t1(id INT IDENTITY PRIMARY KEY, name NVARCHAR(255) NULL)")
+        self.cursor.execute("""
+            CREATE TRIGGER [dbo].[trg_t1] ON t1
+            AFTER INSERT
+            AS
+            BEGIN
+                SET NOCOUNT ON;
+                PRINT 'ABC';
+            END
+        """)
+        self.cursor.execute("INSERT INTO t1(name) SELECT NEWID()")
+        messages = self.cursor.messages
+        self.assertTrue(type(messages) is list)
+        self.assertEqual(len(messages), 1)
+        self.assertTrue(type(messages[0]) is tuple)
+        self.assertEqual(len(messages[0]), 2)
+        self.assertTrue(type(messages[0][0]) is str)
+        self.assertTrue(type(messages[0][1]) is str)
+        self.assertEqual('[01000] (0)', messages[0][0])
+        self.assertTrue(messages[0][1].endswith('ABC'))
+
     def test_none_param(self):
         "Ensure None can be used for params other than the first"
         # Some driver/db versions would fail if NULL was not the first parameter because SQLDescribeParam (only used
