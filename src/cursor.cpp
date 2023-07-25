@@ -580,9 +580,7 @@ static bool PrepareResults(Cursor* cur, int cCols)
 
 static int GetDiagRecs(Cursor* cur)
 {
-    // Retrieves all diagnostic records from the cursor and assigns them to the "messages" attribute.
-
-    PyObject* msg_list;  // the "messages" as a Python list of diagnostic records
+    // Retrieves all diagnostic records from the cursor and adds them to the "messages" attribute.
 
     SQLSMALLINT iRecNumber = 1;  // the index of the diagnostic records (1-based)
     ODBCCHAR    cSQLState[6];  // five-character SQLSTATE code (plus terminating NULL)
@@ -599,9 +597,12 @@ static int GetDiagRecs(Cursor* cur)
       return 0;
     }
 
-    msg_list = PyList_New(0);
-    if (!msg_list)
-        return 0;
+    // just in case the "messages" attributes isn't a list (i.e. empty or null)
+    if (!cur->messages || !PyList_Check(cur->messages))
+    {
+        Py_XDECREF(cur->messages);
+        cur->messages = PyList_New(0);
+    }
 
     for (;;)
     {
@@ -660,7 +661,7 @@ static int GetDiagRecs(Cursor* cur)
             PyTuple_SetItem(msg_tuple, 0, msg_class);  // msg_tuple now owns the msg_class reference
             PyTuple_SetItem(msg_tuple, 1, msg_value);  // msg_tuple now owns the msg_value reference
 
-            PyList_Append(msg_list, msg_tuple);
+            PyList_Append(cur->messages, msg_tuple);
             Py_XDECREF(msg_tuple);  // whether PyList_Append succeeds or not
         }
         else
@@ -673,9 +674,6 @@ static int GetDiagRecs(Cursor* cur)
         iRecNumber++;
     }
     pyodbc_free(cMessageText);
-
-    Py_XDECREF(cur->messages);
-    cur->messages = msg_list;  // cur->messages now owns the msg_list reference
 
     return 0;
 }
@@ -777,6 +775,17 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         return RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
     }
 
+    // Populate the cursor's "messages" attribute with any diagnostic messages.
+    // ref: https://learn.microsoft.com/en-us/sql/odbc/reference/develop-app/return-codes-odbc
+    if (ret == SQL_SUCCESS_WITH_INFO ||
+        ret == SQL_ERROR ||
+        ret == SQL_NO_DATA ||
+        ret == SQL_NEED_DATA ||
+        ret == SQL_STILL_EXECUTING)
+    {
+        GetDiagRecs(cur);
+    }
+
     if (!SQL_SUCCEEDED(ret) && ret != SQL_NEED_DATA && ret != SQL_NO_DATA)
     {
         // We could try dropping through the while and if below, but if there is an error, we need to raise it before
@@ -784,11 +793,6 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         RaiseErrorFromHandle(cur->cnxn, "SQLExecDirectW", cur->cnxn->hdbc, cur->hstmt);
         FreeParameterData(cur);
         return 0;
-    }
-
-    if (ret == SQL_SUCCESS_WITH_INFO)
-    {
-        GetDiagRecs(cur);
     }
 
     while (ret == SQL_NEED_DATA)
@@ -1899,13 +1903,29 @@ static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
 
     SQLRETURN ret = 0;
 
+    // Each results set should get a new "messages" attribute.
+    Py_XDECREF(cur->messages);
+    cur->messages = PyList_New(0);
+
     Py_BEGIN_ALLOW_THREADS
     ret = SQLMoreResults(cur->hstmt);
     Py_END_ALLOW_THREADS
 
+    // Must retrieve DiagRecs immediately after SQLMoreResults.
+    // Populate the cursor's "messages" attribute with any diagnostic messages.
+    // ref: https://learn.microsoft.com/en-us/sql/odbc/reference/develop-app/return-codes-odbc
+    if (ret == SQL_SUCCESS_WITH_INFO ||
+        ret == SQL_ERROR ||
+        ret == SQL_NO_DATA ||
+        ret == SQL_NEED_DATA ||
+        ret == SQL_STILL_EXECUTING)
+    {
+        GetDiagRecs(cur);
+    }
+
     if (ret == SQL_NO_DATA)
     {
-        free_results(cur, FREE_STATEMENT | KEEP_PREPARED);
+        free_results(cur, FREE_STATEMENT | KEEP_PREPARED | KEEP_MESSAGES);
         Py_RETURN_FALSE;
     }
 
@@ -1921,7 +1941,7 @@ static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
         // from the cursor as it's lost otherwise.
         // If free_results raises an error (eg a lost connection) report that instead.
         //
-        if (!free_results(cur, FREE_STATEMENT | KEEP_PREPARED)) {
+        if (!free_results(cur, FREE_STATEMENT | KEEP_PREPARED | KEEP_MESSAGES)) {
             return 0;
         }
         //
@@ -1939,17 +1959,6 @@ static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
         // without an error, behave as if we had no nextset
         //
         Py_RETURN_FALSE;
-    }
-
-    // Must retrieve DiagRecs immediately after SQLMoreResults
-    if (ret == SQL_SUCCESS_WITH_INFO)
-    {
-        GetDiagRecs(cur);
-    }
-    else
-    {
-        Py_XDECREF(cur->messages);
-        cur->messages = PyList_New(0);
     }
 
     SQLSMALLINT cCols;
