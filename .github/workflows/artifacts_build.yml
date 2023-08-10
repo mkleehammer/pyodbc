@@ -32,6 +32,8 @@ jobs:
     strategy:
       matrix:
         # https://docs.github.com/en/actions/using-jobs/choosing-the-runner-for-a-job
+        # ubuntu-20.04 supports more versions of Python than ubuntu-22.04
+        # https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json
         os: [windows-2019, macos-11, ubuntu-20.04]
 
     steps:
@@ -45,14 +47,15 @@ jobs:
           platforms: all
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.11.2
+        uses: pypa/cibuildwheel@v2.13.1
         # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
         env:
           # Windows - both 64-bit and 32-bit builds
           CIBW_ARCHS_WINDOWS: "AMD64 x86"
 
-          # macOS - both Intel and ARM builds; no bundled libraries
-          CIBW_ARCHS_MACOS: "x86_64 arm64"
+          # macOS - just Intel build (ARM doesn't work); no bundled libraries
+          # https://cibuildwheel.readthedocs.io/en/stable/faq/#how-to-cross-compile
+          CIBW_ARCHS_MACOS: x86_64
           # prevent the addition of unixODBC dylibs to the wheel by simply not calling the repair
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
 
