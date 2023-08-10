@@ -26,13 +26,9 @@
 #include "dbspecific.h"
 #include <datetime.h>
 
-enum
-{
-    CURSOR_REQUIRE_CNXN    = 0x00000001,
-    CURSOR_REQUIRE_OPEN    = 0x00000003, // includes _CNXN
-    CURSOR_REQUIRE_RESULTS = 0x00000007, // includes _OPEN
-    CURSOR_RAISE_ERROR     = 0x00000010,
-};
+#ifdef WITH_NUMPY
+#include "npcontainer.h"
+#endif
 
 inline bool StatementIsValid(Cursor* cursor)
 {
@@ -46,7 +42,7 @@ inline bool Cursor_Check(PyObject* o)
     return o != 0 && Py_TYPE(o) == &CursorType;
 }
 
-static Cursor* Cursor_Validate(PyObject* obj, DWORD flags)
+Cursor* Cursor_Validate(PyObject* obj, DWORD flags)
 {
     //  Validates that a PyObject is a Cursor (like Cursor_Check) and optionally some other requirements controlled by
     //  `flags`.  If valid and all requirements (from the flags) are met, the cursor is returned, cast to Cursor*.
@@ -1384,7 +1380,6 @@ static PyObject* Cursor_fetchmany(PyObject* self, PyObject* args)
     return result;
 }
 
-
 static char tables_doc[] =
     "C.tables(table=None, catalog=None, schema=None, tableType=None) --> self\n"
     "\n"
@@ -2431,6 +2426,9 @@ static PyMethodDef Cursor_methods[] =
     { "fetchone",         (PyCFunction)Cursor_fetchone,         METH_NOARGS,                fetchone_doc         },
     { "fetchall",         (PyCFunction)Cursor_fetchall,         METH_NOARGS,                fetchall_doc         },
     { "fetchmany",        (PyCFunction)Cursor_fetchmany,        METH_VARARGS,               fetchmany_doc        },
+#ifdef WITH_NUMPY
+    { "fetchdictarray",   (PyCFunction)Cursor_fetchdictarray,   METH_VARARGS|METH_KEYWORDS, fetchdictarray_doc   },
+#endif
     { "nextset",          (PyCFunction)Cursor_nextset,          METH_NOARGS,                nextset_doc          },
     { "tables",           (PyCFunction)Cursor_tables,           METH_VARARGS|METH_KEYWORDS, tables_doc           },
     { "columns",          (PyCFunction)Cursor_columns,          METH_VARARGS|METH_KEYWORDS, columns_doc          },

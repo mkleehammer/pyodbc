@@ -17,6 +17,11 @@ if sys.hexversion >= 0x03000000:
 else:
     from ConfigParser import ConfigParser
 
+try:
+    import numpy
+except ImportError:
+    numpy = None
+
 OFFICIAL_BUILD = 9999
 
 # This version identifier should refer to the NEXT release, not the
@@ -76,7 +81,8 @@ def main():
 
     settings = get_compiler_settings(version_str)
 
-    files = [ relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
+    files = [ relpath(join('src', f)) for f in os.listdir('src')
+              if f.endswith('.cpp') and (f != 'npcontainer.cpp' or numpy) ]
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
@@ -143,6 +149,9 @@ def get_compiler_settings(version_str):
         'include_dirs': [],
         'define_macros' : [ ('PYODBC_VERSION', version_str) ]
     }
+    if numpy:
+        settings['include_dirs'].append(numpy.get_include())
+        settings['define_macros'].append(('WITH_NUMPY', '1'))
 
     # This isn't the best or right way to do this, but I don't see how someone is supposed to sanely subclass the build
     # command.
