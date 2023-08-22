@@ -99,7 +99,7 @@ PyObject* TextBufferToObject(const TextEnc& enc, const byte* pbData, Py_ssize_t 
     // first pointed this out with shift_jis.  I'm not sure if it is a fault in the
     // implementation of this codec or if others will have it also.
 
-    PyObject* str;
+    //  PyObject* str;
 
     if (cbData == 0)
         return PyUnicode_FromStringAndSize("", 0);

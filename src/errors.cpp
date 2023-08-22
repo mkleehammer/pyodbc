@@ -88,7 +88,7 @@ PyObject* RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* for
     pAttrs = Py_BuildValue("(Os)", pMsg, sqlstate);
     if (pAttrs)
     {
-        pError = PyEval_CallObject(exc_class, pAttrs);
+        pError = PyObject_CallObject(exc_class, pAttrs);
         if (pError)
             RaiseErrorFromException(pError);
     }
@@ -154,7 +154,7 @@ static PyObject* GetError(const char* sqlstate, PyObject* exc_class, PyObject* p
 
     PyTuple_SetItem(pAttrs, 0, pSqlState); // pAttrs now owns the pSqlState reference
 
-    pError = PyEval_CallObject(exc_class, pAttrs); // pError will incref pAttrs
+    pError = PyObject_CallObject(exc_class, pAttrs); // pError will incref pAttrs
 
     Py_XDECREF(pAttrs);
 
