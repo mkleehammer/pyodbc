@@ -9,7 +9,7 @@ from decimal import Decimal
 import pyodbc, pytest
 
 
-CNXNSTR = os.environ.get('PYODBC_CNXNSTR', 'DSN=pgtest')
+CNXNSTR = os.environ.get('PYODBC_POSTGRESQL', 'DSN=pyodbc-postgres')
 
 
 def connect(autocommit=False, attrs_before=None):
