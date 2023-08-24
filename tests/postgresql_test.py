@@ -3,14 +3,17 @@ Unit tests for PostgreSQL
 """
 # -*- coding: utf-8 -*-
 
-import uuid
+import os, uuid
 from decimal import Decimal
 
 import pyodbc, pytest
 
 
+CNXNSTR = os.environ.get('PYODBC_CNXNSTR', 'DSN=pgtest')
+
+
 def connect(autocommit=False, attrs_before=None):
-    return pyodbc.connect('DSN=pgtest', autocommit=autocommit, attrs_before=attrs_before)
+    return pyodbc.connect(CNXNSTR, autocommit=autocommit, attrs_before=attrs_before)
 
 
 @pytest.fixture

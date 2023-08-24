@@ -7,6 +7,11 @@
 //
 // Column Size: "For character types, this is the length in characters of the data"
 
+// NOTE: I have not ported the "fast executemany" code from 4.x to 5.x yet.  Once 5.0 is
+// complete, I'll port it in 5.1.  My goal is to ensure it uses the exact same binding code
+// between both code paths.  I'll probably also rename the feature to something that describes
+// it more precisely like "array binding".
+
 #include "pyodbc.h"
 #include "wrapper.h"
 #include "textenc.h"

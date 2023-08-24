@@ -3,6 +3,7 @@ pytest unit tests for MySQL.  Uses a DNS name 'mysql' and uses UTF-8
 """
 # -*- coding: utf-8 -*-
 
+import os
 from decimal import Decimal
 from datetime import date, datetime
 from functools import lru_cache
@@ -10,9 +11,11 @@ from functools import lru_cache
 import pyodbc, pytest
 
 
+CNXNSTR = os.environ.get('PYODBC_CNXNSTR', 'DSN=mysql;charset=utf8mb4')
+
+
 def connect(autocommit=False, attrs_before=None):
-    c = pyodbc.connect('DSN=mysql;charset=utf8mb4', autocommit=autocommit,
-                       attrs_before=attrs_before)
+    c = pyodbc.connect(CNXNSTR, autocommit=autocommit, attrs_before=attrs_before)
 
     # As of libmyodbc5w 5.3 SQLGetTypeInfo returns absurdly small sizes
     # leading to slow writes.  Override them:
