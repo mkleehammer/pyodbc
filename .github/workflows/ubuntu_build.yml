@@ -11,20 +11,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - python-version: "2.7"
-            tests-dir: tests2
-          - python-version: "3.6"
-            tests-dir: tests3
           - python-version: "3.7"
-            tests-dir: tests3
+            tests-dir: tests
           - python-version: "3.8"
-            tests-dir: tests3
+            tests-dir: tests
           - python-version: "3.9"
-            tests-dir: tests3
+            tests-dir: tests
           - python-version: "3.10"
-            tests-dir: tests3
+            tests-dir: tests
           - python-version: "3.11"
-            tests-dir: tests3
+            tests-dir: tests
 
     services:
 
