@@ -35,20 +35,25 @@ IS_MSODBCSQL = bool(re.search(r'(msodbcsql|sqlncli|sqlsrv32\.dll)', DRIVER, re.I
 
 def _get_sqlserver_year():
     """
-    Returns the major version: 8-->2000, 9-->2005, 10-->2008
+    Returns the release year of the current version of SQL Server, used to skip tests for
+    features that are not supported.  If the current DB is not SQL Server, 0 is returned.
     """
+    # We used to use the major version, but most documentation on the web refers to the year
+    # (e.g. SQL Server 2019) so we'll use that for skipping tests that do not apply.
+    if not IS_MSODBCSQL:
+        return 0
     cnxn = connect()
     cursor = cnxn.cursor()
     row = cursor.execute("exec master..xp_msver 'ProductVersion'").fetchone()
     major = row.Character_Value.split('.', 1)[0]
     return {
         # https://sqlserverbuilds.blogspot.com/
-        '8': '2000', '9': '2005', '10': '2008', '11': '2012', '12': '2014',
-        '13': '2016', '15': '2019', '16': '2022'
+        '8': 2000, '9': 2005, '10': 2008, '11': 2012, '12': 2014,
+        '13': 2016, '14': 2017, '15': 2019, '16': 2022
     }[major]
 
 
-SQLSERVER_YEAR = _get_sqlserver_year() or '0000'
+SQLSERVER_YEAR = _get_sqlserver_year()
 
 
 @pytest.fixture
@@ -84,7 +89,7 @@ def test_varbinary(cursor):
     _test_vartype(cursor, 'varbinary')
 
 
-@pytest.mark.skipif(SQLSERVER_YEAR < '2005', reason='(max) not supported until 2005')
+@pytest.mark.skipif(SQLSERVER_YEAR < 2005, reason='(max) not supported until 2005')
 def test_unicode_longmax(cursor):
     # Issue 188:	Segfault when fetching NVARCHAR(MAX) data over 511 bytes
     cursor.execute("select cast(replicate(N'x', 512) as nvarchar(max))")
@@ -473,7 +478,7 @@ def test_version(cursor):
     assert 3 == len(pyodbc.version.split('.'))  # 1.3.1 etc.
 
 
-@pytest.mark.skipif(IS_MSODBCSQL and SQLSERVER_YEAR < '2008',
+@pytest.mark.skipif(IS_MSODBCSQL and SQLSERVER_YEAR < 2008,
                     reason='Date not supported until 2008?')
 def test_date(cursor):
     value = date.today()
@@ -486,7 +491,7 @@ def test_date(cursor):
     assert value == result
 
 
-@pytest.mark.skipif(IS_MSODBCSQL and SQLSERVER_YEAR < '2008',
+@pytest.mark.skipif(IS_MSODBCSQL and SQLSERVER_YEAR < 2008,
                     reason='Time not supported until 2008?')
 def test_time(cursor):
     value = datetime.now().time()
