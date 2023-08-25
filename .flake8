@@ -5,3 +5,5 @@ ignore =
   # multi spaces before op - I line up assignments often
   E401,
   # multiple imports on one line
+  E722,
+  # ignore bare except in tests

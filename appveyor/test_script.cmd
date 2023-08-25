@@ -15,6 +15,11 @@ IF NOT "%APVYR_RUN_TESTS%" == "true" (
 )
 
 
+FOR /F "tokens=* USEBACKQ" %%F IN (`%PYTHON_HOME%\python -c "import sys; sys.stdout.write('64' if sys.maxsize > 2**32 else '32')"`) DO (
+SET PYTHON_ARCH=%%F
+)
+
+
 :mssql
 ECHO.
 ECHO ############################################################
@@ -37,59 +42,41 @@ IF ERRORLEVEL 1 (
   GOTO :postgresql
 )
 
-:mssql1
-REM Native Client 10.0 is so old, it might not be available on the server
-SET DRIVER={SQL Server Native Client 10.0}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
-ECHO.
-ECHO *** Run tests using driver: "%DRIVER%"
-"%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
-IF ERRORLEVEL 1 (
-  REM Don't fail the tests if the driver can't be found
-  ECHO *** INFO: Could not connect using the connection string:
-  ECHO "%CONN_STR%"
-  GOTO :mssql2
-)
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
-IF "%APVYR_VERBOSE%" == "true" (
-  SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
-)
-"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
-IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql2
 REM Native Client 11.0 is so old, it might not be available on the server
 SET DRIVER={SQL Server Native Client 11.0}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
+SET PYODBC_SQLSERVER=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
-"%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
+"%PYTHON_HOME%\python" appveyor\test_connect.py "%PYODBC_SQLSERVER%"
 IF ERRORLEVEL 1 (
   REM Don't fail the tests if the driver can't be found
   ECHO *** INFO: Could not connect using the connection string:
-  ECHO "%CONN_STR%"
+  ECHO "%PYODBC_SQLSERVER%"
   GOTO :mssql3
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=""
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
 "%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
+
 :mssql3
 SET DRIVER={ODBC Driver 11 for SQL Server}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
+SET PYODBC_SQLSERVER=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
-"%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
+"%PYTHON_HOME%\python" appveyor\test_connect.py "%PYODBC_SQLSERVER%"
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: Could not connect using the connection string:
-  ECHO "%CONN_STR%"
+  ECHO "%PYODBC_SQLSERVER%"
   SET OVERALL_RESULT=1
   GOTO :mssql4
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=""
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
@@ -98,17 +85,17 @@ IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql4
 SET DRIVER={ODBC Driver 13 for SQL Server}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
+SET PYODBC_SQLSERVER=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
-"%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
+"%PYTHON_HOME%\python" appveyor\test_connect.py "%PYODBC_SQLSERVER%"
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: Could not connect using the connection string:
-  ECHO "%CONN_STR%"
+  ECHO "%PYODBC_SQLSERVER%"
   SET OVERALL_RESULT=1
   GOTO :mssql5
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=""
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
@@ -117,17 +104,17 @@ IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql5
 SET DRIVER={ODBC Driver 17 for SQL Server}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
+SET PYODBC_SQLSERVER=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
-"%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
+"%PYTHON_HOME%\python" appveyor\test_connect.py "%PYODBC_SQLSERVER%"
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: Could not connect using the connection string:
-  ECHO "%CONN_STR%"
+  ECHO "%PYODBC_SQLSERVER%"
   SET OVERALL_RESULT=1
   GOTO :mssql6
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=""
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
@@ -136,17 +123,17 @@ IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql6
 SET DRIVER={ODBC Driver 18 for SQL Server}
-SET CONN_STR=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;Encrypt=Optional;
+SET PYODBC_SQLSERVER=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;Encrypt=Optional;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
-"%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
+"%PYTHON_HOME%\python" appveyor\test_connect.py "%PYODBC_SQLSERVER%"
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: Could not connect using the connection string:
-  ECHO "%CONN_STR%"
+  ECHO "%PYODBC_SQLSERVER%"
   SET OVERALL_RESULT=1
   GOTO :postgresql
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=""
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
@@ -168,22 +155,26 @@ ECHO *** Get PostgreSQL version
 SET PGPASSWORD=Password12!
 "%POSTGRES_PATH%\bin\psql" -U postgres -d postgres -c "SELECT version()"
 
-SET DRIVER={PostgreSQL Unicode^(x64^)}
-SET CONN_STR=Driver=%DRIVER%;Server=localhost;Port=5432;Database=postgres;Uid=postgres;Pwd=Password12!;
+IF %PYTHON_ARCH% EQU 32 (
+  SET DRIVER={PostgreSQL Unicode}
+) ELSE (
+  SET DRIVER={PostgreSQL Unicode^(x64^)}
+)
+SET PYODBC_POSTGRESQL=Driver=%DRIVER%;Server=localhost;Port=5432;Database=postgres;Uid=postgres;Pwd=Password12!;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
-"%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
+"%PYTHON_HOME%\python" appveyor\test_connect.py "%PYODBC_POSTGRESQL%"
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: Could not connect using the connection string:
-  ECHO "%CONN_STR%"
+  ECHO "%PYODBC_POSTGRESQL%"
   SET OVERALL_RESULT=1
   GOTO :mysql
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=""
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\pgtests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "tests\postgresql_test.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 
@@ -203,27 +194,22 @@ ECHO *** Get MySQL version
 "%MYSQL_PATH%\bin\mysql" -u root -pPassword12! -e "STATUS"
 
 :mysql1
-REM MySQL 8.0 drivers apparently don't work on Python 2.7 ("system error 126") so use 5.3 instead.
-IF %PYTHON_MAJOR_VERSION% EQU 2 (
-  SET DRIVER={MySQL ODBC 5.3 ANSI Driver}
-) ELSE (
-  SET DRIVER={MySQL ODBC 8.0 ANSI Driver}
-)
-SET CONN_STR=Driver=%DRIVER%;Charset=utf8mb4;Server=localhost;Port=3306;Database=mysql;Uid=root;Pwd=Password12!;
+SET DRIVER={MySQL ODBC 8.0 ANSI Driver}
+SET PYODBC_MYSQL=Driver=%DRIVER%;Charset=utf8mb4;Server=localhost;Port=3306;Database=mysql;Uid=root;Pwd=Password12!;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
-"%PYTHON_HOME%\python" appveyor\test_connect.py "%CONN_STR%"
+"%PYTHON_HOME%\python" appveyor\test_connect.py "%PYODBC_MYSQL%"
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: Could not connect using the connection string:
-  ECHO "%CONN_STR%"
+  ECHO "%PYODBC_MYSQL%"
   SET OVERALL_RESULT=1
   GOTO :end
 )
-SET PYTHON_ARGS="%CONN_STR:"=\"%"
+SET PYTHON_ARGS=""
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\mysqltests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "tests\mysql_test.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 

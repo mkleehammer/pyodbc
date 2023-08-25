@@ -455,7 +455,7 @@ def test_emoticons_as_literal(cursor):
     assert result == v
 
 
-@lru_cache
+@lru_cache()
 def _generate_str(length, encoding=None):
     """
     Returns either a string or bytes, depending on whether encoding is provided,

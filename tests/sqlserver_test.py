@@ -35,20 +35,25 @@ IS_MSODBCSQL = bool(re.search(r'(msodbcsql|sqlncli|sqlsrv32\.dll)', DRIVER, re.I
 
 def _get_sqlserver_year():
     """
-    Returns the major version: 8-->2000, 9-->2005, 10-->2008
+    Returns the release year of the current version of SQL Server, used to skip tests for
+    features that are not supported.  If the current DB is not SQL Server, 0 is returned.
     """
+    # We used to use the major version, but most documentation on the web refers to the year
+    # (e.g. SQL Server 2019) so we'll use that for skipping tests that do not apply.
+    if not IS_MSODBCSQL:
+        return 0
     cnxn = connect()
     cursor = cnxn.cursor()
     row = cursor.execute("exec master..xp_msver 'ProductVersion'").fetchone()
     major = row.Character_Value.split('.', 1)[0]
     return {
         # https://sqlserverbuilds.blogspot.com/
-        '8': '2000', '9': '2005', '10': '2008', '11': '2012', '12': '2014',
-        '13': '2016', '15': '2019', '16': '2022'
+        '8': 2000, '9': 2005, '10': 2008, '11': 2012, '12': 2014,
+        '13': 2016, '14': 2017, '15': 2019, '16': 2022
     }[major]
 
 
-SQLSERVER_YEAR = _get_sqlserver_year() or '0000'
+SQLSERVER_YEAR = _get_sqlserver_year()
 
 
 @pytest.fixture
@@ -84,7 +89,7 @@ def test_varbinary(cursor):
     _test_vartype(cursor, 'varbinary')
 
 
-@pytest.mark.skipif(SQLSERVER_YEAR < '2005', reason='(max) not supported until 2005')
+@pytest.mark.skipif(SQLSERVER_YEAR < 2005, reason='(max) not supported until 2005')
 def test_unicode_longmax(cursor):
     # Issue 188:	Segfault when fetching NVARCHAR(MAX) data over 511 bytes
     cursor.execute("select cast(replicate(N'x', 512) as nvarchar(max))")
@@ -196,7 +201,7 @@ def test_multiple_bindings(cursor):
     cursor.execute("insert into t1 values (?)", 1)
     cursor.execute("insert into t1 values (?)", 2)
     cursor.execute("insert into t1 values (?)", 3)
-    for i in range(3):
+    for _ in range(3):
         cursor.execute("select n from t1 where n < ?", 10)
         cursor.execute("select n from t1 where n < 3")
 
@@ -269,7 +274,7 @@ def test_nonnative_uuid(cursor):
 
     pyodbc.native_uuid = False
     result = cursor.execute("select n from t1").fetchval()
-    assert type(result) == str
+    assert isinstance(result, str)
     assert result == str(value).upper()
 
 
@@ -319,7 +324,7 @@ def test_fixed_unicode(cursor):
     cursor.execute("create table t1(s nchar(7))")
     cursor.execute("insert into t1 values(?)", "t\xebsting")
     v = cursor.execute("select * from t1").fetchone()[0]
-    assert type(v) == str
+    assert isinstance(v, str)
     assert len(v) == len(value)
     # If we alloc'd wrong, the test below might work because of an embedded NULL
     assert v == value
@@ -327,11 +332,11 @@ def test_fixed_unicode(cursor):
 
 def test_chinese(cursor):
     v = '我的'
-    cursor.execute(u"SELECT N'我的' AS [Name]")
+    cursor.execute("SELECT N'我的' AS [Name]")
     row = cursor.fetchone()
     assert row[0] == v
 
-    cursor.execute(u"SELECT N'我的' AS [Name]")
+    cursor.execute("SELECT N'我的' AS [Name]")
     rows = cursor.fetchall()
     assert rows[0][0] == v
 
@@ -341,7 +346,7 @@ def test_bit(cursor):
     cursor.execute("create table t1(b bit)")
     cursor.execute("insert into t1 values (?)", value)
     v = cursor.execute("select b from t1").fetchone()[0]
-    assert type(v) == bool
+    assert isinstance(v, bool)
     assert v == value
 
 
@@ -439,7 +444,7 @@ def test_fixed_str(cursor):
     cursor.execute("create table t1(s char(7))")
     cursor.execute("insert into t1 values(?)", value)
     v = cursor.execute("select * from t1").fetchone()[0]
-    assert type(v) == str
+    assert isinstance(v, str)
     assert len(v) == len(value)
     # If we alloc'd wrong, the test below might work because of an embedded NULL
     assert v == value
@@ -469,11 +474,11 @@ def test_negative_row_index(cursor):
     assert row[-1] == "1"
 
 
-def test_version(cursor):
+def test_version():
     assert 3 == len(pyodbc.version.split('.'))  # 1.3.1 etc.
 
 
-@pytest.mark.skipif(IS_MSODBCSQL and SQLSERVER_YEAR < '2008',
+@pytest.mark.skipif(IS_MSODBCSQL and SQLSERVER_YEAR < 2008,
                     reason='Date not supported until 2008?')
 def test_date(cursor):
     value = date.today()
@@ -482,11 +487,11 @@ def test_date(cursor):
     cursor.execute("insert into t1 values (?)", value)
 
     result = cursor.execute("select d from t1").fetchone()[0]
-    assert type(result) == date
+    assert isinstance(result, date)
     assert value == result
 
 
-@pytest.mark.skipif(IS_MSODBCSQL and SQLSERVER_YEAR < '2008',
+@pytest.mark.skipif(IS_MSODBCSQL and SQLSERVER_YEAR < 2008,
                     reason='Time not supported until 2008?')
 def test_time(cursor):
     value = datetime.now().time()
@@ -499,7 +504,7 @@ def test_time(cursor):
     cursor.execute("insert into t1 values (?)", value)
 
     result = cursor.execute("select t from t1").fetchone()[0]
-    assert type(result) == time
+    assert isinstance(result, time)
     assert value == result
 
 
@@ -510,7 +515,7 @@ def test_datetime(cursor):
     cursor.execute("insert into t1 values (?)", value)
 
     result = cursor.execute("select dt from t1").fetchone()[0]
-    assert type(result) == datetime
+    assert isinstance(result, datetime)
     assert value == result
 
 
@@ -524,7 +529,7 @@ def test_datetime_fraction(cursor):
     cursor.execute("insert into t1 values (?)", value)
 
     result = cursor.execute("select dt from t1").fetchone()[0]
-    assert type(result) == datetime
+    assert isinstance(result, datetime)
     assert value == result
 
 
@@ -539,7 +544,7 @@ def test_datetime_fraction_rounded(cursor):
     cursor.execute("insert into t1 values (?)", full)
 
     result = cursor.execute("select dt from t1").fetchone()[0]
-    assert type(result) == datetime
+    assert isinstance(result, datetime)
     assert rounded == result
 
 
@@ -550,17 +555,8 @@ def test_datetime2(cursor):
     cursor.execute("insert into t1 values (?)", value)
 
     result = cursor.execute("select dt from t1").fetchone()[0]
-    assert type(result) == datetime
+    assert isinstance(result, datetime)
     assert value == result
-
-
-#
-# stored procedures
-#
-
-# def test_callproc(cursor):
-#     "callproc with a simple input-only stored procedure"
-#     pass
 
 
 def test_sp_results(cursor):
@@ -572,16 +568,15 @@ def test_sp_results(cursor):
           from sysobjects
         """)
     rows = cursor.execute("exec proc1").fetchall()
-    assert type(rows) == list
-    assert len(rows) == 10 # there has to be at least 10 items in sysobjects
-    assert type(rows[0].refdate) == datetime
-
+    assert isinstance(rows, list)
+    assert len(rows) == 10  # there has to be at least 10 items in sysobjects
+    assert isinstance(rows[0].refdate, datetime)
 
 
 def test_sp_results_from_temp(cursor):
 
-    # Note: I've used "set nocount on" so that we don't get the number of rows deleted from #tmptable.
-    # If you don't do this, you'd need to call nextset() once to skip it.
+    # Note: I've used "set nocount on" so that we don't get the number of rows deleted from
+    # #tmptable.  If you don't do this, you'd need to call nextset() once to skip it.
 
     cursor.execute(
         """
@@ -599,9 +594,9 @@ def test_sp_results_from_temp(cursor):
     assert len(cursor.description) == 4
 
     rows = cursor.fetchall()
-    assert type(rows) == list
-    assert len(rows) == 10 # there has to be at least 10 items in sysobjects
-    assert type(rows[0].refdate) == datetime
+    assert isinstance(rows, list)
+    assert len(rows) == 10      # there has to be at least 10 items in sysobjects
+    assert isinstance(rows[0].refdate, datetime)
 
 
 def test_sp_results_from_vartbl(cursor):
@@ -620,16 +615,17 @@ def test_sp_results_from_vartbl(cursor):
         """)
     cursor.execute("exec proc1")
     rows = cursor.fetchall()
-    assert type(rows) == list
-    assert len(rows) == 10 # there has to be at least 10 items in sysobjects
-    assert type(rows[0].refdate) == datetime
+    assert isinstance(rows, list)
+    assert len(rows) == 10  # there has to be at least 10 items in sysobjects
+    assert isinstance(rows[0].refdate, datetime)
 
 
 def test_sp_with_dates(cursor):
     # Reported in the forums that passing two datetimes to a stored procedure doesn't work.
     cursor.execute(
         """
-        if exists (select * from dbo.sysobjects where id = object_id(N'[test_sp]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+        if exists (select * from dbo.sysobjects where id = object_id(N'[test_sp]')
+             and OBJECTPROPERTY(id, N'IsProcedure') = 1)
           drop procedure [dbo].[test_sp]
         """)
     cursor.execute(
@@ -650,7 +646,8 @@ def test_sp_with_none(cursor):
     # Reported in the forums that passing None caused an error.
     cursor.execute(
         """
-        if exists (select * from dbo.sysobjects where id = object_id(N'[test_sp]') and OBJECTPROPERTY(id, N'IsProcedure') = 1)
+        if exists (select * from dbo.sysobjects where id = object_id(N'[test_sp]')
+             and OBJECTPROPERTY(id, N'IsProcedure') = 1)
           drop procedure [dbo].[test_sp]
         """)
     cursor.execute(
@@ -664,7 +661,7 @@ def test_sp_with_none(cursor):
     cursor.execute("exec test_sp ?", None)
     rows = cursor.fetchall()
     assert rows is not None
-    assert rows[0][0] == None   # 0 years apart
+    assert rows[0][0] is None   # 0 years apart
 
 
 #
@@ -686,9 +683,9 @@ def test_rowcount_nodata(cursor):
     """
     This represents a different code path than a delete that deleted something.
 
-    The return value is SQL_NO_DATA and code after it was causing an error.  We could use SQL_NO_DATA to step over
-    the code that errors out and drop down to the same SQLRowCount code.  On the other hand, we could hardcode a
-    zero return value.
+    The return value is SQL_NO_DATA and code after it was causing an error.  We could use
+    SQL_NO_DATA to step over the code that errors out and drop down to the same SQLRowCount
+    code.  On the other hand, we could hardcode a zero return value.
     """
     cursor.execute("create table t1(i int)")
     # This is a different code path internally.
@@ -727,6 +724,7 @@ def test_rowcount_reset(cursor):
     cursor.execute("create table t2(i int)")
     ddl_rowcount = (0 if IS_FREEDTS else -1)
     assert cursor.rowcount == ddl_rowcount
+
 
 def test_retcursor_delete(cursor):
     cursor.execute("create table t1(i int)")
@@ -803,19 +801,19 @@ def test_temp_select(cursor):
     cursor.execute("create table t1(s char(7))")
     cursor.execute("insert into t1 values(?)", "testing")
     v = cursor.execute("select * from t1").fetchone()[0]
-    assert type(v) == str
+    assert isinstance(v, str)
     assert v == "testing"
 
     cursor.execute("select s into t2 from t1")
     v = cursor.execute("select * from t1").fetchone()[0]
-    assert type(v) == str
+    assert isinstance(v, str)
     assert v == "testing"
 
 
 def test_executemany(cursor):
     cursor.execute("create table t1(a int, b varchar(10))")
 
-    params = [ (i, str(i)) for i in range(1, 6) ]
+    params = [(i, str(i)) for i in range(1, 6)]
 
     cursor.executemany("insert into t1(a, b) values (?,?)", params)
 
@@ -835,7 +833,7 @@ def test_executemany_one(cursor):
     "Pass executemany a single sequence"
     cursor.execute("create table t1(a int, b varchar(10))")
 
-    params = [ (1, "test") ]
+    params = [(1, "test")]
 
     cursor.executemany("insert into t1(a, b) values (?,?)", params)
 
@@ -849,6 +847,7 @@ def test_executemany_one(cursor):
     for param, row in zip(params, rows):
         assert param[0] == row[0]
         assert param[1] == row[1]
+
 
 #  def test_executemany_dae_0(cursor):
 #      """
@@ -929,7 +928,7 @@ def test_view_select(cursor):
     # Create a table (t1) with 3 rows and a view (t2) into it.
     cursor.execute("create table t1(c1 int identity(1, 1), c2 varchar(50))")
     for i in range(3):
-        cursor.execute("insert into t1(c2) values (?)", "string%s" % i)
+        cursor.execute("insert into t1(c2) values (?)", f"string{i}")
     cursor.execute("create view t2 as select * from t1")
 
     # Select from the view
@@ -1076,14 +1075,14 @@ def test_cursor_messages_with_print(cursor):
     # SQL Server PRINT statements are never more than 8000 characters
     # https://docs.microsoft.com/en-us/sql/t-sql/language-elements/print-transact-sql#remarks
     for msg in ('hello world', 'ABCDEFGHIJ' * 800):
-        cursor.execute("PRINT '{}'".format(msg))
+        cursor.execute(f"PRINT '{msg}'")
         messages = cursor.messages
-        assert type(messages) is list
+        assert isinstance(messages, list)
         assert len(messages) == 1
-        assert type(messages[0]) is tuple
+        assert isinstance(messages[0], tuple)
         assert len(messages[0]) == 2
-        assert type(messages[0][0]) is str
-        assert type(messages[0][1]) is str
+        assert isinstance(messages[0][0], str)
+        assert isinstance(messages[0][1], str)
         assert '[01000] (0)' == messages[0][0]
         assert messages[0][1].endswith(msg)
 
@@ -1156,7 +1155,7 @@ def test_none_param(cursor):
     cursor.execute("insert into t1 values (1, newid())")
     row = cursor.execute("select * from t1").fetchone()
     assert row.n == 1
-    assert type(row.blob) == bytes
+    assert isinstance(row.blob, bytes)
 
     sql = "update t1 set n=?, blob=?"
     try:
@@ -1404,15 +1403,15 @@ def test_columns(cursor):
     for i in range(8, 16):
         table_name = 'pyodbc_89abcdef'[:i]
 
-        cursor.execute("""\
-        IF OBJECT_ID (N'{0}', N'U') IS NOT NULL DROP TABLE {0};
-        CREATE TABLE {0} (id INT PRIMARY KEY);
-        """.format(table_name))
+        cursor.execute(f"""
+          IF OBJECT_ID (N'{table_name}', N'U') IS NOT NULL DROP TABLE {table_name};
+          CREATE TABLE {table_name} (id INT PRIMARY KEY);
+        """)
 
         col_count = len([col.column_name for col in cursor.columns(table_name)])
         assert col_count == 1
 
-        cursor.execute("DROP TABLE {};".format(table_name))
+        cursor.execute(f"drop table {table_name}")
 
 
 def test_cancel(cursor):
@@ -1492,23 +1491,28 @@ def _test_tvp(cursor, diff_schema):
         cursor.execute("CREATE SCHEMA myschema")
         cursor.commit()
 
-    query = "CREATE TYPE %s AS TABLE("\
-            "c01 VARCHAR(255),"\
-            "c02 VARCHAR(MAX),"\
-            "c03 VARBINARY(255),"\
-            "c04 VARBINARY(MAX),"\
-            "c05 BIT,"\
-            "c06 DATE,"\
-            "c07 TIME,"\
-            "c08 DATETIME2(5),"\
-            "c09 BIGINT,"\
-            "c10 FLOAT,"\
-            "c11 NUMERIC(38, 24),"\
-            "c12 UNIQUEIDENTIFIER)" % typename
-
-    cursor.execute(query)
+    cursor.execute(
+        f"""
+        CREATE TYPE {typename} AS TABLE(
+                c01 VARCHAR(255),
+                c02 VARCHAR(MAX),
+                c03 VARBINARY(255),
+                c04 VARBINARY(MAX),
+                c05 BIT,
+                c06 DATE,
+                c07 TIME,
+                c08 DATETIME2(5),
+                c09 BIGINT,
+                c10 FLOAT,
+                c11 NUMERIC(38, 24),
+                c12 UNIQUEIDENTIFIER)
+        """)
     cursor.commit()
-    cursor.execute("CREATE PROCEDURE %s @TVP %s READONLY AS SELECT * FROM @TVP;" % (procname, typename))
+    cursor.execute(
+        f"""
+        CREATE PROCEDURE {procname} @TVP {typename} READONLY
+          AS SELECT * FROM @TVP;
+        """)
     cursor.commit()
 
     long_string = ''
@@ -1554,7 +1558,7 @@ def _test_tvp(cursor, diff_schema):
     c10 = [3.14, -1.79E+308, 1.79E+308]
 
     c11 = [Decimal('31234567890123.141243449787580175325274'),
-           Decimal(             '0.000000000000000000000001'),
+           Decimal('0.000000000000000000000001'),
            Decimal('99999999999999.999999999999999999999999')]
 
     c12 = ['4FE34A93-E574-04CC-200A-353F0D1770B1',
@@ -1564,54 +1568,41 @@ def _test_tvp(cursor, diff_schema):
     param_array = []
 
     for i in range(3):
-        param_array.append([c01[i], c02[i], c03[i], c04[i], c05[i], c06[i], c07[i], c08[i], c09[i], c10[i], c11[i], c12[i]])
+        param_array.append([c01[i], c02[i], c03[i], c04[i], c05[i], c06[i], c07[i], c08[i],
+                            c09[i], c10[i], c11[i], c12[i]])
 
     success = True
 
     try:
         p1 = [param_array]
         if diff_schema:
-            p1 = [ [ typenameonly, schemaname ] + param_array ]
-        result_array = cursor.execute("exec %s ?" % procname, p1).fetchall()
+            p1 = [[typenameonly, schemaname] + param_array]
+        result_array = cursor.execute(f"exec {procname} ?", p1).fetchall()
     except Exception as ex:
         print("Failed to execute SelectTVP")
-        print("Exception: [" + type(ex).__name__ + "]" , ex.args)
+        print("Exception: [" + type(ex).__name__ + "]", ex.args)
 
         success = False
     else:
         for r in range(len(result_array)):
             for c in range(len(result_array[r])):
-                if(result_array[r][c] != param_array[r][c]):
-                    print("Mismatch at row " + str(r+1) + ", column " + str(c+1) + "; expected:", param_array[r][c] , " received:", result_array[r][c])
+                if result_array[r][c] != param_array[r][c]:
+                    print("Mismatch at row", r + 1, ", column ", (c + 1) + "; expected:",
+                          param_array[r][c], "received:", result_array[r][c])
                     success = False
 
     try:
         p1 = [[]]
         if diff_schema:
-            p1 = [ [ typenameonly, schemaname ] + [] ]
-        result_array = cursor.execute("exec %s ?" % procname, p1).fetchall()
+            p1 = [[typenameonly, schemaname] + []]
+        result_array = cursor.execute(f"exec {procname} ?", p1).fetchall()
         assert result_array == []
     except Exception as ex:
         print("Failed to execute SelectTVP")
         print("Exception: [" + type(ex).__name__ + "]", ex.args)
         success = False
 
-    assert success == True
-
-
-def test_columns(cursor):
-    cursor.execute(
-        """
-        create table t1(n int, d datetime, c nvarchar(100))
-        """)
-
-    cursor.columns(table='t1')
-    names = {row.column_name for row in cursor.fetchall()}
-    assert names == {'n', 'd', 'c'}, 'names=%r' % names
-
-    cursor.columns(table='t1', column='c')
-    row = cursor.fetchone()
-    assert row.column_name == 'c'
+    assert success
 
 
 # REVIEW: I need to research this.
@@ -1638,7 +1629,7 @@ def get_sqlserver_version(cursor):
     return int(row.Character_Value.split('.', 1)[0])
 
 
-@lru_cache
+@lru_cache()
 def _generate_str(length, encoding=None):
     """
     Returns either a string or bytes, depending on whether encoding is provided,

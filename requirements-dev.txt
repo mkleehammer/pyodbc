@@ -4,3 +4,9 @@
 
 setuptools ~= 67.7
 pytest ~= 7.3
+
+# I'm going to try leaving the versions off since we're supporting drastically different Python
+# versions.  I want the most up to date I can get in each, at least until one of them makes a
+# backwards incompatible change.
+flake8
+pylint
