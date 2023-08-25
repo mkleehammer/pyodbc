@@ -15,20 +15,6 @@ IF NOT "%APVYR_RUN_TESTS%" == "true" (
 )
 
 
-REM Extract the major version of the current Python interpreter, and bitness
-FOR /F "tokens=* USEBACKQ" %%F IN (`%PYTHON_HOME%\python -c "import sys; sys.stdout.write(str(sys.version_info.major))"`) DO (
-SET PYTHON_MAJOR_VERSION=%%F
-)
-FOR /F "tokens=* USEBACKQ" %%F IN (`%PYTHON_HOME%\python -c "import sys; sys.stdout.write('64' if sys.maxsize > 2**32 else '32')"`) DO (
-SET PYTHON_ARCH=%%F
-)
-IF %PYTHON_MAJOR_VERSION% EQU 2 (
-    SET TESTS_DIR=tests2
-) ELSE (
-    SET TESTS_DIR=tests3
-)
-
-
 :mssql
 ECHO.
 ECHO ############################################################
@@ -68,7 +54,7 @@ SET PYTHON_ARGS="%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql2
@@ -88,7 +74,7 @@ SET PYTHON_ARGS="%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql3
@@ -107,7 +93,7 @@ SET PYTHON_ARGS="%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql4
@@ -126,7 +112,7 @@ SET PYTHON_ARGS="%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql5
@@ -145,7 +131,7 @@ SET PYTHON_ARGS="%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql6
@@ -164,7 +150,7 @@ SET PYTHON_ARGS="%CONN_STR:"=\"%"
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "%TESTS_DIR%\sqlservertests.py" %PYTHON_ARGS%
+"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 
@@ -182,11 +168,7 @@ ECHO *** Get PostgreSQL version
 SET PGPASSWORD=Password12!
 "%POSTGRES_PATH%\bin\psql" -U postgres -d postgres -c "SELECT version()"
 
-IF %PYTHON_ARCH% EQU 32 (
-  SET DRIVER={PostgreSQL Unicode}
-) ELSE (
-  SET DRIVER={PostgreSQL Unicode^(x64^)}
-)
+SET DRIVER={PostgreSQL Unicode^(x64^)}
 SET CONN_STR=Driver=%DRIVER%;Server=localhost;Port=5432;Database=postgres;Uid=postgres;Pwd=Password12!;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"

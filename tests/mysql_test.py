@@ -11,7 +11,7 @@ from functools import lru_cache
 import pyodbc, pytest
 
 
-CNXNSTR = os.environ.get('PYODBC_CNXNSTR', 'DSN=mysql;charset=utf8mb4')
+CNXNSTR = os.environ.get('PYODBC_MYSQL', 'DSN=mysql;charset=utf8mb4')
 
 
 def connect(autocommit=False, attrs_before=None):
@@ -144,7 +144,7 @@ def test_different_bindings(cursor):
     cursor.execute("insert into t2 values (?)", datetime.now())
 
 
-def test_driver():
+def test_drivers():
     p = pyodbc.drivers()
     assert isinstance(p, list)
 
