@@ -31,6 +31,7 @@ typedef unsigned long long UINT64;
 #ifdef __MINGW32__
   #include <windef.h>
   #include <malloc.h>
+  #include <windows.h>
 #else
   inline int max(int lhs, int rhs) { return (rhs > lhs) ? rhs : lhs; }
 #endif
@@ -117,6 +118,11 @@ inline void _strlwr(char* name)
 }
 #else
 #define CDECL
+#endif
+
+#ifdef __MINGW32__
+#define min(X,Y) ((X) < (Y) ? (X) : (Y))
+#define max(X,Y) ((X) > (Y) ? (X) : (Y))
 #endif
 
 #define STRINGIFY(x) #x

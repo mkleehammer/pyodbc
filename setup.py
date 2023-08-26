@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, os, re, shlex
+import sys, os, re, shlex, sysconfig
 from os.path import exists, abspath, dirname, join, isdir, relpath, expanduser
 
 try:
@@ -153,7 +153,15 @@ def get_compiler_settings(version_str):
         except ValueError:
             pass
 
-    if os.name == 'nt':
+    if 'mingw' in sysconfig.get_platform():
+        # Windows mingw (note that os.name == 'nt' is True)
+        settings['extra_compile_args'].extend([
+            '-Wno-write-strings',
+            '-Wno-deprecated-declarations',
+        ])
+        settings['libraries'].append('odbc32')
+
+    elif os.name == 'nt':
         settings['extra_compile_args'].extend([
             '/Wall',
             '/wd4514',          # unreference inline function removed
