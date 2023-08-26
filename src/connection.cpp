@@ -48,7 +48,7 @@ static Connection* Connection_Validate(PyObject* self)
 static char* StrDup(const char* text) {
   // Like StrDup but uses PyMem_Malloc for the memory.  This is only used for internal
   // encodings which are known to be ASCII.
-  ssize_t cb = strlen(text) + 1;
+  size_t cb = strlen(text) + 1;
   char* pb = (char*)PyMem_Malloc(cb);
   if (!pb) {
     PyErr_NoMemory();
