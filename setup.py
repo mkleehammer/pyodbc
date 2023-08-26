@@ -1,27 +1,20 @@
 #!/usr/bin/env python
 
-VERSION = '5.0.0'
-
-import sys, os, re, shlex, subprocess
-from os.path import exists, abspath, dirname, join, isdir, relpath, expanduser
+import sys, os, shlex
+from os.path import exists, join, isdir, relpath, expanduser
 from inspect import cleandoc
 
-from setuptools import setup, Command
+from setuptools import setup
 from setuptools.extension import Extension
-from setuptools.errors import *
-
-from configparser import ConfigParser
 
 
-def _run(cmd):
-    return subprocess.run(cmd, check=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          encoding='utf_8', shell=True).stdout
+VERSION = '5.0.0a1'
 
 
 def main():
     settings = get_compiler_settings()
 
-    files = [ relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp') ]
+    files = [relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp')]
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
@@ -34,7 +27,7 @@ def main():
             pyodbc is an open source Python module that makes accessing ODBC databases simple.
             It implements the [DB API 2.0](https://www.python.org/dev/peps/pep-0249)
             specification but is packed with even more Pythonic convenience."""),
-        maintainer=      "Michael Kleehammer",
+        maintainer="Michael Kleehammer",
         maintainer_email="michael@kleehammer.com",
         url='https://github.com/mkleehammer/pyodbc',
         ext_modules=[Extension('pyodbc', sorted(files), **settings)],
@@ -54,7 +47,7 @@ def main():
                      'Topic :: Database',
                      ],
         options={
-            'bdist_wininst': {'user_access_control' : 'auto'}
+            'bdist_wininst': {'user_access_control': 'auto'}
         }
     )
 
@@ -62,23 +55,23 @@ def main():
 def get_compiler_settings():
 
     settings = {
-        'extra_compile_args' : [],
+        'extra_compile_args': [],
         'extra_link_args': [],
         'libraries': [],
         'include_dirs': [],
-        'define_macros' : [ ('PYODBC_VERSION', VERSION) ]
+        'define_macros': [('PYODBC_VERSION', VERSION)]
     }
 
     if os.name == 'nt':
         settings['extra_compile_args'].extend([
             '/Wall',
-            '/wd4514',          # unreference inline function removed
-            '/wd4820',          # padding after struct member
-            '/wd4668',          # is not defined as a preprocessor macro
-            '/wd4711', # function selected for automatic inline expansion
-            '/wd4100', # unreferenced formal parameter
-            '/wd4127', # "conditional expression is constant" testing compilation constants
-            '/wd4191', # casts to PYCFunction which doesn't have the keywords parameter
+            '/wd4514',     # unreference inline function removed
+            '/wd4820',     # padding after struct member
+            '/wd4668',     # is not defined as a preprocessor macro
+            '/wd4711',     # function selected for automatic inline expansion
+            '/wd4100',     # unreferenced formal parameter
+            '/wd4127',     # "conditional expression is constant" testing compilation constants
+            '/wd4191',     # casts to PYCFunction which doesn't have the keywords parameter
         ])
 
         if '--windbg' in sys.argv:
@@ -110,7 +103,8 @@ def get_compiler_settings():
         settings['libraries'].append('odbc32')
 
     elif sys.platform == 'darwin':
-        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
+        # Python functions take a lot of 'char *' that really should be const.  gcc complains
+        # about this *a lot*.
         settings['extra_compile_args'].extend([
             '-Wno-write-strings',
             '-Wno-deprecated-declarations'
@@ -140,7 +134,8 @@ def get_compiler_settings():
     else:
         # Other posix-like: Linux, Solaris, etc.
 
-        # Python functions take a lot of 'char *' that really should be const.  gcc complains about this *a lot*
+        # Python functions take a lot of 'char *' that really should be const.  gcc complains
+        # about this *a lot*.
         settings['extra_compile_args'].append('-Wno-write-strings')
 
         fd = os.popen('odbc_config --cflags 2>/dev/null')
@@ -153,13 +148,6 @@ def get_compiler_settings():
         fd.close()
         if ldflags:
             settings['extra_link_args'].extend(ldflags.split())
-
-        #  from array import array
-        #  UNICODE_WIDTH = array('u').itemsize
-        #        if UNICODE_WIDTH == 4:
-        #            # This makes UnixODBC use UCS-4 instead of UCS-2, which works better with sizeof(wchar_t)==4.
-        #            # Thanks to Marc-Antoine Parent
-        #            settings['define_macros'].append(('SQL_WCHART_CONVERT', '1'))
 
         # What is the proper way to detect iODBC, MyODBC, unixODBC, etc.?
         settings['libraries'].append('odbc')
