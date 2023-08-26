@@ -84,8 +84,8 @@ public:
     }
 
     SQLWChar(PyObject* src, const TextEnc* penc)
-        : SQLWChar(src, *penc)
     {
+        init(src, *penc);
     }
 
     SQLWChar(PyObject* src, const TextEnc& enc)

@@ -1,3 +1,38 @@
+[project]
+name = "pyodbc"
+version = "5.0.0a2"
+
+requires-python = ">=3.7"
+# This is used by the Github action that builds release artifacts using cibuildwheel.
+# cibuildwheel reads this directly:
+#
+# https://cibuildwheel.readthedocs.io/en/stable/options/#requires-python
+
+description = "DB API module for ODBC"
+readme = "README.md"
+license = {text = "MIT License"}
+
+authors = [{name = "Michael Kleehammer", email="michael@kleehammer.com"}]
+
+maintainers = [{name = "Michael Kleehammer", email="michael@kleehammer.com"}]
+# There are a lot of contributors and I'd like to include everyone that puts in a lot of
+# effort, but is this for the more technical meaning of who makes builds?  Would adding
+# contributors cause confusion.
+
+classifiers=['Development Status :: 5 - Production/Stable',
+             'Intended Audience :: Developers',
+             'Intended Audience :: System Administrators',
+             'License :: OSI Approved :: MIT License',
+             'Operating System :: Microsoft :: Windows',
+             'Operating System :: POSIX',
+             'Programming Language :: Python',
+             'Programming Language :: Python :: 3',
+             'Topic :: Database',
+             ]
+
+[project.urls]
+Homepage = "https://github.com/mkleehammer/pyodbc"
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"

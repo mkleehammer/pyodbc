@@ -1,14 +1,34 @@
 #!/usr/bin/env python
 
-import sys, os, shlex
+import sys, os, shlex, re
 from os.path import exists, join, isdir, relpath, expanduser
+from pathlib import Path
 from inspect import cleandoc
 
 from setuptools import setup
 from setuptools.extension import Extension
 
 
-VERSION = '5.0.0a1'
+def _getversion():
+    # CAREFUL: We need the version in this file so we can set it in a C macro to set
+    # pyodbc.__version__, plus the setup function might require it.  We also need it in the
+    # toml file or cibuildwheel will fail.  Instead of requiring a toml parser for older
+    # versions of Python, we'll parse it out with a regexp, which is very simple.
+    path = Path(__file__).parent / 'pyproject.toml'
+    assert path.exists(), f'Cannot find {path}'
+    text = path.read_text(encoding='utf8')
+    m = re.search(
+        r"""
+        ^ \s* version \s*=\s* "([^"]+)"
+        """,
+        text,
+        flags=re.VERBOSE | re.MULTILINE | re.IGNORECASE)
+    if not m:
+        sys.exit(f'Did not find version in {path}')
+    return m.group(1)
+
+
+VERSION = _getversion()
 
 
 def main():

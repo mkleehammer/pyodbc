@@ -34,7 +34,6 @@ jobs:
         # https://docs.github.com/en/actions/using-jobs/choosing-the-runner-for-a-job
         # https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json
         os: [windows-2019, macos-11, ubuntu-22.04]
-        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11"]
 
     steps:
       - uses: actions/checkout@v3
