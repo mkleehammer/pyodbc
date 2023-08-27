@@ -955,6 +955,7 @@ static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Par
 // TVP
 static bool GetTableInfo(Cursor *cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
 {
+    // This is used for SQL Server's "table valued parameters" or TVPs.
     int nskip = 0;
     Py_ssize_t nrows = PySequence_Size(param);
     if (nrows > 0)
@@ -976,7 +977,8 @@ static bool GetTableInfo(Cursor *cur, Py_ssize_t index, PyObject* param, ParamIn
 
     if (!nskip)
     {
-        // Need to describe in order to fill in IPD with the TVP's type name, because user has not provided it
+        // Need to describe in order to fill in IPD with the TVP's type name, because user has
+        // not provided it
         SQLSMALLINT tvptype;
         SQLDescribeParam(cur->hstmt, index + 1, &tvptype, 0, 0, 0);
     }

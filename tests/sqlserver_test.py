@@ -276,6 +276,7 @@ def test_nonnative_uuid(cursor):
     result = cursor.execute("select n from t1").fetchval()
     assert isinstance(result, str)
     assert result == str(value).upper()
+    pyodbc.native_uuid = True
 
 
 def test_native_uuid(cursor):
@@ -1450,7 +1451,7 @@ def test_emoticons_as_literal(cursor):
     v = "x \U0001F31C z"
 
     cursor.execute("create table t1(s nvarchar(100))")
-    cursor.execute("insert into t1 values (N'%s')" % v)
+    cursor.execute(f"insert into t1 values (N'{v}')")
 
     result = cursor.execute("select s from t1").fetchone()[0]
 
@@ -1458,9 +1459,26 @@ def test_emoticons_as_literal(cursor):
 
 
 def _test_tvp(cursor, diff_schema):
-    # https://github.com/mkleehammer/pyodbc/issues/290
+    # Test table value parameters (TVP).  I like the explanation here:
     #
-    # pyodbc supports queries with table valued parameters in sql server
+    # https://www.mssqltips.com/sqlservertip/1483/using-table-valued-parameters-tvp-in-sql-server/
+    #
+    # "At a high level the TVP allows you to populate a table declared as a T-SQL variable,
+    #  then pass that table as a parameter to a stored procedure or function."
+    #
+    # "The TVP must be declared READONLY.  You cannot perform any DML (i.e. INSERT, UPDATE,
+    #  DELETE) against the TVP; you can only reference it in a SELECT statement."
+    #
+    # In this test we'll create a table, pass it to a stored procedure, and have the stored
+    # procedure simply return the rows from the TVP.
+    #
+    # Apparently the way pyodbc knows something is a TVP is because it is in a sequence.  I'm
+    # not sure I like that as it is very generic and specific to SQL Server.  It would be wiser
+    # to define a wrapper pyodbc.TVP or pyodbc.Table object, similar to the DB APIs `Binary`
+    # object.
+
+    pyodbc.native_uuid = True
+    # This is the default, but we'll reset it in case a previous test fails to.
 
     procname = 'SelectTVP'
     typename = 'TestTVP'
@@ -1515,106 +1533,80 @@ def _test_tvp(cursor, diff_schema):
         """)
     cursor.commit()
 
-    long_string = ''
-    long_bytearray = []
-    for i in range(255):
-        long_string += chr((i % 95) + 32)
-        long_bytearray.append(i % 255)
+    # The values aren't exactly VERY_LONG_LEN but close enough and *significantly* faster than
+    # the loop we had before.
+    VERY_LONG_LEN = 2000000
+    long_string         = ''.join(chr(i) for i in range(32, 127))  # printable characters
+    long_bytearray      = bytes(list(range(255)))
+    very_long_string    = long_string * (VERY_LONG_LEN // len(long_string))
+    very_long_bytearray = long_bytearray * (VERY_LONG_LEN // len(long_bytearray))
 
-    very_long_string = ''
-    very_long_bytearray = []
-    for i in range(2000000):
-        very_long_string += chr((i % 95) + 32)
-        very_long_bytearray.append(i % 255)
+    params = [
+        # Three rows with all of the types in the table defined above.
+        (
+            'abc', 'abc',
+            bytes([0xD1, 0xCE, 0xFA, 0xCE]),
+            bytes([0x0F, 0xF1, 0xCE, 0xCA, 0xFE]), True,
+            date(1997, 8, 29), time(9, 13, 39),
+            datetime(2018, 11, 13, 13, 33, 26, 298420),
+            1234567, 3.14, Decimal('31234567890123.141243449787580175325274'),
+            uuid.UUID('4fe34a93-e574-04cc-200a-353f0d1770b1'),
+        ),
+        (
+            '', '',
+            bytes([0x00, 0x01, 0x02, 0x03, 0x04]),
+            bytes([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]), False,
+            date(1, 1, 1), time(0, 0, 0),
+            datetime(1, 1, 1, 0, 0, 0, 0),
+            -9223372036854775808, -1.79E+308, Decimal('0.000000000000000000000001'),
+            uuid.UUID('33f7504c-2bac-1b83-01d1-7434a7ba6a17'),
+        ),
+        (
+            long_string, very_long_string,
+            bytes(long_bytearray), bytes(very_long_bytearray), True,
+            date(9999, 12, 31), time(23, 59, 59),
+            datetime(9999, 12, 31, 23, 59, 59, 999990),
+            9223372036854775807, 1.79E+308, Decimal('99999999999999.999999999999999999999999'),
+            uuid.UUID('ffffffff-ffff-ffff-ffff-ffffffffffff'),
+        )
+    ]
 
-    c01 = ['abc', '', long_string]
-
-    c02 = ['abc', '', very_long_string]
-
-    c03 = [bytearray([0xD1, 0xCE, 0xFA, 0xCE]),
-           bytearray([0x00, 0x01, 0x02, 0x03, 0x04]),
-           bytearray(long_bytearray)]
-
-    c04 = [bytearray([0x0F, 0xF1, 0xCE, 0xCA, 0xFE]),
-           bytearray([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]),
-           bytearray(very_long_bytearray)]
-
-    c05 = [1, 0, 1]
-
-    c06 = [date(1997, 8, 29),
-           date(1, 1, 1),
-           date(9999, 12, 31)]
-
-    c07 = [time(9, 13, 39),
-           time(0, 0, 0),
-           time(23, 59, 59)]
-
-    c08 = [datetime(2018, 11, 13, 13, 33, 26, 298420),
-           datetime(1, 1, 1, 0, 0, 0, 0),
-           datetime(9999, 12, 31, 23, 59, 59, 999990)]
-
-    c09 = [1234567, -9223372036854775808, 9223372036854775807]
-
-    c10 = [3.14, -1.79E+308, 1.79E+308]
-
-    c11 = [Decimal('31234567890123.141243449787580175325274'),
-           Decimal('0.000000000000000000000001'),
-           Decimal('99999999999999.999999999999999999999999')]
-
-    c12 = ['4FE34A93-E574-04CC-200A-353F0D1770B1',
-           '33F7504C-2BAC-1B83-01D1-7434A7BA6A17',
-           'FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF']
-
-    param_array = []
-
-    for i in range(3):
-        param_array.append([c01[i], c02[i], c03[i], c04[i], c05[i], c06[i], c07[i], c08[i],
-                            c09[i], c10[i], c11[i], c12[i]])
-
-    success = True
-
-    try:
-        p1 = [param_array]
-        if diff_schema:
-            p1 = [[typenameonly, schemaname] + param_array]
-        result_array = cursor.execute(f"exec {procname} ?", p1).fetchall()
-    except Exception as ex:
-        print("Failed to execute SelectTVP")
-        print("Exception: [" + type(ex).__name__ + "]", ex.args)
-
-        success = False
+    if diff_schema:
+        p1 = [[typenameonly, schemaname] + params]
     else:
-        for r in range(len(result_array)):
-            for c in range(len(result_array[r])):
-                if result_array[r][c] != param_array[r][c]:
-                    print("Mismatch at row", r + 1, ", column ", (c + 1) + "; expected:",
-                          param_array[r][c], "received:", result_array[r][c])
-                    success = False
+        p1 = [params]
+    result_array = [tuple(row) for row in cursor.execute(f"exec {procname} ?", p1).fetchall()]
 
-    try:
-        p1 = [[]]
-        if diff_schema:
-            p1 = [[typenameonly, schemaname] + []]
-        result_array = cursor.execute(f"exec {procname} ?", p1).fetchall()
-        assert result_array == []
-    except Exception as ex:
-        print("Failed to execute SelectTVP")
-        print("Exception: [" + type(ex).__name__ + "]", ex.args)
-        success = False
+    # The values make it very difficult to troubleshoot if something is wrong, so instead of
+    # asserting they are the same, we'll walk them if there is a problem to identify which is
+    # wrong.
+    for row, param in zip(result_array, params):
+        if row != param:
+            for r, p in zip(row, param):
+                print('-' * 40)
+                print('*** R:', type(r), r)
+                print('*** P:', type(p), p)
+                print()
+                assert r == p
 
-    assert success
+    # Now test with zero rows.
+
+    params = []
+    p1 = [params]
+    if diff_schema:
+        p1 = [[typenameonly, schemaname] + params]
+    else:
+        p1 = [params]
+    result_array = cursor.execute(f"exec {procname} ?", p1).fetchall()
+    assert result_array == params
 
 
-# REVIEW: I need to research this.
-#  @pytest.mark.skipif(IS_FREEDTS, reason='FreeTDS does not support TVP')
-@pytest.mark.skip(reason='TVP test hangs')
+@pytest.mark.skipif(IS_FREEDTS, reason='FreeTDS does not support TVP')
 def test_tvp(cursor):
     _test_tvp(cursor, False)
 
 
-# REVIEW: I need to research this.
-#  @pytest.mark.skipif(IS_FREEDTS, reason='FreeTDS does not support TVP')
-@pytest.mark.skip(reason='TVP test hangs')
+@pytest.mark.skipif(IS_FREEDTS, reason='FreeTDS does not support TVP')
 def test_tvp_diffschema(cursor):
     _test_tvp(cursor, True)
 
