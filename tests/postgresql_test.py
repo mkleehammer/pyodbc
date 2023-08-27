@@ -5,6 +5,7 @@ Unit tests for PostgreSQL
 
 import os, uuid
 from decimal import Decimal
+from typing import Iterator
 
 import pyodbc, pytest
 
@@ -16,8 +17,8 @@ def connect(autocommit=False, attrs_before=None):
     return pyodbc.connect(CNXNSTR, autocommit=autocommit, attrs_before=attrs_before)
 
 
-@pytest.fixture
-def cursor():
+@pytest.fixture()
+def cursor() -> Iterator[pyodbc.Cursor]:
     cnxn = connect()
     cur = cnxn.cursor()
 
@@ -59,7 +60,7 @@ def _generate_str(length, encoding=None):
     return v
 
 
-def test_text(cursor):
+def test_text(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(col text)")
 
     # Two different read code paths exist based on the length.  Using 100 and 4000 will ensure
@@ -72,7 +73,7 @@ def test_text(cursor):
         assert result == param
 
 
-def test_text_many(cursor):
+def test_text_many(cursor: pyodbc.Cursor):
 
     # This shouldn't make a difference, but we'll ensure we can read and write from multiple
     # columns at the same time.
@@ -91,7 +92,7 @@ def test_text_many(cursor):
     assert v3 == row.col3
 
 
-def test_chinese(cursor):
+def test_chinese(cursor: pyodbc.Cursor):
     v = '我的'
     row = cursor.execute("SELECT N'我的' AS name").fetchone()
     assert row[0] == v
@@ -100,7 +101,7 @@ def test_chinese(cursor):
     assert rows[0][0] == v
 
 
-def test_bytea(cursor):
+def test_bytea(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(col bytea)")
 
     for length in [None, 0, 100, 1000, 4000]:
@@ -111,7 +112,7 @@ def test_bytea(cursor):
         assert result == param
 
 
-def test_bytearray(cursor):
+def test_bytearray(cursor: pyodbc.Cursor):
     """
     We will accept a bytearray and treat it like bytes, but when reading we'll still
     get bytes back.
@@ -129,7 +130,7 @@ def test_bytearray(cursor):
         assert result == bytes
 
 
-def test_int(cursor):
+def test_int(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(col int)")
     for param in [None, -1, 0, 1, 0x7FFFFFFF]:
         cursor.execute("truncate table t1")
@@ -138,7 +139,7 @@ def test_int(cursor):
         assert result == param
 
 
-def test_bigint(cursor):
+def test_bigint(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(col bigint)")
     for param in [None, -1, 0, 1, 0x7FFFFFFF, 0xFFFFFFFF, 0x123456789]:
         cursor.execute("truncate table t1")
@@ -147,7 +148,7 @@ def test_bigint(cursor):
         assert result == param
 
 
-def test_float(cursor):
+def test_float(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(col float)")
     for param in [None, -1, 0, 1, -200, 20000]:
         cursor.execute("truncate table t1")
@@ -156,7 +157,7 @@ def test_float(cursor):
         assert result == param
 
 
-def test_decimal(cursor):
+def test_decimal(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(col decimal(20,6))")
 
     # Note: Use strings to initialize the decimals to eliminate floating point rounding.
@@ -173,7 +174,7 @@ def test_decimal(cursor):
         assert result == param
 
 
-def test_numeric(cursor):
+def test_numeric(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(col numeric(20,6))")
 
     # Note: Use strings to initialize the decimals to eliminate floating point rounding.
@@ -187,7 +188,7 @@ def test_numeric(cursor):
         assert result == param
 
 
-def test_maxwrite(cursor):
+def test_maxwrite(cursor: pyodbc.Cursor):
     # If we write more than `maxwrite` bytes, pyodbc will switch from binding the data all at
     # once to providing it at execute time with SQLPutData.  The default maxwrite is 1GB so
     # this is rarely needed in PostgreSQL but I need to test the functionality somewhere.
@@ -200,7 +201,7 @@ def test_maxwrite(cursor):
     assert result == param
 
 
-def test_nonnative_uuid(cursor):
+def test_nonnative_uuid(cursor: pyodbc.Cursor):
     pyodbc.native_uuid = False
 
     param = uuid.uuid4()
@@ -212,7 +213,7 @@ def test_nonnative_uuid(cursor):
     assert result == str(param).upper()
 
 
-def test_native_uuid(cursor):
+def test_native_uuid(cursor: pyodbc.Cursor):
     pyodbc.native_uuid = True
     # When true, we should return a uuid.UUID object.
 
@@ -225,7 +226,7 @@ def test_native_uuid(cursor):
     assert param == result
 
 
-def test_close_cnxn(cursor):
+def test_close_cnxn(cursor: pyodbc.Cursor):
     """Make sure using a Cursor after closing its connection doesn't crash."""
 
     cursor.execute("create table t1(id integer, s varchar(20))")
@@ -245,7 +246,7 @@ def test_version():
     assert len(pyodbc.version.split('.')) == 3
 
 
-def test_rowcount(cursor):
+def test_rowcount(cursor: pyodbc.Cursor):
     assert cursor.rowcount == -1
     # The spec says it should be -1 when not in use.
 
@@ -276,7 +277,7 @@ def test_rowcount(cursor):
     assert cursor.rowcount == 0
 
 
-def test_row_description(cursor):
+def test_row_description(cursor: pyodbc.Cursor):
     """
     Ensure Cursor.description is accessible as Row.cursor_description.
     """
@@ -288,7 +289,7 @@ def test_row_description(cursor):
     assert row.cursor_description == cursor.description
 
 
-def test_lower_case(cursor):
+def test_lower_case(cursor: pyodbc.Cursor):
     "Ensure pyodbc.lowercase forces returned column names to lowercase."
 
     try:
@@ -303,7 +304,7 @@ def test_lower_case(cursor):
         pyodbc.lowercase = False
 
 
-def test_executemany(cursor):
+def test_executemany(cursor: pyodbc.Cursor):
 
     cursor.execute("create table t1(col1 int, col2 varchar(10))")
     params = [(i, str(i)) for i in range(1, 6)]
@@ -328,7 +329,7 @@ def test_executemany(cursor):
         pyodbc.fast_executemany = False
 
 
-def test_executemany_failure(cursor):
+def test_executemany_failure(cursor: pyodbc.Cursor):
     """
     Ensure that an exception is raised if one query in an executemany fails.
     """
@@ -342,7 +343,7 @@ def test_executemany_failure(cursor):
         cursor.executemany("insert into t1(a, b) value (?, ?)", params)
 
 
-def test_row_slicing(cursor):
+def test_row_slicing(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(a int, b int, c int, d int)")
     cursor.execute("insert into t1 values(1,2,3,4)")
 
@@ -368,26 +369,26 @@ def test_datasources():
     assert isinstance(p, dict)
 
 
-def test_getinfo_string(cursor):
+def test_getinfo_string(cursor: pyodbc.Cursor):
     value = cursor.connection.getinfo(pyodbc.SQL_CATALOG_NAME_SEPARATOR)
     assert isinstance(value, str)
 
 
-def test_getinfo_bool(cursor):
+def test_getinfo_bool(cursor: pyodbc.Cursor):
     value = cursor.connection.getinfo(pyodbc.SQL_ACCESSIBLE_TABLES)
     assert isinstance(value, bool)
 
 
-def test_getinfo_int(cursor):
+def test_getinfo_int(cursor: pyodbc.Cursor):
     value = cursor.connection.getinfo(pyodbc.SQL_DEFAULT_TXN_ISOLATION)
     assert isinstance(value, int)
 
 
-def test_getinfo_smallint(cursor):
+def test_getinfo_smallint(cursor: pyodbc.Cursor):
     value = cursor.connection.getinfo(pyodbc.SQL_CONCAT_NULL_BEHAVIOR)
     assert isinstance(value, int)
 
-def test_cnxn_execute_error(cursor):
+def test_cnxn_execute_error(cursor: pyodbc.Cursor):
     """
     Make sure that Connection.execute (not Cursor) errors are not "eaten".
 
@@ -398,7 +399,7 @@ def test_cnxn_execute_error(cursor):
     with pytest.raises(pyodbc.Error):
         cursor.connection.execute("insert into t1 values (1)")
 
-def test_row_repr(cursor):
+def test_row_repr(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(a int, b int, c int, d int)")
     cursor.execute("insert into t1 values(1,2,3,4)")
 
@@ -414,14 +415,14 @@ def test_row_repr(cursor):
     assert result == "(1,)"
 
 
-def test_autocommit(cursor):
+def test_autocommit(cursor: pyodbc.Cursor):
     assert cursor.connection.autocommit is False
     othercnxn = connect(autocommit=True)
     assert othercnxn.autocommit is True
     othercnxn.autocommit = False
     assert othercnxn.autocommit is False
 
-def test_exc_integrity(cursor):
+def test_exc_integrity(cursor: pyodbc.Cursor):
     "Make sure an IntegretyError is raised"
     # This is really making sure we are properly encoding and comparing the SQLSTATEs.
     cursor.execute("create table t1(s1 varchar(10) primary key)")
@@ -438,7 +439,7 @@ def test_cnxn_set_attr_before():
     _cnxn = connect(attrs_before={ SQL_ATTR_PACKET_SIZE : 1024 * 32 })
 
 
-def test_cnxn_set_attr(cursor):
+def test_cnxn_set_attr(cursor: pyodbc.Cursor):
     # I don't have a getattr right now since I don't have a table telling me what kind of
     # value to expect.  For now just make sure it doesn't crash.
     # From the unixODBC sqlext.h header file.
@@ -447,7 +448,7 @@ def test_cnxn_set_attr(cursor):
     cursor.connection.set_attr(SQL_ATTR_ACCESS_MODE, SQL_MODE_READ_ONLY)
 
 
-def test_columns(cursor):
+def test_columns(cursor: pyodbc.Cursor):
     driver_version = tuple(
         int(x) for x in cursor.connection.getinfo(pyodbc.SQL_DRIVER_VER).split(".")
     )
@@ -489,13 +490,13 @@ def test_columns(cursor):
     assert row.type_name == 'varchar'
     assert _get_column_size(row) == 3
 
-def test_cancel(cursor):
+def test_cancel(cursor: pyodbc.Cursor):
     # I'm not sure how to reliably cause a hang to cancel, so for now we'll settle with
     # making sure SQLCancel is called correctly.
     cursor.execute("select 1")
     cursor.cancel()
 
-def test_emoticons_as_parameter(cursor):
+def test_emoticons_as_parameter(cursor: pyodbc.Cursor):
     # https://github.com/mkleehammer/pyodbc/issues/423
     #
     # When sending a varchar parameter, pyodbc is supposed to set ColumnSize to the number
@@ -512,7 +513,7 @@ def test_emoticons_as_parameter(cursor):
 
     assert result == v
 
-def test_emoticons_as_literal(cursor):
+def test_emoticons_as_literal(cursor: pyodbc.Cursor):
     # https://github.com/mkleehammer/pyodbc/issues/630
 
     v = "x \U0001F31C z"
@@ -525,7 +526,7 @@ def test_emoticons_as_literal(cursor):
     assert result == v
 
 
-def test_cursor_messages(cursor):
+def test_cursor_messages(cursor: pyodbc.Cursor):
     """
     Test the Cursor.messages attribute.
     """
@@ -555,7 +556,7 @@ def test_cursor_messages(cursor):
         assert messages == [('[01000] (-1)', f'INFO: {msg}')]
 
 
-def test_output_conversion(cursor):
+def test_output_conversion(cursor: pyodbc.Cursor):
     # Note the use of SQL_WVARCHAR, not SQL_VARCHAR.
 
     def convert(value):
