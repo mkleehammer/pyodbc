@@ -296,7 +296,6 @@ SQL_XOPEN_CLI_YEAR: int
 
 # pyodbc-specific constants
 BinaryNull: Any  # to distinguish binary NULL values from char NULL values
-UNICODE_SIZE: int
 SQLWCHAR_SIZE: int
 
 
@@ -978,7 +977,6 @@ def connect(connstring: Optional[str] = None,
             /, *,  # only positional parameters before, only named parameters after
             autocommit: bool = False,
             encoding: str = 'utf-16le',
-            ansi: bool = False,
             readonly: bool = False,
             timeout: int = 0,
             attrs_before: Dict[int, Any] = {},
@@ -990,7 +988,6 @@ def connect(connstring: Optional[str] = None,
         connstring: The connection string, which is passed verbatim to the driver manager.
         autocommit: If True, instructs the database to commit after each SQL statement.
         encoding: Encoding codec used when sending textual connection parameters to the database.
-        ansi: Can be set True for drivers that do not support Unicode.  This is rare.
         readonly: To set the connection read-only.  Not all drivers and/or databases support this.
         timeout: Set the connection timeout, in seconds.  This is managed by the driver, not
             pyodbc, and not all drivers support this.
