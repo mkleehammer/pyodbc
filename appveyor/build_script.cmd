@@ -32,14 +32,6 @@ IF ERRORLEVEL 1 (
 "%PYTHON_HOME%\python" -m pip freeze --all
 
 ECHO.
-ECHO *** Building the pyodbc module...
-%WITH_COMPILER% "%PYTHON_HOME%\python" setup.py build
-IF ERRORLEVEL 1 (
-  ECHO *** ERROR: pyodbc build failed
-  EXIT 1
-)
-
-ECHO.
 ECHO *** Installing pyodbc...
 "%PYTHON_HOME%\python" -m pip install .
 IF ERRORLEVEL 1 (
