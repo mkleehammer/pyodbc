@@ -32,6 +32,14 @@ jobs:
           ACCEPT_EULA: Y
           SA_PASSWORD: StrongPassword2019
 
+      mssql2022:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        ports:
+        - 1403:1433
+        env:
+          ACCEPT_EULA: Y
+          SA_PASSWORD: StrongPassword2022
+
       postgres:
         image: postgres:11
         env:
@@ -123,6 +131,9 @@ jobs:
         echo "*** SQL Server 2019"
         docker exec -i "${{ job.services.mssql2019.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2019' -Q "SELECT @@VERSION" || sleep 5
         docker exec -i "${{ job.services.mssql2019.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2019' -Q "CREATE DATABASE test"
+        echo "*** SQL Server 2022"
+        docker exec -i "${{ job.services.mssql2022.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2022' -Q "SELECT @@VERSION" || sleep 5
+        docker exec -i "${{ job.services.mssql2022.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2022' -Q "CREATE DATABASE test"
 
     - name: Create test database in PostgreSQL
       run: |
@@ -198,6 +209,13 @@ jobs:
     - name: Run SQL Server 2019 tests
       env:
         PYODBC_SQLSERVER: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1402;UID=sa;PWD=StrongPassword2019;DATABASE=test;Encrypt=Optional"
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        python "./tests/sqlserver_test.py"
+
+    - name: Run SQL Server 2022 tests
+      env:
+        PYODBC_SQLSERVER: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1403;UID=sa;PWD=StrongPassword2022;DATABASE=test;Encrypt=Optional"
       run: |
         cd "$GITHUB_WORKSPACE"
         python "./tests/sqlserver_test.py"
