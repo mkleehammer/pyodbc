@@ -5,6 +5,7 @@ import os, uuid, re, sys
 from decimal import Decimal
 from datetime import date, time, datetime
 from functools import lru_cache
+from typing import Iterator
 
 import pyodbc, pytest
 
@@ -56,8 +57,8 @@ def _get_sqlserver_year():
 SQLSERVER_YEAR = _get_sqlserver_year()
 
 
-@pytest.fixture
-def cursor():
+@pytest.fixture()
+def cursor() -> Iterator[pyodbc.Cursor]:
     cnxn = connect()
     cur = cnxn.cursor()
 
@@ -73,29 +74,29 @@ def cursor():
         cnxn.close()
 
 
-def test_text(cursor):
+def test_text(cursor: pyodbc.Cursor):
     _test_vartype(cursor, 'text')
 
 
-def test_varchar(cursor):
+def test_varchar(cursor: pyodbc.Cursor):
     _test_vartype(cursor, 'varchar')
 
 
-def test_nvarchar(cursor):
+def test_nvarchar(cursor: pyodbc.Cursor):
     _test_vartype(cursor, 'nvarchar')
 
 
-def test_varbinary(cursor):
+def test_varbinary(cursor: pyodbc.Cursor):
     _test_vartype(cursor, 'varbinary')
 
 
 @pytest.mark.skipif(SQLSERVER_YEAR < 2005, reason='(max) not supported until 2005')
-def test_unicode_longmax(cursor):
+def test_unicode_longmax(cursor: pyodbc.Cursor):
     # Issue 188:	Segfault when fetching NVARCHAR(MAX) data over 511 bytes
     cursor.execute("select cast(replicate(N'x', 512) as nvarchar(max))")
 
 
-def test_char(cursor):
+def test_char(cursor: pyodbc.Cursor):
     value = "testing"
     cursor.execute("create table t1(s char(7))")
     cursor.execute("insert into t1 values(?)", "testing")
@@ -103,16 +104,16 @@ def test_char(cursor):
     assert v == value
 
 
-def test_int(cursor):
+def test_int(cursor: pyodbc.Cursor):
     _test_scalar(cursor, 'int', [None, -1, 0, 1, 12345678])
 
 
-def test_bigint(cursor):
+def test_bigint(cursor: pyodbc.Cursor):
     _test_scalar(cursor, 'bigint', [None, -1, 0, 1, 0x123456789, 0x7FFFFFFF, 0xFFFFFFFF,
                                     0x123456789])
 
 
-def test_overflow_int(cursor):
+def test_overflow_int(cursor: pyodbc.Cursor):
     # python allows integers of any size, bigger than an 8 byte int can contain
     input = 9999999999999999999999999999999999999
     cursor.execute("create table t1(d bigint)")
@@ -122,11 +123,11 @@ def test_overflow_int(cursor):
     assert result == []
 
 
-def test_float(cursor):
+def test_float(cursor: pyodbc.Cursor):
     _test_scalar(cursor, 'float', [None, -200, -1, 0, 1, 1234.5, -200, .00012345])
 
 
-def test_non_numeric_float(cursor):
+def test_non_numeric_float(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(d float)")
     for input in (float('+Infinity'), float('-Infinity'), float('NaN')):
         with pytest.raises(pyodbc.ProgrammingError):
@@ -167,7 +168,7 @@ def test_getinfo_smallint():
     assert isinstance(value, int)
 
 
-def test_no_fetch(cursor):
+def test_no_fetch(cursor: pyodbc.Cursor):
     # Issue 89 with FreeTDS: Multiple selects (or catalog functions that issue selects) without
     # fetches seem to confuse the driver.
     cursor.execute('select 1')
@@ -175,7 +176,7 @@ def test_no_fetch(cursor):
     cursor.execute('select 1')
 
 
-def test_decode_meta(cursor):
+def test_decode_meta(cursor: pyodbc.Cursor):
     """
     Ensure column names with non-ASCII characters are converted using the configured encodings.
     """
@@ -186,7 +187,7 @@ def test_decode_meta(cursor):
     assert cursor.description[0][0] == "Tipología"
 
 
-def test_exc_integrity(cursor):
+def test_exc_integrity(cursor: pyodbc.Cursor):
     "Make sure an IntegretyError is raised"
     # This is really making sure we are properly encoding and comparing the SQLSTATEs.
     cursor.execute("create table t1(s1 varchar(10) primary key)")
@@ -195,7 +196,7 @@ def test_exc_integrity(cursor):
         cursor.execute("insert into t1 values ('one')")
 
 
-def test_multiple_bindings(cursor):
+def test_multiple_bindings(cursor: pyodbc.Cursor):
     "More than one bind and select on a cursor"
     cursor.execute("create table t1(n int)")
     cursor.execute("insert into t1 values (?)", 1)
@@ -206,7 +207,7 @@ def test_multiple_bindings(cursor):
         cursor.execute("select n from t1 where n < 3")
 
 
-def test_different_bindings(cursor):
+def test_different_bindings(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(n int)")
     cursor.execute("create table t2(d datetime)")
     cursor.execute("insert into t1 values (?)", 1)
@@ -217,7 +218,7 @@ SMALL_FENCEPOST_SIZES = [None, 0, 1, 255, 256, 510, 511, 512, 1023, 1024, 2047, 
 LARGE_FENCEPOST_SIZES = SMALL_FENCEPOST_SIZES + [4095, 4096, 4097, 10 * 1024, 20 * 1024]
 
 
-def _test_vartype(cursor, datatype):
+def _test_vartype(cursor: pyodbc.Cursor, datatype):
 
     if datatype == 'text':
         lengths = LARGE_FENCEPOST_SIZES
@@ -246,26 +247,25 @@ def _test_vartype(cursor, datatype):
         assert v == value
 
 
-def _test_scalar(cursor, datatype, values):
+def _test_scalar(cursor: pyodbc.Cursor, datatype, values):
     """
     A simple test wrapper for types that are identical when written and read.
     """
     cursor.execute(f"create table t1(c1 {datatype})")
     for value in values:
-        print('value:', value)
         cursor.execute("delete from t1")
         cursor.execute("insert into t1 values (?)", value)
         v = cursor.execute("select c1 from t1").fetchone()[0]
         assert v == value
 
 
-def test_noscan(cursor):
+def test_noscan(cursor: pyodbc.Cursor):
     assert cursor.noscan is False
     cursor.noscan = True
     assert cursor.noscan is True
 
 
-def test_nonnative_uuid(cursor):
+def test_nonnative_uuid(cursor: pyodbc.Cursor):
     # The default is False meaning we should return a string.  Note that
     # SQL Server seems to always return uppercase.
     value = uuid.uuid4()
@@ -279,7 +279,7 @@ def test_nonnative_uuid(cursor):
     pyodbc.native_uuid = True
 
 
-def test_native_uuid(cursor):
+def test_native_uuid(cursor: pyodbc.Cursor):
     # When true, we should return a uuid.UUID object.
     value = uuid.uuid4()
     cursor.execute("create table t1(n uniqueidentifier)")
@@ -291,7 +291,7 @@ def test_native_uuid(cursor):
     assert value == result
 
 
-def test_nextset(cursor):
+def test_nextset(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(i int)")
     for i in range(4):
         cursor.execute("insert into t1(i) values(?)", i)
@@ -312,7 +312,7 @@ def test_nextset(cursor):
 
 
 @pytest.mark.skipif(IS_FREEDTS, reason='https://github.com/FreeTDS/freetds/issues/230')
-def test_nextset_with_raiserror(cursor):
+def test_nextset_with_raiserror(cursor: pyodbc.Cursor):
     cursor.execute("select i = 1; RAISERROR('c', 16, 1);")
     row = next(cursor)
     assert 1 == row.i
@@ -320,7 +320,7 @@ def test_nextset_with_raiserror(cursor):
         cursor.nextset()
 
 
-def test_fixed_unicode(cursor):
+def test_fixed_unicode(cursor: pyodbc.Cursor):
     value = "t\xebsting"
     cursor.execute("create table t1(s nchar(7))")
     cursor.execute("insert into t1 values(?)", "t\xebsting")
@@ -331,7 +331,7 @@ def test_fixed_unicode(cursor):
     assert v == value
 
 
-def test_chinese(cursor):
+def test_chinese(cursor: pyodbc.Cursor):
     v = '我的'
     cursor.execute("SELECT N'我的' AS [Name]")
     row = cursor.fetchone()
@@ -342,7 +342,7 @@ def test_chinese(cursor):
     assert rows[0][0] == v
 
 
-def test_bit(cursor):
+def test_bit(cursor: pyodbc.Cursor):
     value = True
     cursor.execute("create table t1(b bit)")
     cursor.execute("insert into t1 values (?)", value)
@@ -351,7 +351,7 @@ def test_bit(cursor):
     assert v == value
 
 
-def test_decimal(cursor):
+def test_decimal(cursor: pyodbc.Cursor):
     # From test provided by planders (thanks!) in Issue 91
 
     for (precision, scale, negative) in [
@@ -379,7 +379,7 @@ def test_decimal(cursor):
         assert v == value
 
 
-def test_decimal_e(cursor):
+def test_decimal_e(cursor: pyodbc.Cursor):
     """Ensure exponential notation decimals are properly handled"""
     value = Decimal((0, (1, 2, 3), 5))  # prints as 1.23E+7
     cursor.execute("create table t1(d decimal(10, 2))")
@@ -388,7 +388,7 @@ def test_decimal_e(cursor):
     assert result == value
 
 
-def test_subquery_params(cursor):
+def test_subquery_params(cursor: pyodbc.Cursor):
     """Ensure parameter markers work in a subquery"""
     cursor.execute("create table t1(id integer, s varchar(20))")
     cursor.execute("insert into t1 values (?,?)", 1, 'test')
@@ -424,7 +424,7 @@ def test_close_cnxn():
         cursor.execute("select * from t1")
 
 
-def test_empty_string(cursor):
+def test_empty_string(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(s varchar(20))")
     cursor.execute("insert into t1 values(?)", "")
 
@@ -440,7 +440,7 @@ def test_empty_string_encoding():
     assert v == value
 
 
-def test_fixed_str(cursor):
+def test_fixed_str(cursor: pyodbc.Cursor):
     value = "testing"
     cursor.execute("create table t1(s char(7))")
     cursor.execute("insert into t1 values(?)", value)
@@ -451,7 +451,7 @@ def test_fixed_str(cursor):
     assert v == value
 
 
-def test_empty_unicode(cursor):
+def test_empty_unicode(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(s nvarchar(20))")
     cursor.execute("insert into t1 values(?)", "")
 
@@ -467,7 +467,7 @@ def test_empty_unicode_encoding():
     assert v == value
 
 
-def test_negative_row_index(cursor):
+def test_negative_row_index(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(s varchar(20))")
     cursor.execute("insert into t1 values(?)", "1")
     row = cursor.execute("select * from t1").fetchone()
@@ -481,7 +481,7 @@ def test_version():
 
 @pytest.mark.skipif(IS_MSODBCSQL and SQLSERVER_YEAR < 2008,
                     reason='Date not supported until 2008?')
-def test_date(cursor):
+def test_date(cursor: pyodbc.Cursor):
     value = date.today()
 
     cursor.execute("create table t1(d date)")
@@ -494,7 +494,7 @@ def test_date(cursor):
 
 @pytest.mark.skipif(IS_MSODBCSQL and SQLSERVER_YEAR < 2008,
                     reason='Time not supported until 2008?')
-def test_time(cursor):
+def test_time(cursor: pyodbc.Cursor):
     value = datetime.now().time()
 
     # We aren't yet writing values using the new extended time type so the value written to the
@@ -509,7 +509,7 @@ def test_time(cursor):
     assert value == result
 
 
-def test_datetime(cursor):
+def test_datetime(cursor: pyodbc.Cursor):
     value = datetime(2007, 1, 15, 3, 4, 5)
 
     cursor.execute("create table t1(dt datetime)")
@@ -520,7 +520,7 @@ def test_datetime(cursor):
     assert value == result
 
 
-def test_datetime_fraction(cursor):
+def test_datetime_fraction(cursor: pyodbc.Cursor):
     # SQL Server supports milliseconds, but Python's datetime supports nanoseconds, so the most
     # granular datetime supported is xxx000.
 
@@ -534,7 +534,7 @@ def test_datetime_fraction(cursor):
     assert value == result
 
 
-def test_datetime_fraction_rounded(cursor):
+def test_datetime_fraction_rounded(cursor: pyodbc.Cursor):
     # SQL Server supports milliseconds, but Python's datetime supports nanoseconds.  pyodbc
     # rounds down to what the database supports.
 
@@ -549,7 +549,7 @@ def test_datetime_fraction_rounded(cursor):
     assert rounded == result
 
 
-def test_datetime2(cursor):
+def test_datetime2(cursor: pyodbc.Cursor):
     value = datetime(2007, 1, 15, 3, 4, 5)
 
     cursor.execute("create table t1(dt datetime2)")
@@ -560,7 +560,7 @@ def test_datetime2(cursor):
     assert value == result
 
 
-def test_sp_results(cursor):
+def test_sp_results(cursor: pyodbc.Cursor):
     cursor.execute(
         """
         Create procedure proc1
@@ -574,7 +574,7 @@ def test_sp_results(cursor):
     assert isinstance(rows[0].refdate, datetime)
 
 
-def test_sp_results_from_temp(cursor):
+def test_sp_results_from_temp(cursor: pyodbc.Cursor):
 
     # Note: I've used "set nocount on" so that we don't get the number of rows deleted from
     # #tmptable.  If you don't do this, you'd need to call nextset() once to skip it.
@@ -600,7 +600,7 @@ def test_sp_results_from_temp(cursor):
     assert isinstance(rows[0].refdate, datetime)
 
 
-def test_sp_results_from_vartbl(cursor):
+def test_sp_results_from_vartbl(cursor: pyodbc.Cursor):
     cursor.execute(
         """
         Create procedure proc1
@@ -621,7 +621,7 @@ def test_sp_results_from_vartbl(cursor):
     assert isinstance(rows[0].refdate, datetime)
 
 
-def test_sp_with_dates(cursor):
+def test_sp_with_dates(cursor: pyodbc.Cursor):
     # Reported in the forums that passing two datetimes to a stored procedure doesn't work.
     cursor.execute(
         """
@@ -643,7 +643,7 @@ def test_sp_with_dates(cursor):
     assert rows[0][0] == 0   # 0 years apart
 
 
-def test_sp_with_none(cursor):
+def test_sp_with_none(cursor: pyodbc.Cursor):
     # Reported in the forums that passing None caused an error.
     cursor.execute(
         """
@@ -670,7 +670,7 @@ def test_sp_with_none(cursor):
 #
 
 
-def test_rowcount_delete(cursor):
+def test_rowcount_delete(cursor: pyodbc.Cursor):
     assert cursor.rowcount == -1
     cursor.execute("create table t1(i int)")
     count = 4
@@ -680,7 +680,7 @@ def test_rowcount_delete(cursor):
     assert cursor.rowcount == count
 
 
-def test_rowcount_nodata(cursor):
+def test_rowcount_nodata(cursor: pyodbc.Cursor):
     """
     This represents a different code path than a delete that deleted something.
 
@@ -694,7 +694,7 @@ def test_rowcount_nodata(cursor):
     assert cursor.rowcount == 0
 
 
-def test_rowcount_select(cursor):
+def test_rowcount_select(cursor: pyodbc.Cursor):
     """
     Ensure Cursor.rowcount is set properly after a select statement.
 
@@ -714,7 +714,7 @@ def test_rowcount_select(cursor):
     assert cursor.rowcount == -1
 
 
-def test_rowcount_reset(cursor):
+def test_rowcount_reset(cursor: pyodbc.Cursor):
     "Ensure rowcount is reset after DDL"
     cursor.execute("create table t1(i int)")
     count = 4
@@ -727,14 +727,14 @@ def test_rowcount_reset(cursor):
     assert cursor.rowcount == ddl_rowcount
 
 
-def test_retcursor_delete(cursor):
+def test_retcursor_delete(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(i int)")
     cursor.execute("insert into t1 values (1)")
     v = cursor.execute("delete from t1")
     assert v == cursor
 
 
-def test_retcursor_nodata(cursor):
+def test_retcursor_nodata(cursor: pyodbc.Cursor):
     """
     This represents a different code path than a delete that deleted something.
 
@@ -748,14 +748,14 @@ def test_retcursor_nodata(cursor):
     assert v == cursor
 
 
-def test_retcursor_select(cursor):
+def test_retcursor_select(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(i int)")
     cursor.execute("insert into t1 values (1)")
     v = cursor.execute("select * from t1")
     assert v == cursor
 
 
-def table_with_spaces(cursor):
+def table_with_spaces(cursor: pyodbc.Cursor):
     "Ensure we can select using [x z] syntax"
 
     try:
@@ -787,7 +787,7 @@ def test_lower_case():
         pyodbc.lowercase = False
 
 
-def test_row_description(cursor):
+def test_row_description(cursor: pyodbc.Cursor):
     """
     Ensure Cursor.description is accessible as Row.cursor_description.
     """
@@ -797,7 +797,7 @@ def test_row_description(cursor):
     assert cursor.description == row.cursor_description
 
 
-def test_temp_select(cursor):
+def test_temp_select(cursor: pyodbc.Cursor):
     # A project was failing to create temporary tables via select into.
     cursor.execute("create table t1(s char(7))")
     cursor.execute("insert into t1 values(?)", "testing")
@@ -811,7 +811,7 @@ def test_temp_select(cursor):
     assert v == "testing"
 
 
-def test_executemany(cursor):
+def test_executemany(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(a int, b varchar(10))")
 
     params = [(i, str(i)) for i in range(1, 6)]
@@ -830,7 +830,7 @@ def test_executemany(cursor):
         assert param[1] == row[1]
 
 
-def test_executemany_one(cursor):
+def test_executemany_one(cursor: pyodbc.Cursor):
     "Pass executemany a single sequence"
     cursor.execute("create table t1(a int, b varchar(10))")
 
@@ -850,7 +850,7 @@ def test_executemany_one(cursor):
         assert param[1] == row[1]
 
 
-def test_executemany_dae_0(cursor):
+def test_executemany_dae_0(cursor: pyodbc.Cursor):
     """
     DAE for 0-length value
     """
@@ -864,7 +864,7 @@ def test_executemany_dae_0(cursor):
     cursor.fast_executemany = False
 
 
-def test_executemany_failure(cursor):
+def test_executemany_failure(cursor: pyodbc.Cursor):
     """
     Ensure that an exception is raised if one query in an executemany fails.
     """
@@ -878,7 +878,7 @@ def test_executemany_failure(cursor):
         cursor.executemany("insert into t1(a, b) value (?, ?)", params)
 
 
-def test_row_slicing(cursor):
+def test_row_slicing(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(a int, b int, c int, d int)")
     cursor.execute("insert into t1 values(1,2,3,4)")
 
@@ -894,7 +894,7 @@ def test_row_slicing(cursor):
     assert result is row
 
 
-def test_row_repr(cursor):
+def test_row_repr(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(a int, b int, c int, d varchar(50))")
     cursor.execute("insert into t1 values(1,2,3,'four')")
 
@@ -910,7 +910,7 @@ def test_row_repr(cursor):
     assert result == "(1,)"
 
 
-def test_concatenation(cursor):
+def test_concatenation(cursor: pyodbc.Cursor):
     v2 = '0123456789' * 30
     v3 = '9876543210' * 30
 
@@ -922,7 +922,7 @@ def test_concatenation(cursor):
     assert row.both == v2 + v3
 
 
-def test_view_select(cursor):
+def test_view_select(cursor: pyodbc.Cursor):
     # Reported in forum: Can't select from a view?  I think I do this a lot, but another test
     # never hurts.
 
@@ -950,7 +950,7 @@ def test_autocommit():
     assert cnxn.autocommit is False
 
 
-def test_sqlserver_callproc(cursor):
+def test_sqlserver_callproc(cursor: pyodbc.Cursor):
     try:
         cursor.execute("drop procedure pyodbctest")
         cursor.commit()
@@ -972,7 +972,7 @@ def test_sqlserver_callproc(cursor):
     cursor.execute("exec pyodbctest 'hi'")
 
 
-def test_skip(cursor):
+def test_skip(cursor: pyodbc.Cursor):
     # Insert 1, 2, and 3.  Fetch 1, skip 2, fetch 3.
 
     cursor.execute("create table t1(id int)")
@@ -995,7 +995,7 @@ def test_timeout():
     assert cnxn.timeout == 0
 
 
-def test_sets_execute(cursor):
+def test_sets_execute(cursor: pyodbc.Cursor):
     # Only lists and tuples are allowed.
     cursor.execute("create table t1 (word varchar (100))")
 
@@ -1008,7 +1008,7 @@ def test_sets_execute(cursor):
         cursor.executemany("insert into t1 (word) values (?)", words)
 
 
-def test_row_execute(cursor):
+def test_row_execute(cursor: pyodbc.Cursor):
     "Ensure we can use a Row object as a parameter to execute"
     cursor.execute("create table t1(n int, s varchar(10))")
     cursor.execute("insert into t1 values (1, 'a')")
@@ -1019,7 +1019,7 @@ def test_row_execute(cursor):
     cursor.execute("insert into t2 values (?, ?)", row)
 
 
-def test_row_executemany(cursor):
+def test_row_executemany(cursor: pyodbc.Cursor):
     "Ensure we can use a Row object as a parameter to executemany"
     cursor.execute("create table t1(n int, s varchar(10))")
 
@@ -1033,7 +1033,7 @@ def test_row_executemany(cursor):
     cursor.executemany("insert into t2 values (?, ?)", rows)
 
 
-def test_description(cursor):
+def test_description(cursor: pyodbc.Cursor):
     "Ensure cursor.description is correct"
 
     cursor.execute("create table t1(n int, s varchar(8), d decimal(5,2))")
@@ -1067,7 +1067,7 @@ def test_description(cursor):
     assert t[6] is True    # nullable
 
 
-def test_cursor_messages_with_print(cursor):
+def test_cursor_messages_with_print(cursor: pyodbc.Cursor):
     """
     Ensure the Cursor.messages attribute is handled correctly with a simple PRINT statement.
     """
@@ -1088,7 +1088,7 @@ def test_cursor_messages_with_print(cursor):
         assert messages[0][1].endswith(msg)
 
 
-def test_cursor_messages_with_stored_proc(cursor):
+def test_cursor_messages_with_stored_proc(cursor: pyodbc.Cursor):
     """
     Complex scenario to test the Cursor.messages attribute.
     """
@@ -1142,7 +1142,7 @@ def test_cursor_messages_with_stored_proc(cursor):
     assert not cursor.messages
 
 
-def test_none_param(cursor):
+def test_none_param(cursor: pyodbc.Cursor):
     "Ensure None can be used for params other than the first"
     # Some driver/db versions would fail if NULL was not the first parameter because
     # SQLDescribeParam (only used with NULL) could not be used after the first call to
@@ -1250,7 +1250,7 @@ def test_output_conversion():
     assert value == '123.45'
 
 
-def test_too_large(cursor):
+def test_too_large(cursor: pyodbc.Cursor):
     """Ensure error raised if insert fails due to truncation"""
     value = 'x' * 1000
     cursor.execute("create table t1(s varchar(800))")
@@ -1261,7 +1261,7 @@ def test_too_large(cursor):
 
 @pytest.mark.skipif(sys.platform.startswith('linux'),
                     reason='SQL Server Linux does not support -151 yet')
-def test_geometry_null_insert(cursor):
+def test_geometry_null_insert(cursor: pyodbc.Cursor):
     cnxn = connect()
 
     def convert(value):
@@ -1275,7 +1275,7 @@ def test_geometry_null_insert(cursor):
     cnxn.clear_output_converters()
 
 
-def test_row_equal(cursor):
+def test_row_equal(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(n int, s varchar(20))")
     cursor.execute("insert into t1 values (1, 'test')")
     row1 = cursor.execute("select n, s from t1").fetchone()
@@ -1283,7 +1283,7 @@ def test_row_equal(cursor):
     assert row1 == row2
 
 
-def test_row_gtlt(cursor):
+def test_row_gtlt(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(n int, s varchar(20))")
     cursor.execute("insert into t1 values (1, 'test1')")
     cursor.execute("insert into t1 values (1, 'test2')")
@@ -1314,7 +1314,7 @@ def test_context_manager_success():
     assert rows[0][0] == 1
 
 
-def test_context_manager_failure(cursor):
+def test_context_manager_failure(cursor: pyodbc.Cursor):
     "Ensure `with` rolls back if an exception is raised"
     cnxn = connect()
     cursor = cnxn.cursor()
@@ -1336,19 +1336,19 @@ def test_context_manager_failure(cursor):
     assert val == 1
 
 
-def test_untyped_none(cursor):
+def test_untyped_none(cursor: pyodbc.Cursor):
     # From issue 129
     value = cursor.execute("select ?", None).fetchone()[0]
     assert value is None
 
 
-def test_large_update_nodata(cursor):
+def test_large_update_nodata(cursor: pyodbc.Cursor):
     cursor.execute('create table t1(a varbinary(max))')
     hundredkb = b'x' * 100 * 1024
     cursor.execute('update t1 set a=? where 1=0', (hundredkb,))
 
 
-def test_func_param(cursor):
+def test_func_param(cursor: pyodbc.Cursor):
     try:
         cursor.execute("drop function func1")
     except:
@@ -1368,7 +1368,7 @@ def test_func_param(cursor):
     assert value == 'test'
 
 
-def test_columns(cursor):
+def test_columns(cursor: pyodbc.Cursor):
     # When using aiohttp, `await cursor.primaryKeys('t1')` was raising the error
     #
     #   Error: TypeError: argument 2 must be str, not None
@@ -1415,14 +1415,14 @@ def test_columns(cursor):
         cursor.execute(f"drop table {table_name}")
 
 
-def test_cancel(cursor):
+def test_cancel(cursor: pyodbc.Cursor):
     # I'm not sure how to reliably cause a hang to cancel, so for now we'll settle with
     # making sure SQLCancel is called correctly.
     cursor.execute("select 1")
     cursor.cancel()
 
 
-def test_emoticons_as_parameter(cursor):
+def test_emoticons_as_parameter(cursor: pyodbc.Cursor):
     # https://github.com/mkleehammer/pyodbc/issues/423
     #
     # When sending a varchar parameter, pyodbc is supposed to set ColumnSize to the number
@@ -1440,7 +1440,7 @@ def test_emoticons_as_parameter(cursor):
     assert result == v
 
 
-def test_emoticons_as_literal(cursor):
+def test_emoticons_as_literal(cursor: pyodbc.Cursor):
     # similar to `test_emoticons_as_parameter`, above, except for Unicode literal
     #
     # http://www.fileformat.info/info/unicode/char/1f31c/index.htm
@@ -1458,7 +1458,7 @@ def test_emoticons_as_literal(cursor):
     assert result == v
 
 
-def _test_tvp(cursor, diff_schema):
+def _test_tvp(cursor: pyodbc.Cursor, diff_schema):
     # Test table value parameters (TVP).  I like the explanation here:
     #
     # https://www.mssqltips.com/sqlservertip/1483/using-table-valued-parameters-tvp-in-sql-server/
@@ -1583,10 +1583,6 @@ def _test_tvp(cursor, diff_schema):
     for row, param in zip(result_array, params):
         if row != param:
             for r, p in zip(row, param):
-                print('-' * 40)
-                print('*** R:', type(r), r)
-                print('*** P:', type(p), p)
-                print()
                 assert r == p
 
     # Now test with zero rows.
@@ -1602,16 +1598,16 @@ def _test_tvp(cursor, diff_schema):
 
 
 @pytest.mark.skipif(IS_FREEDTS, reason='FreeTDS does not support TVP')
-def test_tvp(cursor):
+def test_tvp(cursor: pyodbc.Cursor):
     _test_tvp(cursor, False)
 
 
 @pytest.mark.skipif(IS_FREEDTS, reason='FreeTDS does not support TVP')
-def test_tvp_diffschema(cursor):
+def test_tvp_diffschema(cursor: pyodbc.Cursor):
     _test_tvp(cursor, True)
 
 
-def get_sqlserver_version(cursor):
+def get_sqlserver_version(cursor: pyodbc.Cursor):
 
     """
     Returns the major version: 8-->2000, 9-->2005, 10-->2008

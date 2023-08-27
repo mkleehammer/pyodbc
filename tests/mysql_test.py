@@ -7,6 +7,7 @@ import os
 from decimal import Decimal
 from datetime import date, datetime
 from functools import lru_cache
+from typing import Iterator
 
 import pyodbc, pytest
 
@@ -31,8 +32,8 @@ def connect(autocommit=False, attrs_before=None):
     return c
 
 
-@pytest.fixture
-def cursor():
+@pytest.fixture()
+def cursor() -> Iterator[pyodbc.Cursor]:
     cnxn = connect()
 
     cur = cnxn.cursor()
@@ -49,19 +50,19 @@ def cursor():
         cnxn.close()
 
 
-def test_text(cursor):
+def test_text(cursor: pyodbc.Cursor):
     _test_vartype(cursor, 'text')
 
 
-def test_varchar(cursor):
+def test_varchar(cursor: pyodbc.Cursor):
     _test_vartype(cursor, 'varchar')
 
 
-def test_varbinary(cursor):
+def test_varbinary(cursor: pyodbc.Cursor):
     _test_vartype(cursor, 'varbinary')
 
 
-def test_blob(cursor):
+def test_blob(cursor: pyodbc.Cursor):
     _test_vartype(cursor, 'blob')
 
 
@@ -79,7 +80,7 @@ def _test_vartype(cursor, datatype):
         assert v == value
 
 
-def test_char(cursor):
+def test_char(cursor: pyodbc.Cursor):
     value = "testing"
     cursor.execute("create table t1(s char(7))")
     cursor.execute("insert into t1 values(?)", "testing")
@@ -87,30 +88,29 @@ def test_char(cursor):
     assert v == value
 
 
-def test_int(cursor):
+def test_int(cursor: pyodbc.Cursor):
     _test_scalar(cursor, 'int', [None, -1, 0, 1, 12345678])
 
 
-def test_bigint(cursor):
+def test_bigint(cursor: pyodbc.Cursor):
     _test_scalar(cursor, 'bigint', [None, -1, 0, 1, 0x123456789, 0x7FFFFFFF, 0xFFFFFFFF,
                                     0x123456789])
 
 
-def test_float(cursor):
+def test_float(cursor: pyodbc.Cursor):
     _test_scalar(cursor, 'float', [None, -1, 0, 1, 1234.5, -200])
 
 
-def _test_scalar(cursor, datatype, values):
+def _test_scalar(cursor: pyodbc.Cursor, datatype, values):
     cursor.execute(f"create table t1(c1 {datatype})")
     for value in values:
-        print('value:', value)
         cursor.execute("delete from t1")
         cursor.execute("insert into t1 values (?)", value)
         v = cursor.execute("select c1 from t1").fetchone()[0]
         assert v == value
 
 
-def test_decimal(cursor):
+def test_decimal(cursor: pyodbc.Cursor):
     tests = [
         ('100010', '19'),  # The ODBC docs tell us how the bytes should look in the C struct
         ('1000.10', '20,6'),
@@ -126,7 +126,7 @@ def test_decimal(cursor):
         assert v == value
 
 
-def test_multiple_bindings(cursor):
+def test_multiple_bindings(cursor: pyodbc.Cursor):
     "More than one bind and select on a cursor"
     cursor.execute("create table t1(n int)")
     cursor.execute("insert into t1 values (?)", 1)
@@ -137,7 +137,7 @@ def test_multiple_bindings(cursor):
         cursor.execute("select n from t1 where n < 3")
 
 
-def test_different_bindings(cursor):
+def test_different_bindings(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(n int)")
     cursor.execute("create table t2(d datetime)")
     cursor.execute("insert into t1 values (?)", 1)
@@ -178,7 +178,7 @@ def test_getinfo_smallint():
     assert isinstance(value, int)
 
 
-def test_subquery_params(cursor):
+def test_subquery_params(cursor: pyodbc.Cursor):
     """Ensure parameter markers work in a subquery"""
     cursor.execute("create table t1(id integer, s varchar(20))")
     cursor.execute("insert into t1 values (?,?)", 1, 'test')
@@ -213,7 +213,7 @@ def test_close_cnxn():
         cursor.execute("select * from t1")
 
 
-def test_negative_row_index(cursor):
+def test_negative_row_index(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(s varchar(20))")
     cursor.execute("insert into t1 values(?)", "1")
     row = cursor.execute("select * from t1").fetchone()
@@ -221,11 +221,11 @@ def test_negative_row_index(cursor):
     assert row[-1] == "1"
 
 
-def test_version(cursor):
+def test_version():
     assert 3 == len(pyodbc.version.split('.'))  # 1.3.1 etc.
 
 
-def test_date(cursor):
+def test_date(cursor: pyodbc.Cursor):
     value = date(2001, 1, 1)
 
     cursor.execute("create table t1(dt date)")
@@ -236,7 +236,7 @@ def test_date(cursor):
     assert result == value
 
 
-def test_time(cursor):
+def test_time(cursor: pyodbc.Cursor):
     value = datetime.now().time()
 
     # We aren't yet writing values using the new extended time type so the value written to the
@@ -250,7 +250,7 @@ def test_time(cursor):
     assert value == result
 
 
-def test_datetime(cursor):
+def test_datetime(cursor: pyodbc.Cursor):
     value = datetime(2007, 1, 15, 3, 4, 5)
 
     cursor.execute("create table t1(dt datetime)")
@@ -260,7 +260,7 @@ def test_datetime(cursor):
     assert value == result
 
 
-def test_rowcount_delete(cursor):
+def test_rowcount_delete(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(i int)")
     count = 4
     for i in range(count):
@@ -269,7 +269,7 @@ def test_rowcount_delete(cursor):
     assert cursor.rowcount == count
 
 
-def test_rowcount_nodata(cursor):
+def test_rowcount_nodata(cursor: pyodbc.Cursor):
     """
     This represents a different code path than a delete that deleted something.
 
@@ -283,7 +283,7 @@ def test_rowcount_nodata(cursor):
     assert cursor.rowcount == 0
 
 
-def test_rowcount_select(cursor):
+def test_rowcount_select(cursor: pyodbc.Cursor):
     """
     Ensure Cursor.rowcount is set properly after a select statement.
 
@@ -303,7 +303,7 @@ def test_rowcount_select(cursor):
     assert cursor.rowcount == count
 
 
-def test_rowcount_reset(cursor):
+def test_rowcount_reset(cursor: pyodbc.Cursor):
     "Ensure rowcount is reset to -1"
 
     # The Python DB API says that rowcount should be set to -1 and most ODBC drivers let us
@@ -343,7 +343,7 @@ def test_lower_case():
     pyodbc.lowercase = False
 
 
-def test_row_description(cursor):
+def test_row_description(cursor: pyodbc.Cursor):
     """
     Ensure Cursor.description is accessible as Row.cursor_description.
     """
@@ -353,7 +353,7 @@ def test_row_description(cursor):
     assert cursor.description == row.cursor_description
 
 
-def test_executemany(cursor):
+def test_executemany(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(a int, b varchar(10))")
 
     params = [(i, str(i)) for i in range(1, 6)]
@@ -372,7 +372,7 @@ def test_executemany(cursor):
         assert param[1] == row[1]
 
 
-def test_executemany_one(cursor):
+def test_executemany_one(cursor: pyodbc.Cursor):
     "Pass executemany a single sequence"
     cursor.execute("create table t1(a int, b varchar(10))")
 
@@ -392,7 +392,7 @@ def test_executemany_one(cursor):
         assert param[1] == row[1]
 
 
-def test_row_slicing(cursor):
+def test_row_slicing(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(a int, b int, c int, d int)")
     cursor.execute("insert into t1 values(1,2,3,4)")
 
@@ -408,7 +408,7 @@ def test_row_slicing(cursor):
     assert result is row
 
 
-def test_row_repr(cursor):
+def test_row_repr(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(a int, b int, c int, d int)")
     cursor.execute("insert into t1 values(1,2,3,4)")
 
@@ -424,7 +424,7 @@ def test_row_repr(cursor):
     assert result == "(1,)"
 
 
-def test_emoticons_as_parameter(cursor):
+def test_emoticons_as_parameter(cursor: pyodbc.Cursor):
     # https://github.com/mkleehammer/pyodbc/issues/423
     #
     # When sending a varchar parameter, pyodbc is supposed to set ColumnSize to the number
@@ -442,7 +442,7 @@ def test_emoticons_as_parameter(cursor):
     assert result == v
 
 
-def test_emoticons_as_literal(cursor):
+def test_emoticons_as_literal(cursor: pyodbc.Cursor):
     # https://github.com/mkleehammer/pyodbc/issues/630
 
     v = "x \U0001F31C z"
