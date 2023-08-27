@@ -1,6 +1,6 @@
 [project]
 name = "pyodbc"
-version = "5.0.0a2"
+version = "5.0.0b1"
 
 requires-python = ">=3.7"
 # This is used by the Github action that builds release artifacts using cibuildwheel.
