@@ -49,6 +49,8 @@ x86/
 # Linters
 .flake8
 .pylintrc
+.ruff_cache/
+ruff.toml
 
 # Other
 pyodbc.conf

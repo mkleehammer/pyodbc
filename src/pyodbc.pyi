@@ -349,6 +349,11 @@ class Connection:
         ...
 
     @property
+    def closed(self) -> bool:
+        """Returns True if the connection is closed, False otherwise."""
+        ...
+
+    @property
     def maxwrite(self) -> int:
         """The maximum bytes to write before using SQLPutData, default is zero for no maximum."""
         ...
@@ -979,7 +984,7 @@ def connect(connstring: Optional[str] = None,
             encoding: str = 'utf-16le',
             readonly: bool = False,
             timeout: int = 0,
-            attrs_before: Dict[int, Any] = {},
+            attrs_before: Optional[Dict[int, Any]] = None,
             **kwargs: Any) -> Connection:
     """Create a new ODBC connection to a database.  See the Wiki for details:
     https://github.com/mkleehammer/pyodbc/wiki/The-pyodbc-Module#connect
