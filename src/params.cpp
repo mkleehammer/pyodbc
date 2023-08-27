@@ -30,18 +30,22 @@ inline Connection* GetConnection(Cursor* cursor)
     return (Connection*)cursor->cnxn;
 }
 
-/*
 struct DAEParam
 {
     PyObject *cell;
     SQLLEN maxlen;
 };
 
-// Detects and sets the appropriate C type to use for binding the specified Python object.
-// Also sets the buffer length to use.
-// Returns false if unsuccessful.
+
 static int DetectCType(PyObject *cell, ParamInfo *pi)
 {
+    // Detects and sets the appropriate C type to use for binding the specified Python object.
+    // Also sets the buffer length to use.  Returns false if unsuccessful.
+    //
+    // We're setting the pi ParameterType and BufferLength.  These are based on the Python
+    // value if not None or binary.  For those, the *existing* ParameterType is used.  This
+    // could be from a previous row or could have been initialized from SQLDescribeParam.
+
     PyObject* cls = 0;
     if (PyBool_Check(cell))
     {
@@ -263,6 +267,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         if (pi->ValueType != SQL_C_BINARY)
             return false;
         Py_ssize_t len = PyBytes_GET_SIZE(cell);
+
         if (!pi->ColumnSize) // DAE
         {
             DAEParam *pParam = (DAEParam*)*outbuf;
@@ -289,10 +294,6 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         if (pi->ValueType != SQL_C_WCHAR)
             return false;
 
-        Py_ssize_t len = PyUnicode_GET_SIZE(cell);
-        //         Same size      Different size
-        // DAE     DAE only       Convert + DAE
-        // non-DAE Copy           Convert + Copy
         const TextEnc& enc = cur->cnxn->unicode_enc;
         Object encoded(PyCodec_Encode(cell, enc.name, "strict"));
         if (!encoded)
@@ -305,7 +306,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             return false;
         }
 
-        len = PyBytes_GET_SIZE(encoded);
+        Py_ssize_t len = PyBytes_GET_SIZE(encoded);
         if (!pi->ColumnSize)
         {
             // DAE
@@ -489,6 +490,11 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
     }
     else if (cell == Py_None || cell == null_binary)
     {
+        // REVIEW: Theoretically we could eliminate the initial call to SQLDescribeParam for
+        // all columns if we had a special value for "unknown" and called SQLDescribeParam only
+        // here when we hit it.  Even then, only if we don't already have previous Python
+        // objects!
+
         *outbuf += pi->BufferLength;
         ind = SQL_NULL_DATA;
     }
@@ -502,7 +508,6 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
     return true;
 }
 
-*/
 
 static bool GetParamType(Cursor* cur, Py_ssize_t iParam, SQLSMALLINT& type);
 
@@ -1445,7 +1450,7 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
     return true;
 }
 
-/*
+
 bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
 {
     bool ret = true;
@@ -1457,9 +1462,11 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
     if (!(cur->paramInfos = (ParamInfo*)PyMem_Malloc(sizeof(ParamInfo) * cur->paramcount)))
     {
         PyErr_NoMemory();
-        return 0;
+        return false;
     }
     memset(cur->paramInfos, 0, sizeof(ParamInfo) * cur->paramcount);
+
+    // Wouldn't hurt to free threads here?  Or is this fast enough because it is local?
 
   // Describe each parameter (SQL type) in preparation for allocation of paramset array
     for (Py_ssize_t i = 0; i < cur->paramcount; i++)
@@ -1498,6 +1505,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
     {
         // Scan current row to determine C types
         PyObject *currow = *rowptr++;
+        // REVIEW: This check is not needed - PySequence_Fast below is sufficient.
         if (!PyTuple_Check(currow) && !PyList_Check(currow) && !Row_Check(currow))
         {
             RaiseErrorV(0, PyExc_TypeError, "Params must be in a list, tuple, or Row");
@@ -1519,8 +1527,12 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         }
         PyObject **cells = PySequence_Fast_ITEMS(colseq);
 
+        // REVIEW: We need a better description of what is going on here.  Why is it OK to pass
+        // a fake bindptr to SQLBindParameter.
+
         // Start at a non-zero offset to prevent null pointer detection.
         char *bindptr = (char*)16;
+
         Py_ssize_t i = 0;
         for (; i < cur->paramcount; i++)
         {
@@ -1769,7 +1781,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
     FreeParameterData(cur);
   return ret;
 }
-*/
+
 
 static bool GetParamType(Cursor* cur, Py_ssize_t index, SQLSMALLINT& type)
 {

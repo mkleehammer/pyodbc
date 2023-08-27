@@ -850,18 +850,18 @@ def test_executemany_one(cursor):
         assert param[1] == row[1]
 
 
-#  def test_executemany_dae_0(cursor):
-#      """
-#      DAE for 0-length value
-#      """
-#      cursor.execute("create table t1(a nvarchar(max))")
+def test_executemany_dae_0(cursor):
+    """
+    DAE for 0-length value
+    """
+    cursor.execute("create table t1(a nvarchar(max))")
 
-#      cursor.fast_executemany = True
-#      cursor.executemany("insert into t1(a) values(?)", [['']])
+    cursor.fast_executemany = True
+    cursor.executemany("insert into t1(a) values(?)", [['']])
 
-#      assert cursor.execute("select a from t1").fetchone()[0] == ''
+    assert cursor.execute("select a from t1").fetchone()[0] == ''
 
-#      cursor.fast_executemany = False
+    cursor.fast_executemany = False
 
 
 def test_executemany_failure(cursor):
