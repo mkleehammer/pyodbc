@@ -52,9 +52,16 @@ jobs:
           # Windows - both 64-bit and 32-bit builds
           CIBW_ARCHS_WINDOWS: "AMD64 x86"
 
-          # macOS - just Intel build (ARM doesn't work); no bundled libraries
+          # macOS
+          #
+          # At the time of this writing, Github actions still do not support ARM macs - all
+          # runners are Intel.  You can cross-compile on Intel to ARM, however, which is good
+          # enough us.
+          #
           # https://cibuildwheel.readthedocs.io/en/stable/faq/#how-to-cross-compile
-          CIBW_ARCHS_MACOS: x86_64
+
+          CIBW_ARCHS_MACOS: x86_64 arm64
+
           # prevent the addition of unixODBC dylibs to the wheel by simply not calling the repair
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
 
