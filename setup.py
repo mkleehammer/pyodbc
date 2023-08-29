@@ -51,9 +51,10 @@ def main():
         maintainer_email="michael@kleehammer.com",
         url='https://github.com/mkleehammer/pyodbc',
         ext_modules=[Extension('pyodbc', sorted(files), **settings)],
-        data_files=[
-            ('', ['src/pyodbc.pyi'])  # places pyodbc.pyi alongside pyodbc.py in site-packages
-        ],
+        include_package_data=False,
+        packages=[''],
+        package_dir={'': 'src'},
+        package_data={'': ['pyodbc.pyi']},  # places pyodbc.pyi alongside pyodbc.{platform}.{pyd|so} in site-packages
         license='MIT',
         python_requires='>=3.7',
         classifiers=['Development Status :: 5 - Production/Stable',

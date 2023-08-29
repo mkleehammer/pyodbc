@@ -1,7 +1,6 @@
 include src/*.h
 include src/*.cpp
-include tests2/*
-include tests3/*
+include tests/*
 include README.*
 include LICENSE.txt
 
