@@ -204,18 +204,18 @@ jobs:
         PYODBC_SQLSERVER: "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost,1401;UID=sa;PWD=StrongPassword2017;DATABASE=test"
       run: |
         cd "$GITHUB_WORKSPACE"
-        python "./tests/sqlserver_test.py"
+        pytest "./tests/sqlserver_test.py"
 
     - name: Run SQL Server 2019 tests
       env:
         PYODBC_SQLSERVER: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1402;UID=sa;PWD=StrongPassword2019;DATABASE=test;Encrypt=Optional"
       run: |
         cd "$GITHUB_WORKSPACE"
-        python "./tests/sqlserver_test.py"
+        pytest "./tests/sqlserver_test.py"
 
     - name: Run SQL Server 2022 tests
       env:
         PYODBC_SQLSERVER: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1403;UID=sa;PWD=StrongPassword2022;DATABASE=test;Encrypt=Optional"
       run: |
         cd "$GITHUB_WORKSPACE"
-        python "./tests/sqlserver_test.py"
+        pytest "./tests/sqlserver_test.py"
