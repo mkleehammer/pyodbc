@@ -56,11 +56,11 @@ IF ERRORLEVEL 1 (
   ECHO "%PYODBC_SQLSERVER%"
   GOTO :mssql3
 )
-SET PYTHON_ARGS=""
+SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
+%PYTHON_ARGS% "tests\sqlserver_test.py"
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 
@@ -76,11 +76,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :mssql4
 )
-SET PYTHON_ARGS=""
+SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
+%PYTHON_ARGS% "tests\sqlserver_test.py"
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql4
@@ -95,11 +95,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :mssql5
 )
-SET PYTHON_ARGS=""
+SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
+%PYTHON_ARGS% "tests\sqlserver_test.py"
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql5
@@ -114,11 +114,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :mssql6
 )
-SET PYTHON_ARGS=""
+SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
+%PYTHON_ARGS% "tests\sqlserver_test.py"
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 :mssql6
@@ -133,11 +133,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :postgresql
 )
-SET PYTHON_ARGS=""
+SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "tests\sqlserver_test.py" %PYTHON_ARGS%
+%PYTHON_ARGS% "tests\sqlserver_test.py"
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 
@@ -170,11 +170,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :mysql
 )
-SET PYTHON_ARGS=""
+SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "tests\postgresql_test.py" %PYTHON_ARGS%
+%PYTHON_ARGS% "tests\postgresql_test.py"
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 
@@ -205,11 +205,11 @@ IF ERRORLEVEL 1 (
   SET OVERALL_RESULT=1
   GOTO :end
 )
-SET PYTHON_ARGS=""
+SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-"%PYTHON_HOME%\python" "tests\mysql_test.py" %PYTHON_ARGS%
+%PYTHON_ARGS% "tests\mysql_test.py"
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 
