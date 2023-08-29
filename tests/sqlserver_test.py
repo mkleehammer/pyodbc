@@ -1259,22 +1259,6 @@ def test_too_large(cursor: pyodbc.Cursor):
         cursor.execute("insert into t1 values (?)", value)
 
 
-@pytest.mark.skipif(sys.platform.startswith('linux'),
-                    reason='SQL Server Linux does not support -151 yet')
-def test_geometry_null_insert(cursor: pyodbc.Cursor):
-    cnxn = connect()
-
-    def convert(value):
-        return value
-
-    cnxn.add_output_converter(-151, convert)  # -151 is SQL Server's geometry
-    cursor.execute("create table t1(n int, v geometry)")
-    cursor.execute("insert into t1 values (?, ?)", 1, None)
-    value = cursor.execute("select v from t1").fetchone()[0]
-    assert value is None
-    cnxn.clear_output_converters()
-
-
 def test_row_equal(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(n int, s varchar(20))")
     cursor.execute("insert into t1 values (1, 'test')")

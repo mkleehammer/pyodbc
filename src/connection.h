@@ -87,16 +87,13 @@ struct Connection
 
     bool need_long_data_len;
 
-    // Output conversions.  Maps from SQL type in conv_types to the converter function in conv_funcs.
+    PyObject* map_sqltype_to_converter;
+    // If converters are defined, this will be a dictionary mapping from the SQLTYPE cast to an
+    // int (because types can be negative) to the converter function.
     //
-    // If conv_count is zero, conv_types and conv_funcs will also be zero.
-    //
-    // pyodbc uses this manual mapping for speed and portability.  The STL collection classes use the new operator and
-    // throw exceptions when out of memory.  pyodbc does not use any exceptions.
-
-    int conv_count;             // how many items are in conv_types and conv_funcs.
-    SQLSMALLINT* conv_types;            // array of SQL_TYPEs to convert
-    PyObject** conv_funcs;      // array of Python functions
+    // Unfortunately each lookup requires creating a Python object.  To bypass this when output
+    // converters are not used, we keep this pointer null until the first converter is added,
+    // which is fast to check.
 };
 
 #define Connection_Check(op) PyObject_TypeCheck(op, &ConnectionType)
@@ -113,5 +110,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeou
  * Used by the Cursor to implement commit and rollback.
  */
 PyObject* Connection_endtrans(Connection* cnxn, SQLSMALLINT type);
+
+PyObject* Connection_GetConverter(Connection* cnxn, SQLSMALLINT type);
 
 #endif

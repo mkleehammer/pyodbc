@@ -118,7 +118,7 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
     }
     else if (PyByteArray_Check(cell))
     {
-    Type_ByteArray:
+        // Type_ByteArray:
         pi->ValueType = SQL_C_BINARY;
         pi->BufferLength = pi->ColumnSize ? pi->ColumnSize : sizeof(DAEParam);
     }

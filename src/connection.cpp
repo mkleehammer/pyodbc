@@ -238,9 +238,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeou
     cnxn->searchescape = 0;
     cnxn->maxwrite     = 0;
     cnxn->timeout      = 0;
-    cnxn->conv_count   = 0;
-    cnxn->conv_types   = 0;
-    cnxn->conv_funcs   = 0;
+    cnxn->map_sqltype_to_converter = 0;
 
     cnxn->attrs_before = attrs_before_o.Detach();
 
@@ -336,22 +334,6 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeou
     return reinterpret_cast<PyObject*>(cnxn);
 }
 
-static void _clear_conv(Connection* cnxn)
-{
-    if (cnxn->conv_count != 0)
-    {
-        PyMem_Free(cnxn->conv_types);
-        cnxn->conv_types = 0;
-
-        for (int i = 0; i < cnxn->conv_count; i++)
-            Py_XDECREF(cnxn->conv_funcs[i]);
-        PyMem_Free(cnxn->conv_funcs);
-        cnxn->conv_funcs = 0;
-
-        cnxn->conv_count = 0;
-    }
-}
-
 static char set_attr_doc[] =
     "set_attr(attr_id, value) -> None\n\n"
     "Calls SQLSetConnectAttr with the given values.\n\n"
@@ -387,9 +369,9 @@ static char conv_clear_doc[] =
 static PyObject* Connection_conv_clear(PyObject* self, PyObject* args)
 {
     UNUSED(args);
-
     Connection* cnxn = (Connection*)self;
-    _clear_conv(cnxn);
+    Py_XDECREF(cnxn->map_sqltype_to_converter);
+    cnxn->map_sqltype_to_converter = 0;
     Py_RETURN_NONE;
 }
 
@@ -430,7 +412,8 @@ static int Connection_clear(PyObject* self)
     Py_XDECREF(cnxn->attrs_before);
     cnxn->attrs_before = 0;
 
-    _clear_conv(cnxn);
+    Py_XDECREF(cnxn->map_sqltype_to_converter);
+    cnxn->map_sqltype_to_converter = 0;
 
     return 0;
 }
@@ -1001,47 +984,20 @@ static bool _remove_converter(PyObject* self, SQLSMALLINT sqltype)
 {
     Connection* cnxn = (Connection*)self;
 
-    if (!cnxn->conv_count)
+    if (!cnxn->map_sqltype_to_converter)
     {
         // There are no converters, so nothing to remove.
         return true;
     }
 
-    int          count = cnxn->conv_count;
-    SQLSMALLINT* types = cnxn->conv_types;
-    PyObject**   funcs = cnxn->conv_funcs;
+    Object n(PyLong_FromLong(sqltype));
+    if (!n.IsValid())
+        return false;
 
-    int i = 0;
-    for (; i < count; i++)
-        if (types[i] == sqltype)
-            break;
-
-    if (i == count)
-    {
-        // There is no converter for this type, so nothing to remove.
+    if (!PyDict_Contains(cnxn->map_sqltype_to_converter, n.Get()))
         return true;
-    }
 
-    Py_DECREF(funcs[i]);
-
-    int move = count - i - 1;  // How many are we moving?
-    if (move > 0)
-    {
-        memcpy(&types[i], &types[i+1], move * sizeof(SQLSMALLINT));
-        memcpy(&funcs[i], &funcs[i+1], move * sizeof(PyObject*));
-    }
-    count--;
-
-    // Note: If the realloc fails, the old array is still around and is 1 element too long but
-    // everything will still work, so we ignore.
-    PyMem_Realloc((BYTE**)&types, count * sizeof(SQLSMALLINT));
-    PyMem_Realloc((BYTE**)&funcs, count * sizeof(PyObject*));
-
-    cnxn->conv_count = count;
-    cnxn->conv_types = types;
-    cnxn->conv_funcs = funcs;
-
-    return true;
+    return PyDict_DelItem(cnxn->map_sqltype_to_converter, n.Get()) == 0;
 }
 
 
@@ -1049,58 +1005,17 @@ static bool _add_converter(PyObject* self, SQLSMALLINT sqltype, PyObject* func)
 {
     Connection* cnxn = (Connection*)self;
 
-    if (cnxn->conv_count)
-    {
-        // If the sqltype is already registered, replace the old conversion function with the new.
-        for (int i = 0; i < cnxn->conv_count; i++)
-        {
-            if (cnxn->conv_types[i] == sqltype)
-            {
-                Py_XDECREF(cnxn->conv_funcs[i]);
-                cnxn->conv_funcs[i] = func;
-                Py_INCREF(func);
-                return true;
-            }
-        }
+    if (!cnxn->map_sqltype_to_converter) {
+        cnxn->map_sqltype_to_converter = PyDict_New();
+        if (!cnxn->map_sqltype_to_converter)
+            return false;
     }
 
-    int          oldcount = cnxn->conv_count;
-    SQLSMALLINT* oldtypes = cnxn->conv_types;
-    PyObject**   oldfuncs = cnxn->conv_funcs;
-
-    int          newcount = oldcount + 1;
-    SQLSMALLINT* newtypes = (SQLSMALLINT*)PyMem_Malloc(sizeof(SQLSMALLINT) * newcount);
-    PyObject**   newfuncs = (PyObject**)PyMem_Malloc(sizeof(PyObject*) * newcount);
-
-    if (newtypes == 0 || newfuncs == 0)
-    {
-        if (newtypes)
-            PyMem_Free(newtypes);
-        if (newfuncs)
-            PyMem_Free(newfuncs);
-        PyErr_NoMemory();
+    Object n(PyLong_FromLong(sqltype));
+    if (!n.IsValid())
         return false;
-    }
 
-    newtypes[0] = sqltype;
-    newfuncs[0] = func;
-    Py_INCREF(func);
-
-    cnxn->conv_count = newcount;
-    cnxn->conv_types = newtypes;
-    cnxn->conv_funcs = newfuncs;
-
-    if (oldcount != 0)
-    {
-        // copy old items
-        memcpy(&newtypes[1], oldtypes, sizeof(SQLSMALLINT) * oldcount);
-        memcpy(&newfuncs[1], oldfuncs, sizeof(PyObject*) * oldcount);
-
-        PyMem_Free(oldtypes);
-        PyMem_Free(oldfuncs);
-    }
-
-    return true;
+    return PyDict_SetItem(cnxn->map_sqltype_to_converter, n.Get(), func) != -1;
 }
 
 static char conv_add_doc[] =
@@ -1182,21 +1097,23 @@ static char conv_get_doc[] =
     "  (e.g. -151 for the SQL Server 2008 geometry data type).\n"
     ;
 
-static PyObject* _get_converter(PyObject* self, SQLSMALLINT sqltype)
+PyObject* Connection_GetConverter(Connection* cnxn, SQLSMALLINT type)
 {
-    Connection* cnxn = (Connection*)self;
+    // This is our internal function.  It returns a *borrowed* reference to the converter
+    // function (so do not deference it).
+    //
+    // Returns 0 if (1) there is no converter for the type or (2) an error occurred.  You'll
+    // need to call PyErr_Occurred to differentiate.
 
-    if (cnxn->conv_count)
-    {
-        for (int i = 0; i < cnxn->conv_count; i++)
-        {
-            if (cnxn->conv_types[i] == sqltype)
-            {
-                return cnxn->conv_funcs[i];
-            }
-        }
+    if (!cnxn->map_sqltype_to_converter) {
+        Py_RETURN_NONE;
     }
-    Py_RETURN_NONE;
+
+    Object n(PyLong_FromLong(type));
+    if (!n.IsValid())
+        return 0;
+
+    return PyDict_GetItem(cnxn->map_sqltype_to_converter, n.Get());
 }
 
 static PyObject* Connection_conv_get(PyObject* self, PyObject* args)
@@ -1205,7 +1122,15 @@ static PyObject* Connection_conv_get(PyObject* self, PyObject* args)
     if (!PyArg_ParseTuple(args, "i", &sqltype))
         return 0;
 
-    return _get_converter(self, (SQLSMALLINT)sqltype);
+    Connection* cnxn = (Connection*)self;
+    PyObject* func = Connection_GetConverter(cnxn, (SQLSMALLINT)sqltype);
+
+    if (func) {
+        Py_INCREF(func);
+        return func;
+    }
+
+    Py_RETURN_NONE;
 }
 
 static void NormalizeCodecName(const char* src, char* dest, size_t cbDest)

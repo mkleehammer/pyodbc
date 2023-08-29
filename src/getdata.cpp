@@ -298,11 +298,8 @@ static PyObject* GetBinary(Cursor* cur, Py_ssize_t iCol)
 }
 
 
-static PyObject* GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
+static PyObject* GetDataUser(Cursor* cur, Py_ssize_t iCol, PyObject* func)
 {
-    // conv
-    //   The index into the connection's user-defined conversions `conv_types`.
-
     bool isNull = false;
     byte* pbData = 0;
     Py_ssize_t cbData = 0;
@@ -320,7 +317,7 @@ static PyObject* GetDataUser(Cursor* cur, Py_ssize_t iCol, int conv)
     if (!value)
         return 0;
 
-    PyObject* result = PyObject_CallFunction(cur->cnxn->conv_funcs[conv], "(O)", value);
+    PyObject* result = PyObject_CallFunction(func, "(O)", value);
     Py_DECREF(value);
     if (!result)
         return 0;
@@ -579,18 +576,6 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
 }
 
 
-int GetUserConvIndex(Cursor* cur, SQLSMALLINT sql_type)
-{
-    // If this sql type has a user-defined conversion, the index into the connection's `conv_funcs` array is returned.
-    // Otherwise -1 is returned.
-
-    for (int i = 0; i < cur->cnxn->conv_count; i++)
-        if (cur->cnxn->conv_types[i] == sql_type)
-            return i;
-    return -1;
-}
-
-
 PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
 {
     // Returns a type object ('int', 'str', etc.) for the given ODBC C type.  This is used to populate
@@ -604,9 +589,11 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
     //
     // Keep this in sync with GetData below.
 
-    int conv_index = GetUserConvIndex(cur, type);
-    if (conv_index != -1)
-        return (PyObject*)&PyUnicode_Type;
+    if (cur->cnxn->map_sqltype_to_converter) {
+        PyObject* func = Connection_GetConverter(cur->cnxn, type);
+        if (func)
+            return (PyObject*)&PyUnicode_Type;
+    }
 
     PyObject* pytype = 0;
     bool incref = true;
@@ -701,9 +688,14 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
 
     // First see if there is a user-defined conversion.
 
-    int conv_index = GetUserConvIndex(cur, pinfo->sql_type);
-    if (conv_index != -1)
-        return GetDataUser(cur, iCol, conv_index);
+    if (cur->cnxn->map_sqltype_to_converter) {
+        PyObject* func = Connection_GetConverter(cur->cnxn, pinfo->sql_type);
+        if (func) {
+            return GetDataUser(cur, iCol, func);
+        }
+        if (PyErr_Occurred())
+            return 0;
+    }
 
     switch (pinfo->sql_type)
     {
