@@ -4,6 +4,7 @@ import sys, os, shlex, re
 from os.path import exists, join, isdir, relpath, expanduser
 from pathlib import Path
 from inspect import cleandoc
+from shutil import which
 
 from setuptools import setup
 from setuptools.extension import Extension
@@ -132,6 +133,11 @@ def get_compiler_settings():
         ])
 
         # Homebrew installs odbc_config
+        if which("odbc_config") is None:
+            raise ValueError(
+                "odbc_config not found.  Is unixODBC installed? (brew or conda install unixodbc)"
+            )
+
         pipe = os.popen('odbc_config --cflags --libs 2>/dev/null')
         cflags, ldflags = pipe.readlines()
         exit_status = pipe.close()
