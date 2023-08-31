@@ -62,10 +62,9 @@ jobs:
 
           CIBW_ARCHS_MACOS: x86_64 arm64
 
-          # Kleehammer: Our arm wheels aren't working and it may be due to this.  I'm going to
-          # create a new beta without this to test.
-          # prevent the addition of unixODBC dylibs to the wheel by simply not calling the repair
-          #  CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
+          # Disable the inclusion of unixODBC dylibs because they will be *Intel* ones.
+          # Unfortunately, this means no one can use the ARM wheels right now.
 
           # Linux - based on CentOS 7; glibc 64-bit builds only; no bundled libraries
           # https://github.com/pypa/manylinux#docker-images
