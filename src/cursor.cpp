@@ -49,7 +49,7 @@ inline bool Cursor_Check(PyObject* o)
     return o != 0 && Py_TYPE(o) == &CursorType;
 }
 
-static Cursor* Cursor_Validate(PyObject* obj, DWORD flags)
+Cursor* Cursor_Validate(PyObject* obj, DWORD flags)
 {
     //  Validates that a PyObject is a Cursor (like Cursor_Check) and optionally some other requirements controlled by
     //  `flags`.  If valid and all requirements (from the flags) are met, the cursor is returned, cast to Cursor*.

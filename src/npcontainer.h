@@ -12,7 +12,7 @@ PyObject* Cursor_fetchsarray(PyObject* self, PyObject* args, PyObject *kwargs);
 
 PyObject* Cursor_fetchdictarray(PyObject* self, PyObject* args, PyObject *kwargs);
 
-char *fetchdictarray_doc;
+extern char fetchdictarray_doc[];
 
 extern Py_ssize_t iopro_text_limit;
 

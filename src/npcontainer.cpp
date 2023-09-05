@@ -11,6 +11,8 @@
 #include <stdio.h>
 
 #include "pyodbc.h"
+#include "wrapper.h"
+#include "textenc.h"
 #include "cursor.h"
 #include "pyodbcmodule.h"
 #include "connection.h"
@@ -27,6 +29,28 @@
 Py_ssize_t iopro_text_limit = -1;
 
 // -----------------------------------------------------------------------------
+bool pyodbc_tracing_enabled = false;
+
+void pyodbc_trace_func(const char* file, int line, const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+
+    if (0 != file) {
+        const char* rel_file = strstr(file, "dbadapter");
+        printf("%s:%d\n", rel_file, line);
+    }
+    vprintf(fmt, args);
+}
+
+#define TRACE_NOLOC(...)                        \
+    if (pyodbc_tracing_enabled)                 \
+        pyodbc_trace_func(NULL, 0, __VA_ARGS__)
+
+#define GUARDED_ALLOC(...)  malloc(__VA_ARGS__)
+#define GUARDED_DEALLOC(...)  free(__VA_ARGS__)
+
+#define CHECK_ALLOC_GUARDS(...) {}
 
 namespace {
     inline size_t
@@ -1320,7 +1344,9 @@ static int
 perform_array_query(query_desc& result, Cursor* cur, npy_intp nrows, bool lower, bool want_nulls)
 {
     SQLRETURN rc;
-    bool use_unicode = cur->cnxn->unicode_results;
+    /* XXX is true a good default?
+       was: bool use_unicode = cur->cnxn->unicode_results; */
+    bool use_unicode = true;
     size_t outsize, chunk_size;
 
     if (nrows < 0) {
@@ -1366,7 +1392,8 @@ perform_array_query(query_desc& result, Cursor* cur, npy_intp nrows, bool lower,
         // multiple statements (separated by ;) were submitted.  This
         // is not documented, but I've seen it with multiple
         // successful inserts.
-        return 0 == RaiseErrorFromHandle("ODBC failed to describe the resulting columns",
+        return 0 == RaiseErrorFromHandle(cur->cnxn,
+                                         "ODBC failed to describe the resulting columns",
                                          cur->cnxn->hdbc, cur->hstmt);
     }
 
@@ -1403,7 +1430,7 @@ perform_array_query(query_desc& result, Cursor* cur, npy_intp nrows, bool lower,
 
         rc = result.bind_cols();
         if (!SQL_SUCCEEDED(rc)) {
-            return 0 == RaiseErrorFromHandle("ODBC failed when binding columns",
+            return 0 == RaiseErrorFromHandle(cur->cnxn, "ODBC failed when binding columns",
                                              cur->cnxn->hdbc, cur->hstmt);
 
         }

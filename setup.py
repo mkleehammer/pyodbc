@@ -8,6 +8,8 @@ from inspect import cleandoc
 from setuptools import setup
 from setuptools.extension import Extension
 
+HAS_NUMPY = False
+
 
 def _getversion():
     # CAREFUL: We need the version in this file so we can set it in a C macro to set
@@ -34,7 +36,16 @@ VERSION = _getversion()
 def main():
     settings = get_compiler_settings()
 
-    files = [relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp')]
+    try:
+        import numpy
+        HAS_NUMPY = True
+    except ImportWarning:
+        raise ImportWarning("NumPy was not found, compiling pyodbc without NumPy support.")
+
+    files = [
+        relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp')
+        and (f != 'npcontainer.cpp' or HAS_NUMPY)
+    ]
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
@@ -82,7 +93,7 @@ def get_compiler_settings():
         'include_dirs': [],
         'define_macros': [('PYODBC_VERSION', VERSION)]
     }
-    if numpy:
+    if HAS_NUMPY:
         settings['include_dirs'].append(numpy.get_include())
         settings['define_macros'].append(('WITH_NUMPY', '1'))
 
