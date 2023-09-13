@@ -33,6 +33,9 @@ classifiers=['Development Status :: 5 - Production/Stable',
 [project.urls]
 Homepage = "https://github.com/mkleehammer/pyodbc"
 
+[project.optional-dependencies]
+numpy = ["numpy"]
+
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools", "numpy"]
 build-backend = "setuptools.build_meta"

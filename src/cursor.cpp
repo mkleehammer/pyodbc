@@ -29,14 +29,6 @@
 #include "npcontainer.h"
 #endif
 
-enum
-{
-    CURSOR_REQUIRE_CNXN    = 0x00000001,
-    CURSOR_REQUIRE_OPEN    = 0x00000003, // includes _CNXN
-    CURSOR_REQUIRE_RESULTS = 0x00000007, // includes _OPEN
-    CURSOR_RAISE_ERROR     = 0x00000010,
-};
-
 inline bool StatementIsValid(Cursor* cursor)
 {
     return cursor->cnxn != 0 && ((Connection*)cursor->cnxn)->hdbc != SQL_NULL_HANDLE && cursor->hstmt != SQL_NULL_HANDLE;

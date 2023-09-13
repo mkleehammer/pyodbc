@@ -29,6 +29,7 @@
 Py_ssize_t iopro_text_limit = -1;
 
 // -----------------------------------------------------------------------------
+
 bool pyodbc_tracing_enabled = false;
 
 void pyodbc_trace_func(const char* file, int line, const char* fmt, ...)
@@ -51,6 +52,7 @@ void pyodbc_trace_func(const char* file, int line, const char* fmt, ...)
 #define GUARDED_DEALLOC(...)  free(__VA_ARGS__)
 
 #define CHECK_ALLOC_GUARDS(...) {}
+
 
 namespace {
     inline size_t
@@ -1360,7 +1362,7 @@ perform_array_query(query_desc& result, Cursor* cur, npy_intp nrows, bool lower,
         chunk_size = static_cast<size_t>(nrows);
     }
 
-    I(cur->hstmt != SQL_NULL_HANDLE && cur->colinfos != 0);
+    assert(cur->hstmt != SQL_NULL_HANDLE && cur->colinfos != 0);
 
     if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
     {
@@ -1568,197 +1570,6 @@ create_fill_dictarray(Cursor* cursor, npy_intp nrows, const char* null_suffix)
     return dictarray;
 }
 
-
-static PyArray_Descr*
-query_desc_to_record_dtype(query_desc &qd, const char *null_suffix)
-/*
-  Build a record dtype from the column information in a query
-  desc.
-
-  returns the dtype (PyArray_Descr) on success with a reference
-  count. 0 if something failed. On failure the appropriate python
-  exception will be already raised.
-
-  In order to create the structured dtype, PyArray_DescrConverter is
-  called passing a dictionary that maps the fields.
- */
-{
-    PyObject* record_dict = 0;
-
-    record_dict = PyDict_New();
-
-    if (!record_dict)
-        return 0;
-
-    long offset = 0;
-    for (std::vector<column_desc>::iterator it = qd.columns_.begin();
-         it < qd.columns_.end(); ++it) {
-        PyObject *field_desc = PyTuple_New(2);
-
-        if (!field_desc) {
-            Py_DECREF(record_dict);
-            return 0; /* out of memory? */
-        }
-
-        // PyTuple_SET_ITEM steals the reference, we want to keep one
-        // reference for us. We don't want the extra checks made by
-        // PyTuple_SetItem.
-        Py_INCREF(it->npy_type_descr_);
-        PyTuple_SET_ITEM(field_desc, 0, (PyObject*)it->npy_type_descr_);
-        PyTuple_SET_ITEM(field_desc, 1, PyInt_FromLong(offset));
-
-        int not_inserted = PyDict_SetItemString(record_dict, (const char*) it->sql_name_,
-                                                field_desc);
-        Py_DECREF(field_desc);
-        if (not_inserted) {
-            Py_DECREF(record_dict);
-            return 0; /* out of memory? */
-        }
-
-        offset += it->npy_type_descr_->elsize;
-
-        // handle nulls...
-        if (it->npy_array_nulls_) {
-            field_desc = PyTuple_New(2);
-            if (!field_desc)
-            {
-                Py_DECREF(record_dict);
-                return 0;
-            }
-
-            PyArray_Descr *descr = PyArray_DESCR(it->npy_array_nulls_);
-            Py_INCREF(descr);
-            PyTuple_SET_ITEM(field_desc, 0, (PyObject*)descr);
-            PyTuple_SET_ITEM(field_desc, 1, PyInt_FromLong(offset));
-            char null_column_name[350];
-            snprintf(null_column_name, sizeof(null_column_name),
-                     "%s%s", it->sql_name_, null_suffix);
-
-            not_inserted = PyDict_SetItemString(record_dict, null_column_name, field_desc);
-            Py_DECREF(field_desc);
-            if (not_inserted) {
-                Py_DECREF(record_dict);
-                return 0;
-            }
-            offset += descr->elsize;
-        }
-    }
-
-    PyArray_Descr *dtype=0;
-    int success = PyArray_DescrConverter(record_dict, &dtype);
-    Py_DECREF(record_dict);
-    if (!success) {
-        RaiseErrorV(0, ProgrammingError,
-                    "Failed conversion from dict type into a NumPy record dtype");
-        return 0;
-    }
-
-    return dtype;
-}
-
-static PyArrayObject*
-query_desc_to_sarray(query_desc &qd, const char *null_suffix)
-/*
-  Build a sarray (structured array) from a query_desc.
- */
-{
-    // query_desc contains "column-wise" results as NumPy arrays. In a
-    // sarray we want the data row-wise (structured layout). This
-    // means a whole new array will need to be allocated and memory
-    // copying will be needed.
-
-    // 1. build the record dtype.
-    PyArray_Descr *dtype = query_desc_to_record_dtype(qd, null_suffix);
-
-    if (!dtype) {
-        TRACE_NOLOC("WARN: failed to create record dtype.\n");
-        return 0;
-    }
-
-    // 2. build the NumPy Array. It is not needed to clear any data
-    // (even string data) as everything will be overwritten when
-    // copying the column arrays. The column arrays where already
-    // properly initialized before fetching the data.
-    npy_intp dims = (npy_intp)qd.allocated_results_count_;
-    PyArrayObject* sarray = reinterpret_cast<PyArrayObject*>(PyArray_SimpleNewFromDescr(1, &dims, dtype));
-    // note: dtype got its reference stolen, but it is still valid as
-    // long as the array is valid. The reference is stolen even if the
-    // array fails to create (according to NumPy source code).
-
-    if (!sarray) {
-        TRACE_NOLOC("WARN: failed to create structured array.\n");
-        return 0;
-    }
-
-    // 3. copy the data into the structured array. Note: the offsets
-    //    will be the same as in the record array by construction.
-    {
-        PyNoGIL no_gil;
-        long offset = 0;
-        for (std::vector<column_desc>::iterator it = qd.columns_.begin();
-             it < qd.columns_.end(); ++it)
-        {
-            size_t sarray_stride = PyArray_ITEMSIZE(sarray);
-            char *sarray_data = PyArray_BYTES(sarray) + offset;
-            size_t carray_stride = PyArray_ITEMSIZE(it->npy_array_);
-            char *carray_data = PyArray_BYTES(it->npy_array_);
-            // this approach may not be the most efficient, but it is good enough for now.
-            // TODO: make the transform in a way that is sequential on the write stream
-            for (size_t i = 0; i < qd.allocated_results_count_; ++i)
-            {
-                memcpy(sarray_data, carray_data, carray_stride);
-                sarray_data += sarray_stride;
-                carray_data += carray_stride;
-            }
-
-            offset += carray_stride;
-
-            if (it->npy_array_nulls_)
-            {
-                // TODO: refactor this code that is duplicated
-                sarray_stride = PyArray_ITEMSIZE(sarray);
-                sarray_data = PyArray_BYTES(sarray) + offset;
-                carray_stride = PyArray_ITEMSIZE(it->npy_array_nulls_);
-                carray_data = PyArray_BYTES(it->npy_array_nulls_);
-                // this approach may not be the most efficient, but it is good enough for now.
-                // TODO: make the transform in a way that is sequential on the write stream
-                for (size_t i = 0; i < qd.allocated_results_count_; ++i)
-                {
-                    memcpy(sarray_data, carray_data, carray_stride);
-                    sarray_data += sarray_stride;
-                    carray_data += carray_stride;
-                }
-
-                offset += carray_stride;
-            }
-        }
-    }
-
-    return sarray;
-}
-
-static PyObject*
-create_fill_sarray(Cursor* cursor, npy_intp nrows, const char* null_suffix)
-{
-    int error;
-    query_desc qd;
-
-    error = perform_array_query(qd, cursor, nrows, lowercase(), null_suffix != 0);
-    if (error) {
-        TRACE_NOLOC("perform_querydesc returned %d errors\n", error);
-        return 0;
-    }
-
-    TRACE_NOLOC("\nBuilding sarray\n");
-    PyObject *sarray = reinterpret_cast<PyObject*>(query_desc_to_sarray(qd, null_suffix));
-    if (!sarray) {
-        TRACE_NOLOC("WARN: Failed to build sarray from the query results.\n");
-    }
-
-    return sarray;
-}
-
-
 // -----------------------------------------------------------------------------
 // Method implementation
 // -----------------------------------------------------------------------------
@@ -1768,36 +1579,6 @@ static char *Cursor_npfetch_kwnames[] = {
     "null_suffix", // keyword providing the string to use as suffix
 };
 
-
-//
-// The main cursor.fetchsarray() method
-//
-PyObject*
-Cursor_fetchsarray(PyObject *self, PyObject *args, PyObject *kwargs)
-{
-    Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
-    if (!cursor)
-        return 0;
-
-    TRACE("\n\nParse tuple\n");
-    ssize_t nrows = -1;
-    const char *null_suffix = "_isnull";
-    PyObject *return_nulls = NULL;
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|nOs", Cursor_npfetch_kwnames,
-                                     &nrows, &return_nulls, &null_suffix))
-        return 0;
-
-    bool preserve_nulls = return_nulls ? PyObject_IsTrue(return_nulls) : false;
-
-    TRACE_NOLOC("\n\nCursor fetchsarray\n\tnrows:%d\n\treturn_nulls:%s\n\tnull_suffix:%s\n\thandle:%p\n\tunicode_results:%s\n",
-                (int)nrows, preserve_nulls?"Yes":"No", null_suffix, (void*)cursor->hstmt,
-                cursor->cnxn->unicode_results?"Yes":"No");
-    npy_intp arg = nrows;
-    PyObject* rv = create_fill_sarray(cursor, arg, preserve_nulls?null_suffix:0);
-    TRACE_NOLOC("\nCursor fetchsarray done.\n\tsarray: %p\n\n", rv);
-
-    return rv;
-}
 
 //
 // The main cursor.fetchdict() method
@@ -1826,8 +1607,8 @@ Cursor_fetchdictarray(PyObject* self, PyObject* args, PyObject *kwargs)
     bool preserve_nulls = return_nulls?PyObject_IsTrue(return_nulls):false;
     TRACE("Foo\n");
     TRACE_NOLOC("\n\nCursor fetchdictarray\n\tnrows:%d\n\treturn_nulls:%s\n\tnull_suffix:%s\n\thandle:%p\n\tunicode_results:%s\n",
-                (int)nrows, preserve_nulls?"yes":"no", null_suffix, (void*)cursor->hstmt,
-                cursor->cnxn->unicode_results?"Yes":"No");
+                (int)nrows, preserve_nulls?"yes":"no", null_suffix, (void*)cursor->hstmt);
+    /*cursor->cnxn->unicode_results?"Yes":"No");*/
     npy_intp arg = nrows;
     PyObject *rv = create_fill_dictarray(cursor, arg, preserve_nulls?null_suffix:0);
     TRACE_NOLOC("\nCursor fetchdictarray done.\n\tdictarray: %p\n\n", rv);
@@ -1878,7 +1659,6 @@ char fetchdictarray_doc[] =
     "--------\n" \
     "fetchmany : Fetch rows into a Python list of rows.\n" \
     "fetchall : Fetch the remaining rows into a Python lis of rows.\n" \
-    "fetchsarray : Fetch rows into a NumPy structured ndarray.\n" \
     "\n";
 
 

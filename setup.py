@@ -5,10 +5,9 @@ from os.path import exists, join, isdir, relpath, expanduser
 from pathlib import Path
 from inspect import cleandoc
 
+import numpy
 from setuptools import setup
 from setuptools.extension import Extension
-
-HAS_NUMPY = False
 
 
 def _getversion():
@@ -36,16 +35,7 @@ VERSION = _getversion()
 def main():
     settings = get_compiler_settings()
 
-    try:
-        import numpy
-        HAS_NUMPY = True
-    except ImportWarning:
-        raise ImportWarning("NumPy was not found, compiling pyodbc without NumPy support.")
-
-    files = [
-        relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp')
-        and (f != 'npcontainer.cpp' or HAS_NUMPY)
-    ]
+    files = [relpath(join('src', f)) for f in os.listdir('src') if f.endswith('.cpp')]
 
     if exists('MANIFEST'):
         os.remove('MANIFEST')
@@ -93,9 +83,8 @@ def get_compiler_settings():
         'include_dirs': [],
         'define_macros': [('PYODBC_VERSION', VERSION)]
     }
-    if HAS_NUMPY:
-        settings['include_dirs'].append(numpy.get_include())
-        settings['define_macros'].append(('WITH_NUMPY', '1'))
+    settings['include_dirs'].append(numpy.get_include())
+    settings['define_macros'].append(('WITH_NUMPY', '1'))
 
     if os.name == 'nt':
         settings['extra_compile_args'].extend([
