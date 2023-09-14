@@ -25,6 +25,7 @@ wheelhouse/
 # Unit test / coverage reports
 .tox/
 .coverage
+pytest.ini
 
 # Virtual Environments
 /venv*
