@@ -35,7 +35,9 @@ Homepage = "https://github.com/mkleehammer/pyodbc"
 
 [project.optional-dependencies]
 numpy = ["numpy"]
+qa = ["flake8", "pylint"]
+test = ["pytest ~= 7.3"]
 
 [build-system]
-requires = ["setuptools", "numpy"]
+requires = ["setuptools ~= 67.7", "numpy"]
 build-backend = "setuptools.build_meta"
