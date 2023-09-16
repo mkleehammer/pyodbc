@@ -144,12 +144,12 @@ class AccessTestCase(unittest.TestCase):
         """
         The implementation for string, Unicode, and binary tests.
         """
-        assert colsize is None or (value is None or colsize >= len(value)), 'colsize=%s value=%s' % (colsize, (value is None) and 'none' or len(value))
+        assert colsize is None or (value is None or colsize >= len(value)), 'colsize={} value={}'.format(colsize, (value is None) and 'none' or len(value))
 
         if colsize:
-            sql = "create table t1(n1 int not null, s1 %s(%s), s2 %s(%s))" % (sqltype, colsize, sqltype, colsize)
+            sql = "create table t1(n1 int not null, s1 {}({}), s2 {}({}))".format(sqltype, colsize, sqltype, colsize)
         else:
-            sql = "create table t1(n1 int not null, s1 %s, s2 %s)" % (sqltype, sqltype)
+            sql = "create table t1(n1 int not null, s1 {}, s2 {})".format(sqltype, sqltype)
 
         self.cursor.execute(sql)
         self.cursor.execute("insert into t1 values(1, ?, ?)", (value, value))
@@ -263,7 +263,7 @@ class AccessTestCase(unittest.TestCase):
 
 
     def test_unicode_query(self):
-        self.cursor.execute(u"select 1")
+        self.cursor.execute("select 1")
         
     def test_negative_row_index(self):
         self.cursor.execute("create table t1(s varchar(20))")
@@ -400,7 +400,7 @@ class AccessTestCase(unittest.TestCase):
         self.assertEqual(False, result)
 
     def test_guid(self):
-        value = u"de2ac9c6-8676-4b0b-b8a6-217a8580cbee"
+        value = "de2ac9c6-8676-4b0b-b8a6-217a8580cbee"
         self.cursor.execute("create table t1(g1 uniqueidentifier)")
         self.cursor.execute("insert into t1 values (?)", value)
         v = self.cursor.execute("select * from t1").fetchone()[0]
@@ -566,8 +566,8 @@ class AccessTestCase(unittest.TestCase):
 
 
     def test_concatenation(self):
-        v2 = u'0123456789' * 25
-        v3 = u'9876543210' * 25
+        v2 = '0123456789' * 25
+        v3 = '9876543210' * 25
         value = v2 + 'x' + v3
 
         self.cursor.execute("create table t1(c2 varchar(250), c3 varchar(250))")
@@ -609,7 +609,7 @@ def main():
     shutil.copy(src, dest)
 
     global CNXNSTRING
-    CNXNSTRING = 'DRIVER={%s};DBQ=%s;ExtendedAnsiSQL=1' % (DRIVERS[args.type], dest)
+    CNXNSTRING = 'DRIVER={{{}}};DBQ={};ExtendedAnsiSQL=1'.format(DRIVERS[args.type], dest)
     print(CNXNSTRING)
 
     if args.verbose:

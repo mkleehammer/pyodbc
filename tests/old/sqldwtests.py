@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 
 x = 1 # Getting an error if starting with usage for some reason.
 
@@ -74,7 +73,7 @@ class SqlServerTestCase(unittest.TestCase):
             'freetds': 'FreeTDS ODBC',
         }
         if not type_name in recognized_types.keys():
-            raise KeyError('"{0}" is not a recognized driver type: {1}'.format(type_name, list(recognized_types.keys())))
+            raise KeyError(f'"{type_name}" is not a recognized driver type: {list(recognized_types.keys())}')
         driver_name = self.cnxn.getinfo(pyodbc.SQL_DRIVER_NAME).lower()
         if type_name == 'msodbcsql':
             return ('msodbcsql' in driver_name) or ('sqlncli' in driver_name) or ('sqlsrv32.dll' == driver_name)
@@ -225,7 +224,7 @@ class SqlServerTestCase(unittest.TestCase):
         assert colsize is None or (value is None or colsize >= len(value))
 
         if colsize:
-            sql = "create table t1(s %s(%s))" % (sqltype, colsize)
+            sql = "create table t1(s {}({}))".format(sqltype, colsize)
         else:
             sql = "create table t1(s %s)" % sqltype
         if colsize >= 2000 and (sqltype == 'nvarchar' or sqltype == 'varchar'):
@@ -280,7 +279,7 @@ class SqlServerTestCase(unittest.TestCase):
         assert colsize is None or (value is None or colsize >= len(value))
 
         if colsize:
-            sql = "create table t1(s %s(%s))" % (sqltype, colsize)
+            sql = "create table t1(s {}({}))".format(sqltype, colsize)
         else:
             sql = "create table t1(s %s)" % sqltype
 
@@ -362,11 +361,11 @@ class SqlServerTestCase(unittest.TestCase):
 
     def test_chinese(self):
         v = '我的'
-        self.cursor.execute(u"SELECT N'我的' AS [Name]")
+        self.cursor.execute("SELECT N'我的' AS [Name]")
         row = self.cursor.fetchone()
         self.assertEqual(row[0], v)
 
-        self.cursor.execute(u"SELECT N'我的' AS [Name]")
+        self.cursor.execute("SELECT N'我的' AS [Name]")
         rows = self.cursor.fetchall()
         self.assertEqual(rows[0][0], v)
 
@@ -443,7 +442,7 @@ class SqlServerTestCase(unittest.TestCase):
     def _decimal(self, precision, scale, negative):
         # From test provided by planders (thanks!) in Issue 91
 
-        self.cursor.execute("create table t1(d decimal(%s, %s))" % (precision, scale))
+        self.cursor.execute("create table t1(d decimal({}, {}))".format(precision, scale))
 
         # Construct a decimal that uses the maximum precision and scale.
         decStr = '9' * (precision - scale)
@@ -475,7 +474,7 @@ class SqlServerTestCase(unittest.TestCase):
                        (38, 0,  True),
                        (38, 10, True),
                        (38, 38, True) ]:
-        locals()['test_decimal_%s_%s_%s' % (p, s, n and 'n' or 'p')] = _maketest(p, s, n)
+        locals()['test_decimal_{}_{}_{}'.format(p, s, n and 'n' or 'p')] = _maketest(p, s, n)
 
 
     def test_decimal_e(self):

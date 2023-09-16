@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
 usage = """\
 %(prog)s [options] connection_string
@@ -150,7 +149,7 @@ class SparkTestCase(unittest.TestCase):
         assert colsize is None or (value is None or colsize >= len(value))
 
         if colsize:
-            sql = "create table t1(s %s(%s))" % (sqltype, colsize)
+            sql = "create table t1(s {}({}))".format(sqltype, colsize)
         else:
             sql = "create table t1(s %s)" % sqltype
 
@@ -326,7 +325,7 @@ class SparkTestCase(unittest.TestCase):
         self.cursor = self.cnxn.cursor()
 
         self.cursor.execute("create table t1(c1 int, c2 int)")
-        self.cursor.execute("select c1 as {}, c2 as {} from t1".format(c1, c2))
+        self.cursor.execute(f"select c1 as {c1}, c2 as {c2} from t1")
 
         names = [ t[0] for t in self.cursor.description ]
         names.sort()
