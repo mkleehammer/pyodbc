@@ -128,7 +128,7 @@ class SqliteTestCase(unittest.TestCase):
         assert colsize is None or (value is None or colsize >= len(value))
 
         if colsize:
-            sql = "create table t1(s %s(%s))" % (sqltype, colsize)
+            sql = "create table t1(s {}({}))".format(sqltype, colsize)
         else:
             sql = "create table t1(s %s)" % sqltype
 
@@ -162,7 +162,7 @@ class SqliteTestCase(unittest.TestCase):
         assert colsize is None or (value is None or colsize >= len(value))
 
         if colsize:
-            sql = "create table t1(s %s(%s))" % (sqltype, colsize)
+            sql = "create table t1(s {}({}))".format(sqltype, colsize)
         else:
             sql = "create table t1(s %s)" % sqltype
 

@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 
 import os, uuid, re, sys
 from decimal import Decimal
@@ -1601,7 +1600,7 @@ def get_sqlserver_version(cursor: pyodbc.Cursor):
     return int(row.Character_Value.split('.', 1)[0])
 
 
-@lru_cache()
+@lru_cache
 def _generate_str(length, encoding=None):
     """
     Returns either a string or bytes, depending on whether encoding is provided,

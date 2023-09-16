@@ -1,4 +1,3 @@
-
 # If pyodbc has not been installed in this virtual environment, add the appropriate build
 # directory.  This allows us to compile and run pytest without an install step in between
 # slowing things down.  If you are going to use this, do not install pyodbc.  If you already
