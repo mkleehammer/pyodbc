@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install Python dependencies
         run: |
@@ -36,17 +36,17 @@ jobs:
         os: [windows-2019, macos-11, ubuntu-22.04]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up QEMU
         # QEMU is needed for Linux aarch64 wheels
         if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
         with:
           platforms: all
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.13.1
+        uses: pypa/cibuildwheel@v2.15.0
         # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
         env:
           # Windows - both 64-bit and 32-bit builds
