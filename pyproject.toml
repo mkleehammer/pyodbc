@@ -2,8 +2,8 @@
 name = "pyodbc"
 version = "5.0.0b4"
 
-requires-python = ">=3.7"
-# This is used by the Github action that builds release artifacts using cibuildwheel.
+requires-python = ">=3.8"
+# This is used by the GitHub action that builds release artifacts using cibuildwheel.
 # cibuildwheel reads this directly:
 #
 # https://cibuildwheel.readthedocs.io/en/stable/options/#requires-python
