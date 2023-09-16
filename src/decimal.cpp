@@ -50,24 +50,13 @@ bool InitializeDecimal() {
     if (!point)
         return false;
 
-#if PY_MAJOR_VERSION >= 3
     pDecimalPoint = PyUnicode_FromString(".");
-#else
-    pDecimalPoint = PyBytes_FromString(".");
-#endif
 
     if (!pDecimalPoint)
         return false;
 
-#if PY_MAJOR_VERSION >= 3
     if (!SetDecimalPoint(point))
         return false;
-#else
-    // In 2.7, we only support non-Unicode right now.
-    if (PyBytes_Check(point))
-        if (!SetDecimalPoint(point))
-            return false;
-#endif
 
     return true;
 }
@@ -106,11 +95,7 @@ bool SetDecimalPoint(PyObject* pNew)
         pLocaleDecimalEscaped = e.Detach();
     }
 
-#if PY_MAJOR_VERSION >= 3
     Object s(PyUnicode_FromFormat("[^0-9%U-]+", pLocaleDecimal));
-#else
-    Object s(PyBytes_FromFormat("[^0-9%s-]+", PyString_AsString(pLocaleDecimal)));
-#endif
     if (!s)
         return false;
 

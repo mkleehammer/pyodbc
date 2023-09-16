@@ -663,11 +663,7 @@ static PyObject* mod_setdecimalsep(PyObject* self, PyObject* args)
 {
     UNUSED(self);
 
-#if PY_MAJOR_VERSION >= 3
     const char* type = "U";
-#else
-    const char* type = "S";
-#endif
 
     PyObject* p;
     if (!PyArg_ParseTuple(args, type, &p))
