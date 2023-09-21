@@ -67,7 +67,13 @@ static char module_doc[] =
     "\n"
     "paramstyle\n"
     "  The string constant 'qmark' to indicate parameters are identified using\n"
-    "  question marks.";
+    "  question marks."
+    "\n"
+    "odbcversion\n"
+    "  The ODBC version number as a string, such as '3.X' for ODBC 3.X compatibility.\n"
+    "  This is a global (HENV) setting, so it can only be modified before the first\n"
+    "  connection is made. Use 3.8 if you are using unixodbc connection pooling and your\n"
+    "  drivers are all 3.8 compatible. The default is 3.X\n";
 
 PyObject* Error;
 PyObject* Warning;
@@ -296,7 +302,17 @@ static bool AllocateEnv()
         return false;
     }
 
-    if (!SQL_SUCCEEDED(SQLSetEnvAttr(henv, SQL_ATTR_ODBC_VERSION, (SQLPOINTER)SQL_OV_ODBC3, sizeof(int))))
+    SQLPOINTER defaultVersion = (SQLPOINTER)SQL_OV_ODBC3;
+    PyObject* odbcversion = PyObject_GetAttrString(pModule, "odbcversion");
+    if (PyObject_TypeCheck(odbcversion, &PyUnicode_Type)) {
+        if (PyUnicode_CompareWithASCIIString(odbcversion, "3.8") == 0)
+        {
+            defaultVersion = (SQLPOINTER)SQL_OV_ODBC3_80;
+        }
+    }
+    Py_DECREF(odbcversion);
+    
+    if (!SQL_SUCCEEDED(SQLSetEnvAttr(henv, SQL_ATTR_ODBC_VERSION, defaultVersion, sizeof(int))))
     {
         PyErr_SetString(PyExc_RuntimeError, "Unable to set SQL_ATTR_ODBC_VERSION attribute.");
         return false;
@@ -1169,6 +1185,7 @@ PyMODINIT_FUNC PyInit_pyodbc()
     PyModule_AddIntConstant(module, "threadsafety", 1);
     PyModule_AddStringConstant(module, "apilevel", "2.0");
     PyModule_AddStringConstant(module, "paramstyle", "qmark");
+    PyModule_AddStringConstant(module, "odbcversion", "3.X");
     PyModule_AddObject(module, "pooling", Py_True);
     Py_INCREF(Py_True);
     PyModule_AddObject(module, "lowercase", Py_False);
