@@ -966,7 +966,6 @@ static bool GetTableInfo(Cursor *cur, Py_ssize_t index, PyObject* param, ParamIn
     if (nrows > 0)
     {
         PyObject *cell0 = PySequence_GetItem(param, 0);
-        Py_XDECREF(cell0);
         if (cell0 == NULL)
         {
             return false;
@@ -977,10 +976,11 @@ static bool GetTableInfo(Cursor *cur, Py_ssize_t index, PyObject* param, ParamIn
             if (nrows > 1)
             {
                 PyObject *cell1 = PySequence_GetItem(param, 1);
-                Py_XDECREF(cell1);
                 nskip += (PyBytes_Check(cell1) || PyUnicode_Check(cell1));
+                Py_XDECREF(cell1);
             }
         }
+        Py_XDECREF(cell0);
     }
     nrows -= nskip;
 
