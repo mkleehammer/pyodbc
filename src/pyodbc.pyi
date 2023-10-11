@@ -311,6 +311,7 @@ version: Final[str]  # not pep-0249
 # read-write (not pep-0249)
 lowercase: bool = False
 native_uuid: bool = False
+odbcversion: str = '3.X'
 pooling: bool = True
 
 

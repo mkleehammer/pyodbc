@@ -67,13 +67,13 @@ static char module_doc[] =
     "\n"
     "paramstyle\n"
     "  The string constant 'qmark' to indicate parameters are identified using\n"
-    "  question marks."
+    "  question marks.\n"
     "\n"
     "odbcversion\n"
     "  The ODBC version number as a string, such as '3.X' for ODBC 3.X compatibility.\n"
     "  This is a global (HENV) setting, so it can only be modified before the first\n"
     "  connection is made. Use 3.8 if you are using unixodbc connection pooling and your\n"
-    "  drivers are all 3.8 compatible. The default is 3.X\n";
+    "  drivers are all 3.8 compatible. The default is '3.X'.";
 
 PyObject* Error;
 PyObject* Warning;
