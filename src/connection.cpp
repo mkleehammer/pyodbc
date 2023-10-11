@@ -124,6 +124,11 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
         ivalue = (SQLPOINTER)PyByteArray_AsString(value);
         vallen = SQL_IS_POINTER;
     }
+    else if (PyBytes_Check(value))
+    {
+        ivalue = PyBytes_AsString(value);
+        vallen = SQL_IS_POINTER;
+    }
     else if (PyUnicode_Check(value))
     {
         sqlchar.set(value, strencoding ? strencoding : "utf-16le");
