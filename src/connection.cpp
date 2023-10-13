@@ -147,6 +147,12 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
         }
         return true;
     }
+    else
+    {
+        RaiseErrorV(0, PyExc_TypeError, "Unsupported attrs_before type: %s",
+                    Py_TYPE(value)->tp_name);
+        return false;
+    }
 
     Py_BEGIN_ALLOW_THREADS
     ret = SQLSetConnectAttrW(hdbc, ikey, ivalue, vallen);
