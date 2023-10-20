@@ -25,9 +25,7 @@
 #include "dbspecific.h"
 #include <datetime.h>
 
-#ifdef WITH_NUMPY
 #include "npcontainer.h"
-#endif
 
 inline bool StatementIsValid(Cursor* cursor)
 {
@@ -2391,9 +2389,7 @@ static PyMethodDef Cursor_methods[] =
     { "fetchone",         (PyCFunction)Cursor_fetchone,         METH_NOARGS,                fetchone_doc         },
     { "fetchall",         (PyCFunction)Cursor_fetchall,         METH_NOARGS,                fetchall_doc         },
     { "fetchmany",        (PyCFunction)Cursor_fetchmany,        METH_VARARGS,               fetchmany_doc        },
-#ifdef WITH_NUMPY
     { "fetchdictarray",   (PyCFunction)Cursor_fetchdictarray,   METH_VARARGS|METH_KEYWORDS, fetchdictarray_doc   },
-#endif
     { "nextset",          (PyCFunction)Cursor_nextset,          METH_NOARGS,                nextset_doc          },
     { "tables",           (PyCFunction)Cursor_tables,           METH_VARARGS|METH_KEYWORDS, tables_doc           },
     { "columns",          (PyCFunction)Cursor_columns,          METH_VARARGS|METH_KEYWORDS, columns_doc          },
@@ -2408,11 +2404,13 @@ static PyMethodDef Cursor_methods[] =
     { "skip",             (PyCFunction)Cursor_skip,             METH_VARARGS,               skip_doc             },
     { "commit",           (PyCFunction)Cursor_commit,           METH_NOARGS,                commit_doc           },
     { "rollback",         (PyCFunction)Cursor_rollback,         METH_NOARGS,                rollback_doc         },
-    {"cancel",           (PyCFunction)Cursor_cancel,           METH_NOARGS,                cancel_doc},
-    {"__enter__",        Cursor_enter,                         METH_NOARGS,                enter_doc            },
-    {"__exit__",         Cursor_exit,                          METH_VARARGS,               exit_doc             },
+    { "cancel",           (PyCFunction)Cursor_cancel,           METH_NOARGS,                cancel_doc},
+    { "__enter__",        Cursor_enter,                         METH_NOARGS,                enter_doc            },
+    { "__exit__",         Cursor_exit,                          METH_VARARGS,               exit_doc             },
     {0, 0, 0, 0}
 };
+
+
 
 static char cursor_doc[] =
     "Cursor objects represent a database cursor, which is used to manage the context\n" \

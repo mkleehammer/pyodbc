@@ -84,7 +84,6 @@ def get_compiler_settings():
         'define_macros': [('PYODBC_VERSION', VERSION)]
     }
     settings['include_dirs'].append(numpy.get_include())
-    settings['define_macros'].append(('WITH_NUMPY', '1'))
 
     if os.name == 'nt':
         settings['extra_compile_args'].extend([

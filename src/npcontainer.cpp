@@ -19,7 +19,7 @@
 #include "errors.h"
 #include "dbspecific.h"
 
-#include "numpy/ndarrayobject.h"
+#include "numpy/arrayobject.h"
 #include "numpy/npy_math.h"
 
 // exported variables ----------------------------------------------------------
@@ -1493,7 +1493,6 @@ perform_array_query(query_desc& result, Cursor* cur, npy_intp nrows, bool lower,
                                     "Can't allocate result buffers");
         }
     }
-
     return 0;
 }
 
@@ -1587,6 +1586,10 @@ static char *Cursor_npfetch_kwnames[] = {
 PyObject*
 Cursor_fetchdictarray(PyObject* self, PyObject* args, PyObject *kwargs)
 {
+    PyObject* numpy = PyImport_ImportModule("numpy");
+    if (!numpy) {
+        return 0;
+    }
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
     if (!cursor)
         return 0;
@@ -1609,6 +1612,12 @@ Cursor_fetchdictarray(PyObject* self, PyObject* args, PyObject *kwargs)
     TRACE_NOLOC("\n\nCursor fetchdictarray\n\tnrows:%d\n\treturn_nulls:%s\n\tnull_suffix:%s\n\thandle:%p\n\tunicode_results:%s\n",
                 (int)nrows, preserve_nulls?"yes":"no", null_suffix, (void*)cursor->hstmt);
     /*cursor->cnxn->unicode_results?"Yes":"No");*/
+
+    import_array();
+    if (PyArray_GetNDArrayCFeatureVersion() >= 7) {
+        CAN_USE_DATETIME = true;
+    }
+
     npy_intp arg = nrows;
     PyObject *rv = create_fill_dictarray(cursor, arg, preserve_nulls?null_suffix:0);
     TRACE_NOLOC("\nCursor fetchdictarray done.\n\tdictarray: %p\n\n", rv);
@@ -1658,27 +1667,5 @@ char fetchdictarray_doc[] =
     "See Also\n" \
     "--------\n" \
     "fetchmany : Fetch rows into a Python list of rows.\n" \
-    "fetchall : Fetch the remaining rows into a Python lis of rows.\n" \
+    "fetchall : Fetch the remaining rows into a Python list of rows.\n" \
     "\n";
-
-
-#if PY_VERSION_HEX >= 0x03000000
-int NpContainer_init()
-#else
-void NpContainer_init()
-#endif
-{
-    import_array();
-    // If the version of Numpy is >= API 7 (Numpy 1.7),
-    // then enable datetime features. This allows datetime
-    // to work even if pyodbc is built against Numpy 1.5.
-    if (PyArray_GetNDArrayCFeatureVersion() >= 7) {
-        CAN_USE_DATETIME = true;
-    }
-
-#if PY_VERSION_HEX >= 0x03000000
-    return 0;
-#else
-    return;
-#endif
-}
