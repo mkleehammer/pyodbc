@@ -1600,7 +1600,7 @@ Cursor_fetchdictarray(PyObject* self, PyObject* args, PyObject *kwargs)
         as a npy_intp
     */
     TRACE("\n\nParse tuple\n");
-    ssize_t nrows = -1;
+    Py_ssize_t nrows = -1;
     PyObject *return_nulls = NULL;
     const char *null_suffix = "_isnull";
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|nOs", Cursor_npfetch_kwnames,
