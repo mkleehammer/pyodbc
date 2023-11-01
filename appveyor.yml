@@ -1,20 +1,20 @@
 # This AppVeyor CI configuration file:
 #   - builds pyodbc with multiple versions of Python
 #   - tests the generated pyodbc module against various databases and drivers
-#   - creates "wheel" files for distribution, and stores them as appveyor
-#     artifacts which can be downloaded from the AppVeyor UI
+#   - (optionally) creates "wheel" files for distribution, and stores them as
+#     AppVeyor artifacts which can be downloaded from the AppVeyor UI
 #
 # Various aspects of this file's behavior can be controlled by setting environment
-# variables in the AppVeyor UI.  You will need an AppVeyor account for this (see
-# the Settings tab -> Environment -> Environment variables).  Here are
-# the relevant variables and their possible string values.  Note, "*" indicates the
+# variables in the AppVeyor UI (see the Settings tab -> Environment ->
+# Environment variables).  You will need an AppVeyor account for this.  Here are
+# the relevant variables and their possible string values, where "*" indicates the
 # defaults:
 #   - APVYR_RUN_TESTS - run the unit tests, overall control (true*/false)
 #   - APVYR_RUN_MSSQL_TESTS - run the MS SQL Server unit tests (true*/false)
 #   - APVYR_RUN_POSTGRES_TESTS - run the PostgreSQL unit tests (true*/false)
 #   - APVYR_RUN_MYSQL_TESTS - run the MySQL unit tests (true*/false)
 #   - APVYR_GENERATE_WHEELS - generate distributable wheel files (true/false*)
-#   - APVYR_VERBOSE - output more information to the logs (true/false*)
+#   - APVYR_VERBOSE - output more information to the logs (true*/false)
 #
 # For more information about appveyor.yml files, see: https://www.appveyor.com/docs/appveyor-yml/
 
@@ -22,8 +22,8 @@
 # the AppVeyor cache is used to carry files between jobs, so make sure the jobs are serialized
 max_jobs: 1
 
-# the default AppVeyor image for the jobs, but the images are also set in the matrix
-image: Visual Studio 2019
+# the default AppVeyor image for the jobs
+image: Visual Studio 2022
 
 environment:
 
@@ -40,42 +40,32 @@ environment:
     # http://stackoverflow.com/a/13751649/163740
     # http://docs.microsoft.com/en-us/cpp/preprocessor/predefined-macros#microsoft-specific-predefined-macros
     WITH_COMPILER: "cmd /E:ON /V:ON /C .\\appveyor\\compile.cmd"
-    # database-related variables, which must match the "services:" section below
+    # database-related variables, which must match the "init:" and "services:" sections below
     # ref: https://www.appveyor.com/docs/services-databases/
-    MSSQL_INSTANCE: "(local)\\SQL2017"
-    POSTGRES_PATH: "C:\\Program Files\\PostgreSQL\\11"
-    MYSQL_PATH: "C:\\Program Files\\MySQL\\MySQL Server 5.7"
+    MSSQL_INSTANCE: "(local)\\SQL2019"
+    POSTGRES_PATH: "C:\\Program Files\\PostgreSQL\\13"
+    MYSQL_PATH: "C:\\Program Files\\MySQL\\MySQL Server 8.0"
     # the cache should always be saved, even on failure, to be available for the next run
     APPVEYOR_SAVE_CACHE_ON_ERROR: "true"
 
   matrix:
-
     # all the Python versions to be tested, both 32-bit and 64-bit
     # ref: https://www.appveyor.com/docs/windows-images-software/#python
+    - PYTHON_HOME: "C:\\Python38"
+    - PYTHON_HOME: "C:\\Python38-x64"
+    - PYTHON_HOME: "C:\\Python39"
+    - PYTHON_HOME: "C:\\Python39-x64"
+    - PYTHON_HOME: "C:\\Python310"
+    - PYTHON_HOME: "C:\\Python310-x64"
+    - PYTHON_HOME: "C:\\Python311"
+    - PYTHON_HOME: "C:\\Python311-x64"
+    - PYTHON_HOME: "C:\\Python312"
+    - PYTHON_HOME: "C:\\Python312-x64"
 
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      PYTHON_HOME: "C:\\Python38"
-
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      PYTHON_HOME: "C:\\Python38-x64"
-
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      PYTHON_HOME: "C:\\Python39"
-
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      PYTHON_HOME: "C:\\Python39-x64"
-
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      PYTHON_HOME: "C:\\Python310"
-
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      PYTHON_HOME: "C:\\Python310-x64"
-
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      PYTHON_HOME: "C:\\Python311"
-
-    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-      PYTHON_HOME: "C:\\Python311-x64"
+# ref: https://www.appveyor.com/docs/services-databases/
+init:
+  - net start MSSQL$SQL2019
+  - ps: Start-Service MySQL80
 
 cache:
   - apvyr_cache
@@ -86,9 +76,7 @@ install:
 
 # ref: https://www.appveyor.com/docs/services-databases/
 services:
-  - mssql2017
-  - postgresql11
-  - mysql
+  - postgresql13
 
 build_script:
   - call .\appveyor\build_script.cmd
