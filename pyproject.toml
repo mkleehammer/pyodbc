@@ -36,3 +36,10 @@ Homepage = "https://github.com/mkleehammer/pyodbc"
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
+
+[tool.cibuildwheel.linux]
+before-all = "yum install unixODBC-devel"
+
+[[tool.cibuildwheel.overrides]]
+select = "*-musllinux*"
+before-all = "apk add unixodbc-dev gcc g++"
