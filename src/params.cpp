@@ -1674,6 +1674,11 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             goto ErrorRet8;
         }
 
+        if (rc == SQL_SUCCESS_WITH_INFO)
+        {
+            GetDiagRecs(cur);
+        }
+
         // TODO: Refactor into ProcessDAEParams() ?
         while (rc == SQL_NEED_DATA)
         {
