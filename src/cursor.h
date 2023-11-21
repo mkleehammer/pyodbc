@@ -156,6 +156,8 @@ struct Cursor
     PyObject* messages;
 };
 
+int GetDiagRecs(Cursor* cur);
+
 void Cursor_init();
 
 Cursor* Cursor_New(Connection* cnxn);

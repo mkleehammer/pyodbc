@@ -1072,10 +1072,9 @@ def test_cursor_messages_with_print(cursor: pyodbc.Cursor):
     """
     assert not cursor.messages
 
-    # SQL Server PRINT statements are never more than 8000 characters
-    # https://docs.microsoft.com/en-us/sql/t-sql/language-elements/print-transact-sql#remarks
-    for msg in ('hello world', 'ABCDEFGHIJ' * 800):
-        cursor.execute(f"PRINT '{msg}'")
+    # ascii / extended ascii / unicode / beyond BMP unicode
+    for msg in ('hello world', 'a \xeb a', 'b \u0394 b', 'c \U0001F31C c'):
+        cursor.execute(f"PRINT N'{msg}'")  # note, unicode literal
         messages = cursor.messages
         assert isinstance(messages, list)
         assert len(messages) == 1
@@ -1085,6 +1084,31 @@ def test_cursor_messages_with_print(cursor: pyodbc.Cursor):
         assert isinstance(messages[0][1], str)
         assert '[01000] (0)' == messages[0][0]
         assert messages[0][1].endswith(msg)
+
+    # maximum size message
+    # SQL Server PRINT statements are never more than 8000 characters
+    # https://docs.microsoft.com/en-us/sql/t-sql/language-elements/print-transact-sql#remarks
+    msg = 'ABCDEFGH' * 1000
+    cursor.execute(f"PRINT '{msg}'")  # note, plain ascii literal
+    messages = cursor.messages
+    assert len(messages) == 1
+    assert messages[0][1].endswith(msg)
+
+
+def test_cursor_messages_with_fast_executemany(cursor: pyodbc.Cursor):
+    """
+    Ensure the Cursor.messages attribute is set with fast_executemany=True.
+    """
+    cursor.execute("create table t2(id1 int, id2 int)")
+    cursor.commit()
+
+    cursor.fast_executemany = True
+    cursor.executemany(
+        "print 'hello';insert into t2(id1, id2) values (?, ?)",
+        [(10, 11), (20, 21)],
+    )
+    assert len(cursor.messages) == 2
+    assert all(m[1].endswith('hello') for m in cursor.messages)
 
 
 def test_cursor_messages_with_stored_proc(cursor: pyodbc.Cursor):

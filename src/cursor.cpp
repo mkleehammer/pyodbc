@@ -577,7 +577,7 @@ static bool PrepareResults(Cursor* cur, int cCols)
 }
 
 
-static int GetDiagRecs(Cursor* cur)
+int GetDiagRecs(Cursor* cur)
 {
     // Retrieves all diagnostic records from the cursor and assigns them to the "messages" attribute.
 
