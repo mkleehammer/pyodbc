@@ -26,6 +26,8 @@
 #include <time.h>
 #include <stdarg.h>
 
+#include "npcontainer.h"
+
 static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts);
 
 PyObject* pModule = 0;

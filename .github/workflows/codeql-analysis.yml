@@ -52,8 +52,8 @@ jobs:
 
     # Autobuild attempts to build any compiled languages  (C/C++, C#, or Java).
     # If this step fails, then you should remove it and run the build manually (see below)
-    - name: Autobuild
-      uses: github/codeql-action/autobuild@v2
+    # - name: Autobuild
+    #   uses: github/codeql-action/autobuild@v2
 
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 https://git.io/JvXDl
@@ -65,6 +65,20 @@ jobs:
     #- run: |
     #   make bootstrap
     #   make release
+
+    - name: Build and install pyodbc
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        echo "*** current python version"
+        python -VV
+        echo "*** pip install"
+        python -m pip install .
+        echo "*** pip freeze"
+        python -m pip freeze --all
+        echo "*** pyodbc version"
+        python -c "import pyodbc; print(pyodbc.version)"
+        echo "*** pyodbc drivers"
+        python -c "import pyodbc; print('\n'.join(sorted(pyodbc.drivers())))"
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v2

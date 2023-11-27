@@ -33,6 +33,11 @@ classifiers=['Development Status :: 5 - Production/Stable',
 [project.urls]
 Homepage = "https://github.com/mkleehammer/pyodbc"
 
+[project.optional-dependencies]
+numpy = ["numpy"]
+qa = ["flake8", "pylint"]
+test = ["pytest ~= 7.3"]
+
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools ~= 67.7", "numpy"]
 build-backend = "setuptools.build_meta"

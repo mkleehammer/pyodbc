@@ -5,6 +5,7 @@ from os.path import exists, join, isdir, relpath, expanduser
 from pathlib import Path
 from inspect import cleandoc
 
+import numpy
 from setuptools import setup
 from setuptools.extension import Extension
 
@@ -82,6 +83,7 @@ def get_compiler_settings():
         'include_dirs': [],
         'define_macros': [('PYODBC_VERSION', VERSION)]
     }
+    settings['include_dirs'].append(numpy.get_include())
 
     if os.name == 'nt':
         settings['extra_compile_args'].extend([
