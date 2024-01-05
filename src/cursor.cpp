@@ -1129,6 +1129,40 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
     Py_RETURN_NONE;
 }
 
+static char set_attr_doc[] =
+    "set_attr(attr_id, value) -> None\n\n"
+    "Calls SQLSetStmtAttr with the given values.\n\n"
+    "attr_id\n"
+    "  The attribute id (integer) to set.  These are ODBC or driver constants.\n\n"
+    "value\n"
+    "  An integer value.\n\n"
+    "At this time, only integer values are supported and are always passed as SQLUINTEGER.";
+
+static PyObject* Cursor_set_attr(PyObject* self, PyObject* args)
+{
+    if (!Cursor_Check(self))
+    {
+        PyErr_SetString(ProgrammingError, "Invalid cursor object.");
+        return 0;
+    }
+
+    int id;
+    int value;
+    if (!PyArg_ParseTuple(args, "ii", &id, &value))
+        return 0;
+
+    Cursor* cursor = (Cursor *)self;
+
+    SQLRETURN ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLSetStmtAttr(cursor->hstmt, id, (SQLPOINTER)(intptr_t)value, 0);
+    Py_END_ALLOW_THREADS
+
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cursor->cnxn, "SQLSetStmtAttr", cursor->cnxn->hdbc, cursor->hstmt);
+    Py_RETURN_NONE;
+}
+
 static PyObject* Cursor_setinputsizes(PyObject* self, PyObject* sizes)
 {
     if (!Cursor_Check(self))
@@ -1136,7 +1170,7 @@ static PyObject* Cursor_setinputsizes(PyObject* self, PyObject* sizes)
         PyErr_SetString(ProgrammingError, "Invalid cursor object.");
         return 0;
     }
-    
+
     Cursor *cur = (Cursor*)self;
     if (Py_None == sizes)
     {
@@ -2410,7 +2444,8 @@ static PyMethodDef Cursor_methods[] =
     { "skip",             (PyCFunction)Cursor_skip,             METH_VARARGS,               skip_doc             },
     { "commit",           (PyCFunction)Cursor_commit,           METH_NOARGS,                commit_doc           },
     { "rollback",         (PyCFunction)Cursor_rollback,         METH_NOARGS,                rollback_doc         },
-    {"cancel",           (PyCFunction)Cursor_cancel,           METH_NOARGS,                cancel_doc},
+    { "cancel",            (PyCFunction)Cursor_cancel,           METH_NOARGS,                cancel_doc           },
+    { "set_attr",         Cursor_set_attr,                      METH_VARARGS,               set_attr_doc         },
     {"__enter__",        Cursor_enter,                         METH_NOARGS,                enter_doc            },
     {"__exit__",         Cursor_exit,                          METH_VARARGS,               exit_doc             },
     {0, 0, 0, 0}
