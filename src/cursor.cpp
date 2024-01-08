@@ -1155,7 +1155,7 @@ static PyObject* Cursor_set_attr(PyObject* self, PyObject* args)
 
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLSetStmtAttr(cursor->hstmt, id, (SQLPOINTER)(intptr_t)value, 0);
+    ret = SQLSetStmtAttr(cursor->hstmt, id, (SQLPOINTER)(intptr_t)value, SQL_IS_INTEGER);
     Py_END_ALLOW_THREADS
 
     if (!SQL_SUCCEEDED(ret))
@@ -2562,7 +2562,7 @@ Cursor_New(Connection* cnxn)
         if (cnxn->timeout)
         {
             Py_BEGIN_ALLOW_THREADS
-            ret = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_QUERY_TIMEOUT, (SQLPOINTER)(uintptr_t)cnxn->timeout, 0);
+            ret = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_QUERY_TIMEOUT, (SQLPOINTER)(uintptr_t)cnxn->timeout, SQL_IS_UINTEGER);
             Py_END_ALLOW_THREADS
 
             if (!SQL_SUCCEEDED(ret))
