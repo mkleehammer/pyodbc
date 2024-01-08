@@ -311,7 +311,7 @@ static bool AllocateEnv()
         }
     }
     Py_DECREF(odbcversion);
-    
+
     if (!SQL_SUCCEEDED(SQLSetEnvAttr(henv, SQL_ATTR_ODBC_VERSION, defaultVersion, sizeof(int))))
     {
         PyErr_SetString(PyExc_RuntimeError, "Unable to set SQL_ATTR_ODBC_VERSION attribute.");
@@ -1064,6 +1064,9 @@ static const ConstantDef aConstants[] = {
     MAKECONST(SQL_PACKET_SIZE),
     MAKECONST(SQL_ATTR_ANSI_APP),
 
+    // Cursor Attributes
+    MAKECONST(SQL_ATTR_QUERY_TIMEOUT),
+
     // SQL_CONVERT_X
     MAKECONST(SQL_CONVERT_FUNCTIONS),
     MAKECONST(SQL_CONVERT_BIGINT),
@@ -1107,6 +1110,10 @@ static const ConstantDef aConstants[] = {
     MAKECONST(SQL_OJ_NOT_ORDERED),
     MAKECONST(SQL_OJ_INNER),
     MAKECONST(SQL_OJ_ALL_COMPARISON_OPS),
+
+    // Misc
+    MAKECONST(SQL_IS_UINTEGER),
+    MAKECONST(SQL_IS_UINTEGER),
 };
 
 
