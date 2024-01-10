@@ -94,9 +94,19 @@ const char* CTypeName(SQLSMALLINT n)
 void DebugTrace(const char* szFmt, ...)
 {
     va_list marker;
+
+    // Get the current time
+    time_t now = time(NULL);
+    struct tm* now_tm = localtime(&now);
+
+    // Print the timestamp and prefix
+    printf("%04d-%02d-%02dT%02d:%02d:%02d [pyodbc] ",
+           now_tm->tm_year + 1900, now_tm->tm_mon + 1, now_tm->tm_mday,
+           now_tm->tm_hour, now_tm->tm_min, now_tm->tm_sec);
+
+    // Print the formatted string
     va_start(marker, szFmt);
     vprintf(szFmt, marker);
     va_end(marker);
 }
 #endif
-
