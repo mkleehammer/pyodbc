@@ -257,18 +257,38 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
     bool isNull = false;
     byte* pbData = 0;
     Py_ssize_t cbData = 0;
-    if (!ReadVarColumn(cur, iCol, enc.ctype, isNull, pbData, cbData))
-        return 0;
+    SQLLEN cbFetched = cur->cbFetchedBufs[iCol];
+    void* valueBuf = cur->valueBufs[iCol];
 
-    if (isNull)
+    if (!valueBuf)
     {
-        assert(pbData == 0 && cbData == 0);
-        Py_RETURN_NONE;
+        if (!ReadVarColumn(cur, iCol, enc.ctype, isNull, pbData, cbData))
+            return 0;
+
+        if (isNull)
+        {
+            assert(pbData == 0 && cbData == 0);
+            Py_RETURN_NONE;
+        }
+    }
+    else
+    {
+        if (cbFetched == SQL_NULL_DATA)
+        {
+            Py_RETURN_NONE;
+        }
+        cbFetched == SQL_NTS;
+        cbFetched == SQL_NO_TOTAL;
+        pbData = (byte*)valueBuf;
+        cbData = cbFetched;
     }
 
     PyObject* result = TextBufferToObject(enc, pbData, cbData);
 
-    PyMem_Free(pbData);
+    if (!valueBuf)
+    {
+        PyMem_Free(pbData);
+    }
 
     return result;
 }
@@ -282,18 +302,38 @@ static PyObject* GetBinary(Cursor* cur, Py_ssize_t iCol)
     bool isNull = false;
     byte* pbData = 0;
     Py_ssize_t cbData = 0;
-    if (!ReadVarColumn(cur, iCol, SQL_C_BINARY, isNull, pbData, cbData))
-        return 0;
+    SQLLEN cbFetched = cur->cbFetchedBufs[iCol];
+    void* valueBuf = cur->valueBufs[iCol];
 
-    if (isNull)
+    if (!valueBuf)
     {
-        assert(pbData == 0 && cbData == 0);
-        Py_RETURN_NONE;
+        if (!ReadVarColumn(cur, iCol, SQL_C_BINARY, isNull, pbData, cbData))
+            return 0;
+
+        if (isNull)
+        {
+            assert(pbData == 0 && cbData == 0);
+            Py_RETURN_NONE;
+        }
+    }
+    else
+    {
+        if (cbFetched == SQL_NULL_DATA)
+        {
+            Py_RETURN_NONE;
+        }
+        pbData = (byte*)valueBuf;
+        cbData = cbFetched;
     }
 
     PyObject* obj;
     obj = PyBytes_FromStringAndSize((char*)pbData, cbData);
-    PyMem_Free(pbData);
+
+    if (!valueBuf)
+    {
+        PyMem_Free(pbData);
+    }
+
     return obj;
 }
 
@@ -354,18 +394,36 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
     bool isNull = false;
     byte* pbData = 0;
     Py_ssize_t cbData = 0;
-    if (!ReadVarColumn(cur, iCol, enc.ctype, isNull, pbData, cbData))
-        return 0;
+    SQLLEN cbFetched = cur->cbFetchedBufs[iCol];
+    void* valueBuf = cur->valueBufs[iCol];
 
-    if (isNull)
+    if (!valueBuf)
     {
-        assert(pbData == 0 && cbData == 0);
-        Py_RETURN_NONE;
+        if (!ReadVarColumn(cur, iCol, enc.ctype, isNull, pbData, cbData))
+            return 0;
+
+        if (isNull)
+        {
+            assert(pbData == 0 && cbData == 0);
+            Py_RETURN_NONE;
+        }
+    }
+    else
+    {
+        if (cbFetched == SQL_NULL_DATA)
+        {
+            Py_RETURN_NONE;
+        }
+        pbData = (byte*)valueBuf;
+        cbData = cbFetched;
     }
 
     Object result(DecimalFromText(enc, pbData, cbData));
 
-    PyMem_Free(pbData);
+    if (!valueBuf)
+    {
+        PyMem_Free(pbData);
+    }
 
     return result.Detach();
 }
@@ -373,15 +431,23 @@ static PyObject* GetDataDecimal(Cursor* cur, Py_ssize_t iCol)
 static PyObject* GetDataBit(Cursor* cur, Py_ssize_t iCol)
 {
     SQLCHAR ch;
-    SQLLEN cbFetched;
     SQLRETURN ret;
+    SQLLEN cbFetched = cur->cbFetchedBufs[iCol];
+    void* valueBuf = cur->valueBufs[iCol];
 
-    Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_BIT, &ch, sizeof(ch), &cbFetched);
-    Py_END_ALLOW_THREADS
+    if (!valueBuf)
+    {
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_BIT, &ch, sizeof(ch), &cbFetched);
+        Py_END_ALLOW_THREADS
 
-    if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+        if (!SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    }
+    else
+    {
+        Py_MEMCPY(&ch, valueBuf, sizeof(ch));
+    }
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -398,16 +464,25 @@ static PyObject* GetDataLong(Cursor* cur, Py_ssize_t iCol)
     ColumnInfo* pinfo = &cur->colinfos[iCol];
 
     SQLINTEGER value;
-    SQLLEN cbFetched;
     SQLRETURN ret;
 
     SQLSMALLINT nCType = pinfo->is_unsigned ? SQL_C_ULONG : SQL_C_LONG;
+    SQLLEN cbFetched = cur->cbFetchedBufs[iCol];
+    void* valueBuf = cur->valueBufs[iCol];
 
-    Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), nCType, &value, sizeof(value), &cbFetched);
-    Py_END_ALLOW_THREADS
-    if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    if (!valueBuf)
+    {
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), nCType, &value, sizeof(value), &cbFetched);
+        Py_END_ALLOW_THREADS
+
+        if (!SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    }
+    else
+    {
+        Py_MEMCPY(&value, valueBuf, sizeof(value));
+    }
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -425,15 +500,23 @@ static PyObject* GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
 
     SQLSMALLINT nCType = pinfo->is_unsigned ? SQL_C_UBIGINT : SQL_C_SBIGINT;
     SQLBIGINT   value;
-    SQLLEN      cbFetched;
     SQLRETURN   ret;
+    SQLLEN cbFetched = cur->cbFetchedBufs[iCol];
+    void* valueBuf = cur->valueBufs[iCol];
 
-    Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), nCType, &value, sizeof(value), &cbFetched);
-    Py_END_ALLOW_THREADS
+    if (!valueBuf)
+    {
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), nCType, &value, sizeof(value), &cbFetched);
+        Py_END_ALLOW_THREADS
 
-    if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+        if (!SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    }
+    else
+    {
+        Py_MEMCPY(&value, valueBuf, sizeof(value));
+    }
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -448,14 +531,23 @@ static PyObject* GetDataLongLong(Cursor* cur, Py_ssize_t iCol)
 static PyObject* GetDataDouble(Cursor* cur, Py_ssize_t iCol)
 {
     double value;
-    SQLLEN cbFetched = 0;
     SQLRETURN ret;
+    SQLLEN cbFetched = cur->cbFetchedBufs[iCol];
+    void* valueBuf = cur->valueBufs[iCol];
 
-    Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_DOUBLE, &value, sizeof(value), &cbFetched);
-    Py_END_ALLOW_THREADS
-    if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    if (!valueBuf)
+    {
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_DOUBLE, &value, sizeof(value), &cbFetched);
+        Py_END_ALLOW_THREADS
+
+        if (!SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    }
+    else
+    {
+        Py_MEMCPY(&value, valueBuf, sizeof(value));
+    }
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -468,14 +560,23 @@ static PyObject* GetSqlServerTime(Cursor* cur, Py_ssize_t iCol)
 {
     SQL_SS_TIME2_STRUCT value;
 
-    SQLLEN cbFetched = 0;
     SQLRETURN ret;
+    SQLLEN cbFetched = cur->cbFetchedBufs[iCol];
+    void* valueBuf = cur->valueBufs[iCol];
 
-    Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_BINARY, &value, sizeof(value), &cbFetched);
-    Py_END_ALLOW_THREADS
-    if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    if (!valueBuf)
+    {
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_BINARY, &value, sizeof(value), &cbFetched);
+        Py_END_ALLOW_THREADS
+
+        if (!SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    }
+    else
+    {
+        Py_MEMCPY(&value, valueBuf, sizeof(value));
+    }
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -489,14 +590,23 @@ static PyObject* GetUUID(Cursor* cur, Py_ssize_t iCol)
     // REVIEW: Since GUID is a fixed size, do we need to pass the size or cbFetched?
 
     PYSQLGUID guid;
-    SQLLEN cbFetched = 0;
     SQLRETURN ret;
-    Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_GUID, &guid, sizeof(guid), &cbFetched);
-    Py_END_ALLOW_THREADS
+    SQLLEN cbFetched = cur->cbFetchedBufs[iCol];
+    void* valueBuf = cur->valueBufs[iCol];
 
-    if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    if (!valueBuf)
+    {
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_GUID, &guid, sizeof(guid), &cbFetched);
+        Py_END_ALLOW_THREADS
+
+        if (!SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    }
+    else
+    {
+        Py_MEMCPY(&guid, valueBuf, sizeof(guid));
+    }
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -518,16 +628,25 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
 {
     TIMESTAMP_STRUCT value;
 
-    SQLLEN cbFetched = 0;
     SQLRETURN ret;
+    SQLLEN cbFetched = cur->cbFetchedBufs[iCol];
+    void* valueBuf = cur->valueBufs[iCol];
 
     struct tm t;
 
-    Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_TYPE_TIMESTAMP, &value, sizeof(value), &cbFetched);
-    Py_END_ALLOW_THREADS
-    if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    if (!valueBuf)
+    {
+        Py_BEGIN_ALLOW_THREADS
+        ret = SQLGetData(cur->hstmt, (SQLUSMALLINT)(iCol+1), SQL_C_TYPE_TIMESTAMP, &value, sizeof(value), &cbFetched);
+        Py_END_ALLOW_THREADS
+
+        if (!SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+    }
+    else
+    {
+        Py_MEMCPY(&value, valueBuf, sizeof(value));
+    }
 
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
@@ -755,4 +874,145 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
 
     return RaiseErrorV("HY106", ProgrammingError, "ODBC SQL type %d is not yet supported.  column-index=%zd  type=%d",
                        (int)pinfo->sql_type, iCol, (int)pinfo->sql_type);
+}
+
+
+inline SQLLEN CharBufferSize(SQLSMALLINT c_type, SQLULEN nr_chars)
+{
+    return (nr_chars + 1) * (IsWideType(c_type) ? sizeof(uint16_t) : 1); // + 1 for null terminator
+}
+
+
+bool BindCol(Cursor* cur, Py_ssize_t iCol)
+{
+    // If false is returned, an exception has already been set.
+    //
+    // The data is assumed to be the default C type for the column's SQL type.
+    //
+    // Must be analogous to GetData.
+
+    ColumnInfo* pinfo = &cur->colinfos[iCol];
+    SQLRETURN ret;
+    SQLLEN size;
+    SQLSMALLINT c_type;
+
+    // We don't implement SQLBindCol for user-defined conversions.
+
+    if (cur->cnxn->map_sqltype_to_converter)
+    {
+        if (Connection_GetConverter(cur->cnxn, pinfo->sql_type)) {
+            return true;
+        }
+        if (PyErr_Occurred())
+            return false;
+    }
+
+    switch (pinfo->sql_type)
+    {
+    case SQL_WCHAR:
+    case SQL_WVARCHAR:
+    case SQL_WLONGVARCHAR:
+
+    case SQL_CHAR:
+    case SQL_VARCHAR:
+    case SQL_LONGVARCHAR:
+    case SQL_SS_XML:
+    case SQL_DB2_XML:
+        if (pinfo->column_size <= 0 || pinfo->column_size > 1024*1024)
+            return true;
+        c_type = IsWideType(pinfo->sql_type) ? cur->cnxn->sqlwchar_enc.ctype : cur->cnxn->sqlchar_enc.ctype;
+        size = CharBufferSize(c_type, pinfo->column_size);
+        break;
+
+    case SQL_GUID:
+        if (UseNativeUUID())
+        {
+            c_type = SQL_C_GUID;
+            size = sizeof(PYSQLGUID);
+        }
+        else
+        {
+            c_type = cur->cnxn->sqlchar_enc.ctype;
+            // leave space for dashes every 4 characters
+            size = CharBufferSize(c_type, 39);
+        }
+        break;
+
+    case SQL_BINARY:
+    case SQL_VARBINARY:
+    case SQL_LONGVARBINARY:
+        if (pinfo->column_size == 0 || pinfo->column_size > 1024*1024)
+            return true;
+        c_type = SQL_C_BINARY;
+        size = pinfo->column_size; // no null terminator
+        break;
+
+    case SQL_DECIMAL:
+    case SQL_NUMERIC:
+    case SQL_DB2_DECFLOAT:
+        c_type = cur->cnxn->sqlwchar_enc.ctype;
+        // need to add padding for all kinds of situations, see GetDataDecimal
+        size = CharBufferSize(c_type, pinfo->column_size + 5);
+        break;
+
+    case SQL_BIT:
+        c_type = SQL_C_BIT;
+        size = sizeof(SQLCHAR);
+        break;
+
+    case SQL_TINYINT:
+    case SQL_SMALLINT:
+    case SQL_INTEGER:
+        c_type = pinfo->is_unsigned ? SQL_C_ULONG : SQL_C_LONG;
+        size = sizeof(SQLINTEGER);
+        break;
+
+    case SQL_BIGINT:
+        c_type = pinfo->is_unsigned ? SQL_C_UBIGINT : SQL_C_SBIGINT;
+        size = sizeof(SQLBIGINT);
+        break;
+
+    case SQL_REAL:
+    case SQL_FLOAT:
+    case SQL_DOUBLE:
+        c_type = SQL_C_DOUBLE;
+        size = sizeof(double);
+        break;
+
+    case SQL_TYPE_DATE:
+    case SQL_TYPE_TIME:
+    case SQL_TYPE_TIMESTAMP:
+        c_type = SQL_C_TYPE_TIMESTAMP;
+        size = sizeof(TIMESTAMP_STRUCT);
+        break;
+
+    case SQL_SS_TIME2:
+        c_type = SQL_C_BINARY;
+        size = sizeof(SQL_SS_TIME2_STRUCT);
+        break;
+    default:
+        return true;
+    }
+
+    cur->valueBufs[iCol] = PyMem_Malloc(size);
+    if (!cur->valueBufs[iCol])
+    {
+        PyErr_NoMemory();
+        return false;
+    }
+
+    Py_BEGIN_ALLOW_THREADS
+    ret = SQLBindCol(
+        cur->hstmt,
+        (SQLUSMALLINT)(iCol+1),
+        c_type,
+        cur->valueBufs[iCol],
+        size,
+        &(cur->cbFetchedBufs[iCol])
+    );
+    Py_END_ALLOW_THREADS
+    if (!SQL_SUCCEEDED(ret))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+
+    return true;
 }

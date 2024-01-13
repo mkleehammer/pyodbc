@@ -336,6 +336,23 @@ static bool free_results(Cursor* self, int flags)
         self->pPreparedSQL = 0;
     }
 
+    if (self->description != Py_None)
+    {
+        Py_ssize_t i, field_count = PyTuple_GET_SIZE(self->description);
+
+        for (i = 0; i < field_count; i++)
+        {
+            if (self->valueBufs[i])
+            {
+                PyMem_Free(self->valueBufs[i]);
+            }
+        }
+        PyMem_Free(self->valueBufs);
+        self->valueBufs = 0;
+        PyMem_Free(self->cbFetchedBufs);
+        self->cbFetchedBufs = 0;
+    }
+
     if (self->colinfos)
     {
         PyMem_Free(self->colinfos);
@@ -557,23 +574,65 @@ static bool PrepareResults(Cursor* cur, int cCols)
     assert(cur->colinfos == 0);
 
     cur->colinfos = (ColumnInfo*)PyMem_Malloc(sizeof(ColumnInfo) * cCols);
-    if (cur->colinfos == 0)
+    cur->cbFetchedBufs = (SQLLEN*)PyMem_Calloc(sizeof(SQLLEN), cCols);
+    cur->valueBufs = (void**)PyMem_Calloc(sizeof(void*), cCols);
+
+    if (!cur->colinfos || !cur->cbFetchedBufs || !cur->valueBufs)
     {
         PyErr_NoMemory();
-        return false;
+        goto fail;
     }
 
     for (i = 0; i < cCols; i++)
     {
         if (!InitColumnInfo(cur, (SQLUSMALLINT)(i + 1), &cur->colinfos[i]))
         {
-            PyMem_Free(cur->colinfos);
-            cur->colinfos = 0;
-            return false;
+            goto fail;
+        }
+    }
+
+    for (i = 0; i < cCols; i++)
+    {
+        if (!BindCol(cur, i))
+        {
+            goto fail;
+        }
+        if (!cur->valueBufs[i])
+        {
+            // Could not bind column -> have to use SQLGetData for the remaining columns.
+            break;
         }
     }
 
     return true;
+
+  fail:
+    if (cur->colinfos)
+    {
+        PyMem_Free(cur->colinfos);
+        cur->colinfos = 0;
+    }
+
+    if (cur->cbFetchedBufs)
+    {
+        PyMem_Free(cur->cbFetchedBufs);
+        cur->cbFetchedBufs = 0;
+    }
+
+    if (cur->valueBufs)
+    {
+        for (i = 0; i < cCols; i++)
+        {
+            if (cur->valueBufs[i])
+            {
+                PyMem_Free(cur->valueBufs[i]);
+            }
+        }
+        PyMem_Free(cur->valueBufs);
+        cur->valueBufs = 0;
+    }
+
+    return false;
 }
 
 
@@ -2507,6 +2566,8 @@ Cursor_New(Connection* cnxn)
         cur->map_name_to_index = 0;
         cur->fastexecmany      = 0;
         cur->messages          = Py_None;
+        cur->valueBufs         = 0;
+        cur->cbFetchedBufs     = 0;
 
         Py_INCREF(cnxn);
         Py_INCREF(cur->description);
