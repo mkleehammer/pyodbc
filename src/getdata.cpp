@@ -994,6 +994,7 @@ bool BindCol(Cursor* cur, Py_ssize_t iCol)
         return true;
     }
 
+    size = size * 4 + 100;
     cur->valueBufs[iCol] = PyMem_Malloc(size);
     if (!cur->valueBufs[iCol])
     {
