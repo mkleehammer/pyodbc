@@ -186,12 +186,12 @@ jobs:
         echo "*** pyodbc drivers"
         python -c "import pyodbc; print('\n'.join(sorted(pyodbc.drivers())))"
 
-    - name: Run PostgreSQL tests
+    - name: Run SQL Server 2022 tests
       env:
-        PYODBC_POSTGRESQL: "DRIVER={PostgreSQL Unicode};SERVER=localhost;PORT=5432;UID=postgres_user;PWD=postgres_pwd;DATABASE=test"
+        PYODBC_SQLSERVER: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1403;UID=sa;PWD=StrongPassword2022;DATABASE=test;Encrypt=Optional"
       run: |
         cd "$GITHUB_WORKSPACE"
-        python -m pytest "./tests/postgresql_test.py"
+        python -m pytest "./tests/sqlserver_test.py"
 
     - name: Run MySQL tests
       env:
@@ -199,6 +199,13 @@ jobs:
       run: |
         cd "$GITHUB_WORKSPACE"
         python -m pytest "./tests/mysql_test.py"
+
+    - name: Run PostgreSQL tests
+      env:
+        PYODBC_POSTGRESQL: "DRIVER={PostgreSQL Unicode};SERVER=localhost;PORT=5432;UID=postgres_user;PWD=postgres_pwd;DATABASE=test"
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        python -m pytest "./tests/postgresql_test.py"
 
     - name: Run SQL Server 2017 tests
       env:
@@ -210,13 +217,6 @@ jobs:
     - name: Run SQL Server 2019 tests
       env:
         PYODBC_SQLSERVER: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1402;UID=sa;PWD=StrongPassword2019;DATABASE=test;Encrypt=Optional"
-      run: |
-        cd "$GITHUB_WORKSPACE"
-        python -m pytest "./tests/sqlserver_test.py"
-
-    - name: Run SQL Server 2022 tests
-      env:
-        PYODBC_SQLSERVER: "DRIVER={ODBC Driver 18 for SQL Server};SERVER=localhost,1403;UID=sa;PWD=StrongPassword2022;DATABASE=test;Encrypt=Optional"
       run: |
         cd "$GITHUB_WORKSPACE"
         python -m pytest "./tests/sqlserver_test.py"
