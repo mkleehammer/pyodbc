@@ -340,17 +340,23 @@ static bool free_results(Cursor* self, int flags)
     {
         Py_ssize_t i, field_count = PyTuple_GET_SIZE(self->description);
 
-        for (i = 0; i < field_count; i++)
+        if (self->valueBufs)
         {
-            if (self->valueBufs[i])
+            for (i = 0; i < field_count; i++)
             {
-                PyMem_Free(self->valueBufs[i]);
+                if (self->valueBufs[i])
+                {
+                    PyMem_Free(self->valueBufs[i]);
+                }
             }
+            PyMem_Free(self->valueBufs);
+            self->valueBufs = 0;
         }
-        PyMem_Free(self->valueBufs);
-        self->valueBufs = 0;
-        PyMem_Free(self->cbFetchedBufs);
-        self->cbFetchedBufs = 0;
+        if (self->cbFetchedBufs)
+        {
+            PyMem_Free(self->cbFetchedBufs);
+            self->cbFetchedBufs = 0;
+        }
     }
 
     if (self->colinfos)
