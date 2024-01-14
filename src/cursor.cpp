@@ -591,6 +591,9 @@ static bool PrepareResults(Cursor* cur, int cCols)
         }
     }
 
+    Py_BEGIN_ALLOW_THREADS
+    SQLFreeStmt(cur->hstmt, SQL_UNBIND); // somehow columns can still be bound here
+    Py_END_ALLOW_THREADS;
     for (i = 0; i < cCols; i++)
     {
         if (!BindCol(cur, i))
