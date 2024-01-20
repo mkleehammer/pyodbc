@@ -158,6 +158,12 @@ struct Cursor
     // Pointers to buffers used by SQLBindCol.
     void** valueBufs;
     SQLLEN* cbFetchedBufs;
+
+    // Track the configuration at the time of using SQLBindCol.
+    bool UseNativeUUID;
+    PyObject* converted_types;
+    // SQLSMALLINT* converted_types;
+    // int num_converted_types;
 };
 
 void Cursor_init();

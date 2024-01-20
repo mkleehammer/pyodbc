@@ -944,7 +944,7 @@ bool BindCol(Cursor* cur, Py_ssize_t iCol)
         if (pinfo->column_size == 0 || pinfo->column_size > 1024*1024)
             return true;
         c_type = SQL_C_BINARY;
-        size = pinfo->column_size; // no null terminator
+        size = CharBufferSize(c_type, pinfo->column_size);
         break;
 
     case SQL_DECIMAL:
