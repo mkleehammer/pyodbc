@@ -877,9 +877,15 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
 }
 
 
-inline SQLLEN CharBufferSize(SQLSMALLINT c_type, SQLULEN nr_chars)
+inline SQLLEN CharBufferSize(SQLULEN nr_chars)
 {
-    return (nr_chars + 1) * (IsWideType(c_type) ? sizeof(uint16_t) : 1); // + 1 for null terminator
+    // This is probably overly pessimistic. It is assumed that
+    // - column_size is the number of characters, not bytes
+    //   (MySQL does this, SQL Server returns the number of bytes)
+    // - the encoding is UTF-8, so we need 4 bytes per character
+    // - the odbc driver converts each byte (c char) into a wide char
+
+    return (nr_chars + 1) * 8; // + 1 for null terminator
 }
 
 
@@ -918,10 +924,10 @@ bool BindCol(Cursor* cur, Py_ssize_t iCol)
     case SQL_LONGVARCHAR:
     case SQL_SS_XML:
     case SQL_DB2_XML:
-        if (pinfo->column_size <= 0 || pinfo->column_size > 1024*1024)
+        if (pinfo->column_size <= 0 || pinfo->column_size > 1024*8)
             return true;
         c_type = IsWideType(pinfo->sql_type) ? cur->cnxn->sqlwchar_enc.ctype : cur->cnxn->sqlchar_enc.ctype;
-        size = CharBufferSize(c_type, pinfo->column_size);
+        size = CharBufferSize(pinfo->column_size);
         break;
 
     case SQL_GUID:
@@ -934,17 +940,17 @@ bool BindCol(Cursor* cur, Py_ssize_t iCol)
         {
             c_type = cur->cnxn->sqlchar_enc.ctype;
             // leave space for dashes every 4 characters
-            size = CharBufferSize(c_type, 39);
+            size = CharBufferSize(32+7);
         }
         break;
 
     case SQL_BINARY:
     case SQL_VARBINARY:
     case SQL_LONGVARBINARY:
-        if (pinfo->column_size == 0 || pinfo->column_size > 1024*1024)
+        if (pinfo->column_size == 0 || pinfo->column_size > 1024*64)
             return true;
         c_type = SQL_C_BINARY;
-        size = CharBufferSize(c_type, pinfo->column_size);
+        size = pinfo->column_size + 1;
         break;
 
     case SQL_DECIMAL:
@@ -952,7 +958,7 @@ bool BindCol(Cursor* cur, Py_ssize_t iCol)
     case SQL_DB2_DECFLOAT:
         c_type = cur->cnxn->sqlwchar_enc.ctype;
         // need to add padding for all kinds of situations, see GetDataDecimal
-        size = CharBufferSize(c_type, pinfo->column_size + 5);
+        size = CharBufferSize(pinfo->column_size + 5);
         break;
 
     case SQL_BIT:
