@@ -1249,6 +1249,47 @@ def test_output_conversion():
     assert value == '123.45'
 
 
+def test_rebind_columns():
+    """
+    Make sure SQLBindCol is called again with proper parameters if pyodbc
+    settings change between fetch calls.
+    """
+    def convert(value):
+        return value
+
+    cnxn = connect()
+    cursor = cnxn.cursor()
+
+    uidstr = 'CB4BB7F2-3AD9-4ED7-ABB8-7C704D75335C'
+    uid = uuid.UUID(uidstr)
+    uidbytes = b'\xf2\xb7K\xcb\xd9:\xd7N\xab\xb8|pMu3\\'
+
+    cursor.execute("drop table if exists t1")
+    cursor.execute("create table t1(g uniqueidentifier)")
+    for i in range(4):
+        cursor.execute(f"insert into t1 values (?)", (uid,))
+
+    cursor.execute("select g from t1")
+
+    pyodbc.native_uuid = False
+    v, = cursor.fetchone()
+    assert v == uidstr
+
+    cnxn.add_output_converter(pyodbc.SQL_GUID, convert)
+    v, = cursor.fetchone()
+    assert v == uidbytes
+    cnxn.remove_output_converter(pyodbc.SQL_GUID)
+
+    pyodbc.native_uuid = True
+    v, = cursor.fetchone()
+    assert v == uid
+
+    pyodbc.native_uuid = False
+    v, = cursor.fetchone()
+    assert v == uidstr
+    pyodbc.native_uuid = True
+
+
 def test_too_large(cursor: pyodbc.Cursor):
     """Ensure error raised if insert fails due to truncation"""
     value = 'x' * 1000

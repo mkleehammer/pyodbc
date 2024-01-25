@@ -702,6 +702,7 @@ static bool PrepareResults(Cursor* cur, int cCols)
         }
     }
 
+    cur->UseNativeUUID = UseNativeUUID();
     if (cur->cnxn->map_sqltype_to_converter)
     {
         cur->converted_types = PyDict_Keys(cur->cnxn->map_sqltype_to_converter);
