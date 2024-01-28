@@ -397,9 +397,9 @@ static bool DetectConfigChange(Cursor* cur)
         {
             return false;
         }
-        if (cur->converted_types)
+        if (cur->bound_converted_types)
         {
-            switch (PyObject_RichCompareBool(cur->converted_types, converted_types, Py_EQ))
+            switch (PyObject_RichCompareBool(cur->bound_converted_types, converted_types, Py_EQ))
             {
             case -1: // error
                 Py_DECREF(converted_types);
@@ -417,16 +417,16 @@ static bool DetectConfigChange(Cursor* cur)
             converted_types_changed = true;
         }
     }
-    else if (cur->converted_types)
+    else if (cur->bound_converted_types)
     {
         converted_types_changed = true;
     }
 
-    if (cur->UseNativeUUID != native_uuid || converted_types_changed)
+    if (cur->bound_native_uuid != native_uuid || converted_types_changed)
     {
-        Py_XDECREF(cur->converted_types);
-        cur->converted_types = converted_types;
-        cur->UseNativeUUID = native_uuid;
+        Py_XDECREF(cur->bound_converted_types);
+        cur->bound_converted_types = converted_types;
+        cur->bound_native_uuid = native_uuid;
 
         if (cur->description != Py_None)
         {
@@ -441,6 +441,7 @@ static bool DetectConfigChange(Cursor* cur)
 
     return true;
 }
+
 
 static bool free_results(Cursor* self, int flags)
 {
@@ -463,7 +464,7 @@ static bool free_results(Cursor* self, int flags)
     {
         BindColsFree(self, PyTuple_GET_SIZE(self->description));
     }
-    Py_XDECREF(self->converted_types);
+    Py_XDECREF(self->bound_converted_types);
 
     if (self->colinfos)
     {
@@ -702,11 +703,11 @@ static bool PrepareResults(Cursor* cur, int cCols)
         }
     }
 
-    cur->UseNativeUUID = UseNativeUUID();
+    cur->bound_native_uuid = UseNativeUUID();
     if (cur->cnxn->map_sqltype_to_converter)
     {
-        cur->converted_types = PyDict_Keys(cur->cnxn->map_sqltype_to_converter);
-        if (!cur->converted_types)
+        cur->bound_converted_types = PyDict_Keys(cur->cnxn->map_sqltype_to_converter);
+        if (!cur->bound_converted_types)
         {
             PyMem_Free(cur->colinfos);
             return false;
@@ -714,7 +715,7 @@ static bool PrepareResults(Cursor* cur, int cCols)
     }
     else
     {
-        cur->converted_types = 0;
+        cur->bound_converted_types = 0;
     }
 
     if (!BindCols(cur, cCols))
@@ -2660,8 +2661,8 @@ Cursor_New(Connection* cnxn)
         cur->messages          = Py_None;
         cur->valueBufs         = 0;
         cur->cbFetchedBufs     = 0;
-        cur->converted_types   = 0;
-        cur->UseNativeUUID     = 0;
+        cur->bound_converted_types = 0;
+        cur->bound_native_uuid = 0;
 
         Py_INCREF(cnxn);
         Py_INCREF(cur->description);

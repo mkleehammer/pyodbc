@@ -160,10 +160,8 @@ struct Cursor
     SQLLEN* cbFetchedBufs;
 
     // Track the configuration at the time of using SQLBindCol.
-    bool UseNativeUUID;
-    PyObject* converted_types;
-    // SQLSMALLINT* converted_types;
-    // int num_converted_types;
+    bool bound_native_uuid;
+    PyObject* bound_converted_types;
 };
 
 void Cursor_init();
