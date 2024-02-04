@@ -1,4 +1,7 @@
 # Build all the artifacts for a release (i.e. the source distribution file and the various wheels)
+# https://docs.github.com/en/actions/using-jobs/choosing-the-runner-for-a-job
+# https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json
+# https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
 
 name: Build the release artifacts
 
@@ -11,67 +14,62 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.1.1
 
       - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip build
+        run: python -m pip install --upgrade pip build
 
       - name: Build sdist
         run: python -m build --sdist --no-isolation
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4.3.0
         with:
-          name: sdist_${{ github.sha }}
+          name: sdist__${{ github.sha }}
           path: ./dist/*.gz
 
-  build_wheels:
-    name: Build wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        # https://docs.github.com/en/actions/using-jobs/choosing-the-runner-for-a-job
-        # https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json
-        os: [windows-2019, macos-11, ubuntu-22.04]
+  build_windows_wheels:
+    name: Build wheels on Windows
+    runs-on: windows-2019
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.1.1
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.16.5
+        env:
+          CIBW_ARCHS_WINDOWS: "AMD64 x86"
+          # AMD64 and Intel32 wheels, but not ARM64 (yet)
+          CIBW_BUILD: "cp*-win_amd64* cp*-win32*"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4.3.0
+        with:
+          name: wheels_windows__${{ github.sha }}
+          path: ./wheelhouse/*.whl
+
+  build_ubuntu_wheels:
+    name: Build wheels on Ubuntu
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4.1.1
 
       - name: Set up QEMU
         # QEMU is needed for Linux aarch64 wheels
-        if: runner.os == 'Linux'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: all
+        uses: docker/setup-qemu-action@v3.0.0
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.15.0
-        # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
+        uses: pypa/cibuildwheel@v2.16.5
         env:
-          # Windows - both 64-bit and 32-bit builds
-          CIBW_ARCHS_WINDOWS: "AMD64 x86"
-
-          # macOS
-          #
-          # At the time of this writing, Github actions still do not support ARM macs - all
-          # runners are Intel.  You can cross-compile on Intel to ARM, however, which is good
-          # enough us.
-          #
-          # https://cibuildwheel.readthedocs.io/en/stable/faq/#how-to-cross-compile
-
-          CIBW_ARCHS_MACOS: x86_64 arm64
-
-          CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
-          # Disable the inclusion of unixODBC dylibs because they will be *Intel* ones.
-          # Unfortunately, this means no one can use the ARM wheels right now.
-
-          # Linux - based on CentOS 7; glibc 64-bit builds only; no bundled libraries
+          # based on CentOS 7; glibc 64-bit builds only; no bundled libraries
           # https://github.com/pypa/manylinux#docker-images
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
           CIBW_ARCHS_LINUX: x86_64 aarch64
           # this installs unixODBC 2.3.1 which is quite old but it has the latest ABI so should be fine
           CIBW_BEFORE_ALL_LINUX: yum -y install unixODBC-devel
+          # Intel64 and aarch64 wheels, but not i686 or musllinux (yet)
+          CIBW_BUILD: "cp*-manylinux_x86_64* cp*-manylinux_aarch64*"
           # the raw wheel filename is not PyPi compliant so the wheel must be repaired but
           # suppress the addition of unixODBC libs to the wheel with --exclude's
           CIBW_REPAIR_WHEEL_COMMAND_LINUX:
@@ -81,11 +79,59 @@ jobs:
               --wheel-dir {dest_dir}
               {wheel}
 
-          # Build choices - disable musl Linux and PyPy builds
-          CIBW_SKIP: "*-musllinux_* pp*"
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4.3.0
+        with:
+          name: wheels_ubuntu__${{ github.sha }}
+          path: ./wheelhouse/*.whl
+
+  build_macos_x86_wheels:
+    name: Build wheels on macOS x86_64
+    # macos-12 is an Intel x86 runner
+    runs-on: macos-12
+
+    steps:
+      - uses: actions/checkout@v4.1.1
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.16.5
+        # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
+        env:
+          CIBW_ARCHS_MACOS: x86_64
+          CIBW_BUILD: "cp*macosx_x86_64*"
+          # suppress the inclusion of the unixODBC dynamic libraries by disabling the repair command
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4.3.0
         with:
-          name: wheels_${{ github.sha }}
+          name: wheels_macos_x86__${{ github.sha }}
+          path: ./wheelhouse/*.whl
+
+  build_macos_arm64_wheels:
+    name: Build wheels on macOS ARM64
+    # macos-14 is an ARM64 (M1) runner
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4.1.1
+
+      - name: Install unixODBC
+        # unixODBC is necessary for the SQL C header files, e.g. sql.h, but doesn't appear
+        # to be pre-installed on macos-14, hence make sure it really is installed
+        run: brew install unixodbc
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.16.5
+        # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
+        env:
+          CIBW_ARCHS_MACOS: arm64
+          CIBW_BUILD: "cp*macosx_arm64*"
+          # suppress the inclusion of the unixODBC dynamic libraries by disabling the repair command
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4.3.0
+        with:
+          name: wheels_macos_arm64__${{ github.sha }}
           path: ./wheelhouse/*.whl
