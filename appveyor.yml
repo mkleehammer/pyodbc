@@ -51,16 +51,16 @@ environment:
   matrix:
     # all the Python versions to be tested, both 32-bit and 64-bit
     # ref: https://www.appveyor.com/docs/windows-images-software/#python
-    - PYTHON_HOME: "C:\\Python38"
-    - PYTHON_HOME: "C:\\Python38-x64"
-    - PYTHON_HOME: "C:\\Python39"
-    - PYTHON_HOME: "C:\\Python39-x64"
-    - PYTHON_HOME: "C:\\Python310"
-    - PYTHON_HOME: "C:\\Python310-x64"
-    - PYTHON_HOME: "C:\\Python311"
-    - PYTHON_HOME: "C:\\Python311-x64"
-    - PYTHON_HOME: "C:\\Python312"
     - PYTHON_HOME: "C:\\Python312-x64"
+    - PYTHON_HOME: "C:\\Python312"
+    - PYTHON_HOME: "C:\\Python311-x64"
+    - PYTHON_HOME: "C:\\Python311"
+    - PYTHON_HOME: "C:\\Python310-x64"
+    - PYTHON_HOME: "C:\\Python310"
+    - PYTHON_HOME: "C:\\Python39-x64"
+    - PYTHON_HOME: "C:\\Python39"
+    - PYTHON_HOME: "C:\\Python38-x64"
+    - PYTHON_HOME: "C:\\Python38"
 
 # ref: https://www.appveyor.com/docs/services-databases/
 init:
