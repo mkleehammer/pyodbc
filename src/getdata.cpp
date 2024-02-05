@@ -933,8 +933,12 @@ bool BindCol(Cursor* cur, Py_ssize_t iCol)
     case SQL_GUID:
         if (UseNativeUUID())
         {
-            c_type = SQL_C_GUID;
-            size = sizeof(PYSQLGUID);
+            // Binding here does not work on 64bit Windows, so we don't.
+            // Not sure why, it works everywhere else.
+
+            // c_type = SQL_GUID;
+            // size = sizeof(PYSQLGUID);
+            return true;
         }
         else
         {
