@@ -210,7 +210,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
         TRACE("Col %d: type=%s (%d) colsize=%d\n", (i+1), SqlTypeName(nDataType), (int)nDataType, (int)nColSize);
 
-        Object name(TextBufferToObject(enc, (byte*)szName, cbName));
+        Object name(TextBufferToObject(&enc, (const byte*)szName, cbName));
 
         if (!name)
             goto done;
@@ -320,60 +320,81 @@ enum free_results_flags
 };
 
 
-static void BindColsFree(Cursor* self, int cCols)
+inline static void BindColsFree(Cursor* self)
 {
-    int i;
-
-    if (self->valueBufs)
+    if (self->fetch_buffer)
     {
-        for (i = 0; i < cCols; i++)
-        {
-            if (self->valueBufs[i])
-            {
-                PyMem_Free(self->valueBufs[i]);
-            }
-        }
-        PyMem_Free(self->valueBufs);
-        self->valueBufs = 0;
-    }
-    if (self->cbFetchedBufs)
-    {
-        PyMem_Free(self->cbFetchedBufs);
-        self->cbFetchedBufs = 0;
+        PyMem_Free(self->fetch_buffer);
+        self->fetch_buffer = 0;
     }
 }
 
 
 static bool BindCols(Cursor* cur, int cCols)
 {
-    int i;
+    int iCol;
+    long buf_cap = 1024*1024;
+    long total_buf_size = 0;
+    ColumnInfo* pinfo;
+    int cap_alloc = cCols;
 
-    cur->cbFetchedBufs = (SQLLEN*)PyMem_Calloc(sizeof(SQLLEN), cCols);
-    cur->valueBufs = (void**)PyMem_Calloc(sizeof(void*), cCols);
+    for (iCol = 0; iCol < cCols; iCol++) {
+        if (!FetchBufferInfo(cur, iCol)) {
+            return false;
+        }
 
-    if (!cur->cbFetchedBufs || !cur->valueBufs)
-    {
+        pinfo = &cur->colinfos[iCol];
+
+        if (total_buf_size + pinfo->buf_size + sizeof(SQLULEN) > buf_cap && iCol < cap_alloc) {
+            cap_alloc = iCol;
+        }
+
+        if (pinfo->buf_size && (iCol < cap_alloc || pinfo->always_alloc)) {
+            pinfo->buf_offset = total_buf_size + sizeof(SQLLEN);
+            total_buf_size += pinfo->buf_size + sizeof(SQLLEN);
+        } else {
+            pinfo->buf_offset = -1;
+        }
+    }
+
+    void* buf = PyMem_Malloc(total_buf_size);
+    cur->fetch_buffer = buf;
+    if (!buf) {
         PyErr_NoMemory();
-        BindColsFree(cur, cCols);
         return false;
     }
 
+    SQLRETURN ret = SQL_SUCCESS;
     Py_BEGIN_ALLOW_THREADS
-    SQLFreeStmt(cur->hstmt, SQL_UNBIND); // somehow columns can still be bound here
-    Py_END_ALLOW_THREADS;
+    bool keep_binding = true;
 
-    for (i = 0; i < cCols; i++)
-    {
-        if (!BindCol(cur, i))
-        {
-            BindColsFree(cur, cCols);
-            return false;
+    SQLFreeStmt(cur->hstmt, SQL_UNBIND); // somehow columns can still be bound here
+
+    for (iCol = 0; iCol < cCols; iCol++) {
+        pinfo = &cur->colinfos[iCol];
+        if (pinfo->can_bind && pinfo->buf_offset >= 0 && keep_binding) {
+            pinfo->is_bound = true;
+            ret = SQLBindCol(
+                cur->hstmt,
+                (SQLUSMALLINT)(iCol+1),
+                pinfo->c_type,
+                (void*)((long)buf + pinfo->buf_offset),
+                pinfo->buf_size,
+                (SQLLEN*)((long)buf + pinfo->buf_offset - sizeof(SQLLEN))
+            );
+            if (!SQL_SUCCEEDED(ret)) {
+                break;
+            }
+        } else {
+            keep_binding = false;
+            pinfo->is_bound = false;
         }
-        if (!cur->valueBufs[i])
-        {
-            // Could not bind column -> have to use SQLGetData for the remaining columns.
-            break;
-        }
+    }
+    Py_END_ALLOW_THREADS
+
+    if (!SQL_SUCCEEDED(ret)) {
+        PyMem_Free(buf);
+        return RaiseErrorFromHandle(cur->cnxn, "SQLBindCol", cur->cnxn->hdbc, cur->hstmt);
     }
 
     return true;
@@ -386,7 +407,6 @@ static bool DetectConfigChange(Cursor* cur)
     // Need to do this because the API allows changing this after executing a statement.
 
     PyObject* converted_types = 0;
-    int cmp = 0;
     bool native_uuid = UseNativeUUID();
     bool converted_types_changed = false;
 
@@ -431,7 +451,7 @@ static bool DetectConfigChange(Cursor* cur)
         if (cur->description != Py_None)
         {
             int cCols = PyTuple_GET_SIZE(cur->description);
-            BindColsFree(cur, cCols);
+            BindColsFree(cur);
             if (!BindCols(cur, cCols))
             {
                 return false;
@@ -460,10 +480,7 @@ static bool free_results(Cursor* self, int flags)
         self->pPreparedSQL = 0;
     }
 
-    if (self->description != Py_None)
-    {
-        BindColsFree(self, PyTuple_GET_SIZE(self->description));
-    }
+    BindColsFree(self);
     Py_XDECREF(self->bound_converted_types);
 
     if (self->colinfos)
@@ -2659,8 +2676,7 @@ Cursor_New(Connection* cnxn)
         cur->map_name_to_index = 0;
         cur->fastexecmany      = 0;
         cur->messages          = Py_None;
-        cur->valueBufs         = 0;
-        cur->cbFetchedBufs     = 0;
+        cur->fetch_buffer      = 0;
         cur->bound_converted_types = 0;
         cur->bound_native_uuid = 0;
 
