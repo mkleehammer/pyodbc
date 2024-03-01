@@ -6,7 +6,7 @@ void GetData_init();
 
 PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type);
 
-PyObject* GetData(Cursor* cur, Py_ssize_t iCol);
+PyObject* GetData(Cursor* cur, Py_ssize_t iCol, Py_ssize_t iRow);
 bool FetchBufferInfo(Cursor* cur, Py_ssize_t iCol);
 
 /**

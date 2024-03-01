@@ -146,6 +146,7 @@ struct Cursor
     // The description tuple described in the DB API 2.0 specification.  Set to None when there are no results.
     PyObject* description;
 
+    // Also serves as a cap on the number of rows allocated for the buffer.
     int arraysize;
 
     // The Cursor.rowcount attribute from the DB API specification.
@@ -168,6 +169,11 @@ struct Cursor
 
     // Pointer to buffer used by SQLBindCol and sometimes SQLGetData.
     void* fetch_buffer;
+    SQLULEN fetch_buffer_width;
+    SQLULEN fetch_buffer_length;
+    SQLULEN rows_fetched;
+    SQLUSMALLINT* row_status_array;
+    SQLULEN current_row;
 
     // Track the configuration at the time of using SQLBindCol.
     bool bound_native_uuid;

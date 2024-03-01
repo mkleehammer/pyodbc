@@ -527,24 +527,25 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
     return pytype;
 }
 
-PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
+PyObject* GetData(Cursor* cur, Py_ssize_t iCol, Py_ssize_t iRow)
 {
     ColumnInfo* pinfo = &cur->colinfos[iCol];
-
     void* ptr_value;
     SQLLEN len;
     SQLLEN* ptr_len;
     bool isNull = false;
+
     if (pinfo->is_bound || pinfo->always_alloc) {
         assert(pinfo->buf_offset > 0);
-        ptr_value = (void*)((long)cur->fetch_buffer + pinfo->buf_offset);
-        ptr_len = (SQLLEN*)((long)cur->fetch_buffer + pinfo->buf_offset - sizeof(SQLLEN));
+        ptr_value = (void*)((uintptr_t)cur->fetch_buffer + pinfo->buf_offset + iRow * cur->fetch_buffer_width);
+        ptr_len = (SQLLEN*)((uintptr_t)cur->fetch_buffer + pinfo->buf_offset + iRow * cur->fetch_buffer_width - sizeof(SQLLEN));
     } else {
         ptr_value = 0;
         ptr_len = &len;
     }
 
     if (!pinfo->is_bound && pinfo->always_alloc) {
+        assert(iRow == 1);
         SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS
         ret = SQLGetData(
@@ -561,6 +562,7 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
         }
     }
     if (!pinfo->is_bound && !pinfo->always_alloc) {
+        assert(iRow == 1);
         if (!ReadVarColumn(cur, iCol, pinfo->c_type, &isNull, &ptr_value, ptr_len)) {
             return 0;
         }
