@@ -353,6 +353,9 @@ static bool BindCols(Cursor* cur, int cCols)
         if (pinfo->buf_size && (iCol < cap_alloc || pinfo->always_alloc)) {
             pinfo->buf_offset = total_buf_size + sizeof(SQLLEN);
             total_buf_size += pinfo->buf_size + sizeof(SQLLEN);
+            if (!pinfo->can_bind) {
+                bind_all = false;
+            }
         } else {
             pinfo->buf_offset = -1;
             bind_all = false;
