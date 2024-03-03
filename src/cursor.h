@@ -35,7 +35,7 @@ struct ColumnInfo
     SQLULEN buf_size;
     long buf_offset;
     SQLSMALLINT c_type;
-    PyObject* (*GetData)(void*, SQLLEN, bool, PyObject*, TextEnc*);
+    PyObject* (*GetData)(void*, SQLLEN, PyObject*, TextEnc*);
 
     bool is_bound;
     bool can_bind;

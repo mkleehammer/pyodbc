@@ -335,7 +335,7 @@ static bool BindCols(Cursor* cur, int cCols)
     int iCol;
     long buf_cap = 1024*1024;
     long total_buf_size = 0;
-    ColumnInfo* pinfo;
+    ColumnInfo* cInfo;
     int cap_alloc = cCols;
     bool bind_all = true;
 
@@ -344,20 +344,20 @@ static bool BindCols(Cursor* cur, int cCols)
             return false;
         }
 
-        pinfo = &cur->colinfos[iCol];
+        cInfo = &cur->colinfos[iCol];
 
-        if (total_buf_size + pinfo->buf_size + sizeof(SQLULEN) > buf_cap && iCol < cap_alloc) {
+        if (total_buf_size + cInfo->buf_size + sizeof(SQLULEN) > buf_cap && iCol < cap_alloc) {
             cap_alloc = iCol;
         }
 
-        if (pinfo->buf_size && (iCol < cap_alloc || pinfo->always_alloc)) {
-            pinfo->buf_offset = total_buf_size + sizeof(SQLLEN);
-            total_buf_size += pinfo->buf_size + sizeof(SQLLEN);
-            if (!pinfo->can_bind) {
+        if (cInfo->buf_size && (iCol < cap_alloc || cInfo->always_alloc)) {
+            cInfo->buf_offset = total_buf_size + sizeof(SQLLEN);
+            total_buf_size += cInfo->buf_size + sizeof(SQLLEN);
+            if (!cInfo->can_bind) {
                 bind_all = false;
             }
         } else {
-            pinfo->buf_offset = -1;
+            cInfo->buf_offset = -1;
             bind_all = false;
         }
     }
@@ -380,59 +380,74 @@ static bool BindCols(Cursor* cur, int cCols)
         PyErr_NoMemory();
         return false;
     }
+    assert(cur->fetch_buffer == 0);
     cur->fetch_buffer = buf;
     cur->row_status_array = (SQLUSMALLINT*)((uintptr_t)buf + cur->fetch_buffer_width * cur->fetch_buffer_length);
     cur->current_row = 0;
 
-    SQLRETURN ret = SQL_SUCCESS, ret1, ret2, ret3, ret4;
+    SQLRETURN ret_bind = SQL_SUCCESS, ret_attr;
     Py_BEGIN_ALLOW_THREADS
     bool keep_binding = true;
 
     SQLFreeStmt(cur->hstmt, SQL_UNBIND); // somehow columns can still be bound here
 
     // First two will be read as SQLULEN by driver
-    ret1 = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROW_BIND_TYPE, (SQLPOINTER)cur->fetch_buffer_width, 0);
-    ret2 = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROW_ARRAY_SIZE, (SQLPOINTER)cur->fetch_buffer_length, 0);
-    ret3 = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROW_STATUS_PTR, cur->row_status_array, 0);
-    ret4 = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROWS_FETCHED_PTR, &cur->rows_fetched, 0);
+    ret_attr = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROW_BIND_TYPE, (SQLPOINTER)cur->fetch_buffer_width, 0);
+    if (!SQL_SUCCEEDED(ret_attr)) {
+        goto skip;
+    }
+    ret_attr = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROW_ARRAY_SIZE, (SQLPOINTER)cur->fetch_buffer_length, 0);
+    if (!SQL_SUCCEEDED(ret_attr)) {
+        goto skip;
+    }
+    // TODO use for error checking
+    ret_attr = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROW_STATUS_PTR, cur->row_status_array, 0);
+    if (!SQL_SUCCEEDED(ret_attr)) {
+        goto skip;
+    }
+    ret_attr = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROWS_FETCHED_PTR, &cur->rows_fetched, 0);
+    if (!SQL_SUCCEEDED(ret_attr)) {
+        goto skip;
+    }
 
     for (iCol = 0; iCol < cCols; iCol++) {
-        pinfo = &cur->colinfos[iCol];
-        if (pinfo->can_bind && pinfo->buf_offset >= 0 && keep_binding) {
-            pinfo->is_bound = true;
-            ret = SQLBindCol(
+        cInfo = &cur->colinfos[iCol];
+        if (cInfo->can_bind && cInfo->buf_offset >= 0 && keep_binding) {
+            cInfo->is_bound = true;
+            ret_bind = SQLBindCol(
                 cur->hstmt,
                 (SQLUSMALLINT)(iCol+1),
-                pinfo->c_type,
-                (void*)((uintptr_t)buf + pinfo->buf_offset),
-                pinfo->buf_size,
-                (SQLLEN*)((uintptr_t)buf + pinfo->buf_offset - sizeof(SQLLEN))
+                cInfo->c_type,
+                (void*)((uintptr_t)buf + cInfo->buf_offset),
+                cInfo->buf_size,
+                (SQLLEN*)((uintptr_t)buf + cInfo->buf_offset - sizeof(SQLLEN))
             );
-            if (!SQL_SUCCEEDED(ret)) {
+            if (!SQL_SUCCEEDED(ret_bind)) {
                 break;
             }
         } else {
             keep_binding = false;
-            pinfo->is_bound = false;
+            cInfo->is_bound = false;
         }
     }
+  skip:
     Py_END_ALLOW_THREADS
 
-    if (!SQL_SUCCEEDED(ret)) {
-        PyMem_Free(buf);
-        return RaiseErrorFromHandle(cur->cnxn, "SQLBindCol", cur->cnxn->hdbc, cur->hstmt);
-    }
-
-    if (!SQL_SUCCEEDED(ret1) || !SQL_SUCCEEDED(ret2) || !SQL_SUCCEEDED(ret3) || !SQL_SUCCEEDED(ret4)) {
+    if (!SQL_SUCCEEDED(ret_attr)) {
         PyMem_Free(buf);
         return RaiseErrorFromHandle(cur->cnxn, "SQLSetStmtAttr", cur->cnxn->hdbc, cur->hstmt);
+    }
+
+    if (!SQL_SUCCEEDED(ret_bind)) {
+        PyMem_Free(buf);
+        return RaiseErrorFromHandle(cur->cnxn, "SQLBindCol", cur->cnxn->hdbc, cur->hstmt);
     }
 
     return true;
 }
 
 
-static bool DetectConfigChange(Cursor* cur)
+static bool PrepareFetch(Cursor* cur)
 {
     // Returns false on exception, true otherwise.
     // Need to do this because the API allows changing this after executing a statement.
@@ -443,7 +458,7 @@ static bool DetectConfigChange(Cursor* cur)
 
     if (cur->cnxn->map_sqltype_to_converter)
     {
-        converted_types = PyDict_Keys(cur->cnxn->map_sqltype_to_converter);
+        converted_types = PyDict_Copy(cur->cnxn->map_sqltype_to_converter);
         if (!converted_types)
         {
             return false;
@@ -455,10 +470,10 @@ static bool DetectConfigChange(Cursor* cur)
             case -1: // error
                 Py_DECREF(converted_types);
                 return false;
-            case 0: // keys not equal
+            case 0: // not equal
                 converted_types_changed = true;
                 break;
-            case 1: // keys equal
+            case 1: // equal
                 Py_DECREF(converted_types);
                 break;
             }
@@ -473,7 +488,7 @@ static bool DetectConfigChange(Cursor* cur)
         converted_types_changed = true;
     }
 
-    if (cur->bound_native_uuid != native_uuid || converted_types_changed)
+    if (cur->bound_native_uuid != native_uuid || converted_types_changed || !cur->fetch_buffer)
     {
         Py_XDECREF(cur->bound_converted_types);
         cur->bound_converted_types = converted_types;
@@ -733,6 +748,7 @@ static bool PrepareResults(Cursor* cur, int cCols)
 
     int i;
     assert(cur->colinfos == 0);
+    assert(cur->fetch_buffer == 0);
 
     cur->colinfos = (ColumnInfo*)PyMem_Malloc(sizeof(ColumnInfo) * cCols);
     if (cur->colinfos == 0)
@@ -749,28 +765,6 @@ static bool PrepareResults(Cursor* cur, int cCols)
             cur->colinfos = 0;
             return false;
         }
-    }
-
-    cur->bound_native_uuid = UseNativeUUID();
-    if (cur->cnxn->map_sqltype_to_converter)
-    {
-        cur->bound_converted_types = PyDict_Keys(cur->cnxn->map_sqltype_to_converter);
-        if (!cur->bound_converted_types)
-        {
-            PyMem_Free(cur->colinfos);
-            return false;
-        }
-    }
-    else
-    {
-        cur->bound_converted_types = 0;
-    }
-
-    if (!BindCols(cur, cCols))
-    {
-        PyMem_Free(cur->colinfos);
-        cur->colinfos = 0;
-        return false;
     }
 
     return true;
@@ -1474,7 +1468,7 @@ static PyObject* Cursor_iternext(PyObject* self)
 
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
 
-    if (!cursor || !DetectConfigChange(cursor))
+    if (!cursor || !PrepareFetch(cursor))
         return 0;
 
     result = Cursor_fetch(cursor);
@@ -1487,7 +1481,7 @@ static PyObject* Cursor_fetchval(PyObject* self, PyObject* args)
     UNUSED(args);
 
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
-    if (!cursor || !DetectConfigChange(cursor))
+    if (!cursor || !PrepareFetch(cursor))
         return 0;
 
     Object row(Cursor_fetch(cursor));
@@ -1508,7 +1502,7 @@ static PyObject* Cursor_fetchone(PyObject* self, PyObject* args)
 
     PyObject* row;
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
-    if (!cursor || !DetectConfigChange(cursor))
+    if (!cursor || !PrepareFetch(cursor))
         return 0;
 
     row = Cursor_fetch(cursor);
@@ -1530,7 +1524,7 @@ static PyObject* Cursor_fetchall(PyObject* self, PyObject* args)
 
     PyObject* result;
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
-    if (!cursor || !DetectConfigChange(cursor))
+    if (!cursor || !PrepareFetch(cursor))
         return 0;
 
     result = Cursor_fetchlist(cursor, -1);
@@ -1545,7 +1539,7 @@ static PyObject* Cursor_fetchmany(PyObject* self, PyObject* args)
     PyObject* result;
 
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
-    if (!cursor || !DetectConfigChange(cursor))
+    if (!cursor || !PrepareFetch(cursor))
         return 0;
 
     rows = cursor->arraysize;

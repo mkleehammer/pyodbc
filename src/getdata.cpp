@@ -238,32 +238,19 @@ static byte* ReallocOrFreeBuffer(byte* pb, Py_ssize_t cbNeed)
 }
 
 
-static PyObject* GetText(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetText(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
-    // We are reading one of the SQL_WCHAR, SQL_WVARCHAR, etc., and will return
-    // a string.
-    //
-    // If there is no configuration we would expect this to be UTF-16 encoded data.  (If no
-    // byte-order-mark, we would expect it to be big-endian.)
-    //
-    // Now, just because the driver is telling us it is wide data doesn't mean it is true.
-    // psqlodbc with UTF-8 will tell us it is wide data but you must ask for single-byte.
-    // (Otherwise it is just UTF-8 with each character stored as 2 bytes.)  That's why we allow
-    // the user to configure.
-
     return TextBufferToObject(enc, (byte*)buffer, (Py_ssize_t)cbFetched);
 }
 
 
-static PyObject* GetBinary(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetBinary(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
-    // Reads SQL_BINARY.
-
     return PyBytes_FromStringAndSize((char*)buffer, (Py_ssize_t)cbFetched);
 }
 
 
-static PyObject* GetDataUser(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetDataUser(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
     PyObject* value = PyBytes_FromStringAndSize((char*)buffer, (Py_ssize_t)cbFetched);
     if (!value)
@@ -278,35 +265,13 @@ static PyObject* GetDataUser(void* buffer, SQLLEN cbFetched, bool bound, PyObjec
 }
 
 
-static PyObject* GetDataDecimal(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetDataDecimal(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
-    // The SQL_NUMERIC_STRUCT support is hopeless (SQL Server ignores scale on input parameters
-    // and output columns, Oracle does something else weird, and many drivers don't support it
-    // at all), so we'll rely on the Decimal's string parsing.  Unfortunately, the Decimal
-    // author does not pay attention to the locale, so we have to modify the string ourselves.
-    //
-    // Oracle inserts group separators (commas in US, periods in some countries), so leave room
-    // for that too.
-    //
-    // Some databases support a 'money' type which also inserts currency symbols.  Since we
-    // don't want to keep track of all these, we'll ignore all characters we don't recognize.
-    // We will look for digits, negative sign (which I hope is universal), and a decimal point
-    // ('.' or ',' usually).  We'll do everything as Unicode in case currencies, etc. are too
-    // far out.
-    //
-    // This seems very inefficient.  We know the characters we are interested in are ASCII
-    // since they are -, ., and 0-9.  There /could/ be a Unicode currency symbol, but I'm going
-    // to ignore that for right now.  Therefore if we ask for the data in SQLCHAR, it should be
-    // ASCII even if the encoding is UTF-8.
-
-    // I'm going to request the data as Unicode in case there is a weird currency symbol.  If
-    // this is a performance problems we may want a flag on this.
-
     Object result(DecimalFromText(enc, (byte*)buffer, (Py_ssize_t)cbFetched));
     return result.Detach();
 }
 
-static PyObject* GetDataBit(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetDataBit(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
     if (*(SQLCHAR*)buffer == SQL_TRUE)
         Py_RETURN_TRUE;
@@ -314,42 +279,35 @@ static PyObject* GetDataBit(void* buffer, SQLLEN cbFetched, bool bound, PyObject
 }
 
 
-static PyObject* GetDataULong(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
-{
-    SQLINTEGER value = *(SQLINTEGER*)buffer;
-    return PyLong_FromLong(*(SQLINTEGER*)&value);
-}
-
-
-static PyObject* GetDataLong(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetDataLong(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
     SQLINTEGER value = *(SQLINTEGER*)buffer;
     return PyLong_FromLong(value);
 }
 
 
-static PyObject* GetDataULongLong(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetDataULongLong(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
     SQLBIGINT   value = *(SQLBIGINT*)buffer;
     return PyLong_FromUnsignedLongLong((unsigned PY_LONG_LONG)(SQLUBIGINT)value);
 }
 
 
-static PyObject* GetDataLongLong(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetDataLongLong(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
     SQLBIGINT   value = *(SQLBIGINT*)buffer;
     return PyLong_FromLongLong((PY_LONG_LONG)value);
 }
 
 
-static PyObject* GetDataDouble(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetDataDouble(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
     double value = *(double*)buffer;
     return PyFloat_FromDouble(value);
 }
 
 
-static PyObject* GetSqlServerTime(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetSqlServerTime(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
     SQL_SS_TIME2_STRUCT value = *(SQL_SS_TIME2_STRUCT*)buffer;
     int micros = (int)(value.fraction / 1000); // nanos --> micros
@@ -357,10 +315,8 @@ static PyObject* GetSqlServerTime(void* buffer, SQLLEN cbFetched, bool bound, Py
 }
 
 
-static PyObject* GetUUID(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetUUID(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
-    // REVIEW: Since GUID is a fixed size, do we need to pass the size or cbFetched?
-
     PyObject* guid_bytes = PyBytes_FromStringAndSize((char*)buffer, (Py_ssize_t)sizeof(PYSQLGUID));
     PyObject* uuid_args = PyTuple_New(3);
     PyObject* uuid_type = GetClassForThread("uuid", "UUID");
@@ -372,8 +328,8 @@ static PyObject* GetUUID(void* buffer, SQLLEN cbFetched, bool bound, PyObject* c
         return 0;
     }
 
-    PyTuple_SET_ITEM(uuid_args, 0, Py_None);
-    PyTuple_SET_ITEM(uuid_args, 1, Py_None);
+    PyTuple_SET_ITEM(uuid_args, 0, Py_NewRef(Py_None));
+    PyTuple_SET_ITEM(uuid_args, 1, Py_NewRef(Py_None));
     PyTuple_SET_ITEM(uuid_args, 2, guid_bytes);
 
     PyObject* uuid = PyObject_CallObject(uuid_type, uuid_args);
@@ -383,14 +339,14 @@ static PyObject* GetUUID(void* buffer, SQLLEN cbFetched, bool bound, PyObject* c
 }
 
 
-static PyObject* GetDataDate(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetDataDate(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
     TIMESTAMP_STRUCT value = *(TIMESTAMP_STRUCT*)buffer;
     return PyDate_FromDate(value.year, value.month, value.day);
 }
 
 
-static PyObject* GetDataTime(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetDataTime(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
     TIMESTAMP_STRUCT value = *(TIMESTAMP_STRUCT*)buffer;
     int micros = (int)(value.fraction / 1000); // nanos --> micros
@@ -398,7 +354,7 @@ static PyObject* GetDataTime(void* buffer, SQLLEN cbFetched, bool bound, PyObjec
 }
 
 
-static PyObject* GetDataTimestamp(void* buffer, SQLLEN cbFetched, bool bound, PyObject* converter, TextEnc* enc)
+static PyObject* GetDataTimestamp(void* buffer, SQLLEN cbFetched, PyObject* converter, TextEnc* enc)
 {
     struct tm t;
     TIMESTAMP_STRUCT value = *(TIMESTAMP_STRUCT*)buffer;
@@ -535,31 +491,31 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
 
 PyObject* GetData(Cursor* cur, Py_ssize_t iCol, Py_ssize_t iRow)
 {
-    ColumnInfo* pinfo = &cur->colinfos[iCol];
+    ColumnInfo* cInfo = &cur->colinfos[iCol];
     void* ptr_value;
     SQLLEN len;
     SQLLEN* ptr_len;
     bool isNull = false;
 
-    if (pinfo->is_bound || pinfo->always_alloc) {
-        assert(pinfo->buf_offset > 0);
-        ptr_value = (void*)((uintptr_t)cur->fetch_buffer + pinfo->buf_offset + iRow * cur->fetch_buffer_width);
-        ptr_len = (SQLLEN*)((uintptr_t)cur->fetch_buffer + pinfo->buf_offset + iRow * cur->fetch_buffer_width - sizeof(SQLLEN));
+    if (cInfo->is_bound || cInfo->always_alloc) {
+        assert(cInfo->buf_offset > 0);
+        ptr_value = (void*)((uintptr_t)cur->fetch_buffer + cInfo->buf_offset + iRow * cur->fetch_buffer_width);
+        ptr_len = (SQLLEN*)((uintptr_t)cur->fetch_buffer + cInfo->buf_offset + iRow * cur->fetch_buffer_width - sizeof(SQLLEN));
     } else {
         ptr_value = 0;
         ptr_len = &len;
     }
 
-    if (!pinfo->is_bound && pinfo->always_alloc) {
+    if (!cInfo->is_bound && cInfo->always_alloc) {
         assert(iRow == 1);
         SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS
         ret = SQLGetData(
             cur->hstmt,
             (SQLUSMALLINT)(iCol+1),
-            pinfo->c_type,
+            cInfo->c_type,
             ptr_value,
-            pinfo->buf_size,
+            cInfo->buf_size,
             ptr_len
         );
         Py_END_ALLOW_THREADS
@@ -567,9 +523,9 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol, Py_ssize_t iRow)
             return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
         }
     }
-    if (!pinfo->is_bound && !pinfo->always_alloc) {
+    if (!cInfo->is_bound && !cInfo->always_alloc) {
         assert(iRow == 1);
-        if (!ReadVarColumn(cur, iCol, pinfo->c_type, &isNull, &ptr_value, ptr_len)) {
+        if (!ReadVarColumn(cur, iCol, cInfo->c_type, &isNull, &ptr_value, ptr_len)) {
             return 0;
         }
         assert(!ptr_value == isNull);
@@ -579,16 +535,15 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol, Py_ssize_t iRow)
 
     PyObject* value;
     if (isNull) {
-        value = Py_None;
+        value = Py_NewRef(Py_None);
     } else {
-        value = (*pinfo->GetData)(
+        value = (*cInfo->GetData)(
             ptr_value,
             *ptr_len,
-            pinfo->is_bound,
-            pinfo->converter,
-            pinfo->enc
+            cInfo->converter,
+            cInfo->enc
         );
-        if (!pinfo->is_bound && !pinfo->always_alloc) {
+        if (!cInfo->is_bound && !cInfo->always_alloc) {
             PyMem_Free(ptr_value);
         }
     }
@@ -618,29 +573,29 @@ bool FetchBufferInfo(Cursor* cur, Py_ssize_t iCol)
     //
     // Must be analogous to GetData.
 
-    ColumnInfo* pinfo = &cur->colinfos[iCol];
+    ColumnInfo* cInfo = &cur->colinfos[iCol];
 
     // We don't implement SQLBindCol for user-defined conversions.
 
     // First see if there is a user-defined conversion.
 
     if (cur->cnxn->map_sqltype_to_converter) {
-        PyObject* converter = Connection_GetConverter(cur->cnxn, pinfo->sql_type);
+        PyObject* converter = Connection_GetConverter(cur->cnxn, cInfo->sql_type);
         if (converter) {
-            pinfo->converter = converter;
-            pinfo->GetData = GetDataUser;
-            pinfo->can_bind = false;
-            pinfo->always_alloc = false;
-            pinfo->c_type = SQL_C_BINARY;
-            pinfo->buf_size = 0;
+            cInfo->converter = converter;
+            cInfo->GetData = GetDataUser;
+            cInfo->can_bind = false;
+            cInfo->always_alloc = false;
+            cInfo->c_type = SQL_C_BINARY;
+            cInfo->buf_size = 0;
             return PyErr_Occurred() ? false : true;
         }
     }
 
-    pinfo->converter = 0;
-    pinfo->can_bind = true;
-    pinfo->always_alloc = true;
-    switch (pinfo->sql_type)
+    cInfo->converter = 0;
+    cInfo->can_bind = true;
+    cInfo->always_alloc = true;
+    switch (cInfo->sql_type)
     {
     case SQL_WCHAR:
     case SQL_WVARCHAR:
@@ -651,122 +606,149 @@ bool FetchBufferInfo(Cursor* cur, Py_ssize_t iCol)
     case SQL_LONGVARCHAR:
     case SQL_SS_XML:
     case SQL_DB2_XML:
-        pinfo->enc = &(IsWideType(pinfo->sql_type) ? cur->cnxn->sqlwchar_enc : cur->cnxn->sqlchar_enc);
-        pinfo->c_type = pinfo->enc->ctype;
-        pinfo->GetData = GetText;
-        if (pinfo->column_size <= 0) {
-            pinfo->buf_size = 0;
-            pinfo->can_bind = false;
+        // We are reading one of the SQL_WCHAR, SQL_WVARCHAR, etc., and will return
+        // a string.
+        //
+        // If there is no configuration we would expect this to be UTF-16 encoded data.  (If no
+        // byte-order-mark, we would expect it to be big-endian.)
+        //
+        // Now, just because the driver is telling us it is wide data doesn't mean it is true.
+        // psqlodbc with UTF-8 will tell us it is wide data but you must ask for single-byte.
+        // (Otherwise it is just UTF-8 with each character stored as 2 bytes.)  That's why we allow
+        // the user to configure.
+
+        cInfo->enc = &(IsWideType(cInfo->sql_type) ? cur->cnxn->sqlwchar_enc : cur->cnxn->sqlchar_enc);
+        cInfo->c_type = cInfo->enc->ctype;
+        cInfo->GetData = GetText;
+        if (cInfo->column_size <= 0) {
+            cInfo->buf_size = 0;
+            cInfo->can_bind = false;
         } else {
-            pinfo->buf_size = CharBufferSize(pinfo->column_size);
+            cInfo->buf_size = CharBufferSize(cInfo->column_size);
         }
-        pinfo->always_alloc = false;
+        cInfo->always_alloc = false;
         break;
 
     case SQL_GUID:
         if (UseNativeUUID()) {
-            pinfo->c_type = SQL_C_GUID;
-            pinfo->buf_size = sizeof(PYSQLGUID);
-            pinfo->GetData = GetUUID;
+            cInfo->c_type = SQL_C_GUID;
+            cInfo->buf_size = sizeof(PYSQLGUID);
+            cInfo->GetData = GetUUID;
         } else {
-            pinfo->enc = &cur->cnxn->sqlchar_enc;
-            pinfo->c_type = pinfo->enc->ctype;
+            cInfo->enc = &cur->cnxn->sqlchar_enc;
+            cInfo->c_type = cInfo->enc->ctype;
             // leave space for dashes every 4 characters
-            pinfo->buf_size = CharBufferSize(32+7);
-            pinfo->GetData = GetText;
+            cInfo->buf_size = CharBufferSize(32+7);
+            cInfo->GetData = GetText;
         }
         break;
 
     case SQL_BINARY:
     case SQL_VARBINARY:
     case SQL_LONGVARBINARY:
-        pinfo->c_type = SQL_C_BINARY;
-        if (pinfo->column_size == 0) {
-            pinfo->buf_size = 0;
-            pinfo->can_bind = false;
+        cInfo->c_type = SQL_C_BINARY;
+        if (cInfo->column_size == 0) {
+            cInfo->buf_size = 0;
+            cInfo->can_bind = false;
         } else {
-            pinfo->buf_size = pinfo->column_size + 1;
+            cInfo->buf_size = cInfo->column_size + 1;
         }
-        pinfo->GetData = GetBinary;
-        pinfo->always_alloc = false;
+        cInfo->GetData = GetBinary;
+        cInfo->always_alloc = false;
         break;
 
     case SQL_DECIMAL:
     case SQL_NUMERIC:
     case SQL_DB2_DECFLOAT:
-        pinfo->enc = &cur->cnxn->sqlwchar_enc;
-        pinfo->c_type = pinfo->enc->ctype;
+        // The SQL_NUMERIC_STRUCT support is hopeless (SQL Server ignores scale on input parameters
+        // and output columns, Oracle does something else weird, and many drivers don't support it
+        // at all), so we'll rely on the Decimal's string parsing.  Unfortunately, the Decimal
+        // author does not pay attention to the locale, so we have to modify the string ourselves.
+        //
+        // Oracle inserts group separators (commas in US, periods in some countries), so leave room
+        // for that too.
+        //
+        // Some databases support a 'money' type which also inserts currency symbols.  Since we
+        // don't want to keep track of all these, we'll ignore all characters we don't recognize.
+        // We will look for digits, negative sign (which I hope is universal), and a decimal point
+        // ('.' or ',' usually).  We'll do everything as Unicode in case currencies, etc. are too
+        // far out.
+        //
+        // This seems very inefficient.  We know the characters we are interested in are ASCII
+        // since they are -, ., and 0-9.  There /could/ be a Unicode currency symbol, but I'm going
+        // to ignore that for right now.  Therefore if we ask for the data in SQLCHAR, it should be
+        // ASCII even if the encoding is UTF-8.
+
+        // I'm going to request the data as Unicode in case there is a weird currency symbol.  If
+        // this is a performance problems we may want a flag on this.
+
+        cInfo->enc = &cur->cnxn->sqlwchar_enc;
+        cInfo->c_type = cInfo->enc->ctype;
         // need to add padding for all kinds of situations, see GetDataDecimal
-        pinfo->buf_size = CharBufferSize(pinfo->column_size + 5);
-        pinfo->GetData = GetDataDecimal;
+        cInfo->buf_size = CharBufferSize(cInfo->column_size + 5);
+        cInfo->GetData = GetDataDecimal;
         break;
 
     case SQL_BIT:
-        pinfo->c_type = SQL_C_BIT;
-        pinfo->buf_size = sizeof(SQLCHAR);
-        pinfo->GetData = GetDataBit;
+        cInfo->c_type = SQL_C_BIT;
+        cInfo->buf_size = sizeof(SQLCHAR);
+        cInfo->GetData = GetDataBit;
         break;
 
     case SQL_TINYINT:
     case SQL_SMALLINT:
     case SQL_INTEGER:
-        if (pinfo->is_unsigned) {
-            pinfo->c_type = SQL_C_ULONG;
-            pinfo->buf_size = sizeof(SQLINTEGER);
-            pinfo->GetData = GetDataULong;
-        } else {
-            pinfo->c_type = SQL_C_LONG;
-            pinfo->GetData = GetDataLong;
-            pinfo->buf_size = sizeof(SQLINTEGER);
-        }
+        cInfo->c_type = cInfo->is_unsigned ? SQL_C_ULONG : SQL_C_LONG;
+        cInfo->buf_size = sizeof(SQLINTEGER);
+        cInfo->GetData = GetDataLong;
         break;
 
     case SQL_BIGINT:
-        if (pinfo->is_unsigned) {
-            pinfo->c_type = SQL_C_UBIGINT;
-            pinfo->buf_size = sizeof(SQLBIGINT);
-            pinfo->GetData = GetDataULongLong;
+        if (cInfo->is_unsigned) {
+            cInfo->c_type = SQL_C_UBIGINT;
+            cInfo->buf_size = sizeof(SQLBIGINT);
+            cInfo->GetData = GetDataULongLong;
         } else {
-            pinfo->c_type = SQL_C_SBIGINT;
-            pinfo->buf_size = sizeof(SQLBIGINT);
-            pinfo->GetData = GetDataLongLong;
+            cInfo->c_type = SQL_C_SBIGINT;
+            cInfo->buf_size = sizeof(SQLBIGINT);
+            cInfo->GetData = GetDataLongLong;
         }
         break;
 
     case SQL_REAL:
     case SQL_FLOAT:
     case SQL_DOUBLE:
-        pinfo->c_type = SQL_C_DOUBLE;
-        pinfo->buf_size = sizeof(double);
-        pinfo->GetData = GetDataDouble;
+        cInfo->c_type = SQL_C_DOUBLE;
+        cInfo->buf_size = sizeof(double);
+        cInfo->GetData = GetDataDouble;
         break;
 
     case SQL_TYPE_DATE:
-        pinfo->c_type = SQL_C_TYPE_TIMESTAMP;
-        pinfo->buf_size = sizeof(TIMESTAMP_STRUCT);
-        pinfo->GetData = GetDataDate;
+        cInfo->c_type = SQL_C_TYPE_TIMESTAMP;
+        cInfo->buf_size = sizeof(TIMESTAMP_STRUCT);
+        cInfo->GetData = GetDataDate;
         break;
 
     case SQL_TYPE_TIME:
-        pinfo->c_type = SQL_C_TYPE_TIMESTAMP;
-        pinfo->buf_size = sizeof(TIMESTAMP_STRUCT);
-        pinfo->GetData = GetDataTime;
+        cInfo->c_type = SQL_C_TYPE_TIMESTAMP;
+        cInfo->buf_size = sizeof(TIMESTAMP_STRUCT);
+        cInfo->GetData = GetDataTime;
         break;
 
     case SQL_TYPE_TIMESTAMP:
-        pinfo->c_type = SQL_C_TYPE_TIMESTAMP;
-        pinfo->buf_size = sizeof(TIMESTAMP_STRUCT);
-        pinfo->GetData = GetDataTimestamp;
+        cInfo->c_type = SQL_C_TYPE_TIMESTAMP;
+        cInfo->buf_size = sizeof(TIMESTAMP_STRUCT);
+        cInfo->GetData = GetDataTimestamp;
         break;
 
     case SQL_SS_TIME2:
-        pinfo->c_type = SQL_C_BINARY;
-        pinfo->buf_size = sizeof(SQL_SS_TIME2_STRUCT);
-        pinfo->GetData = GetSqlServerTime;
+        cInfo->c_type = SQL_C_BINARY;
+        cInfo->buf_size = sizeof(SQL_SS_TIME2_STRUCT);
+        cInfo->GetData = GetSqlServerTime;
         break;
     default:
         RaiseErrorV("HY106", ProgrammingError, "ODBC SQL type %d is not yet supported.  column-index=%zd  type=%d",
-                    (int)pinfo->sql_type, iCol, (int)pinfo->sql_type);
+                    (int)cInfo->sql_type, iCol, (int)cInfo->sql_type);
         return false;
     }
     return true;
