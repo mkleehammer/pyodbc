@@ -328,8 +328,10 @@ static PyObject* GetUUID(void* buffer, SQLLEN cbFetched, PyObject* converter, Te
         return 0;
     }
 
-    PyTuple_SET_ITEM(uuid_args, 0, Py_NewRef(Py_None));
-    PyTuple_SET_ITEM(uuid_args, 1, Py_NewRef(Py_None));
+    Py_IncRef(Py_None);
+    Py_IncRef(Py_None);
+    PyTuple_SET_ITEM(uuid_args, 0, Py_None);
+    PyTuple_SET_ITEM(uuid_args, 1, Py_None);
     PyTuple_SET_ITEM(uuid_args, 2, guid_bytes);
 
     PyObject* uuid = PyObject_CallObject(uuid_type, uuid_args);
@@ -535,7 +537,8 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol, Py_ssize_t iRow)
 
     PyObject* value;
     if (isNull) {
-        value = Py_NewRef(Py_None);
+        Py_IncRef(Py_None);
+        value = Py_None;
     } else {
         value = (*cInfo->GetData)(
             ptr_value,
