@@ -178,6 +178,10 @@ struct Cursor
     // Track the configuration at the time of using SQLBindCol.
     bool bound_native_uuid;
     PyObject* bound_converted_types;
+
+    unsigned int bound_columns_count;
+    long bind_cell_cap;
+    long bind_byte_cap;
 };
 
 void Cursor_init();
