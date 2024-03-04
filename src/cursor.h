@@ -154,6 +154,14 @@ struct Cursor
     // The messages attribute described in the DB API 2.0 specification.
     // Contains a list of all non-data messages provided by the driver, retrieved using SQLGetDiagRec.
     PyObject* messages;
+
+    // Pointers to buffers used by SQLBindCol.
+    void** valueBufs;
+    SQLLEN* cbFetchedBufs;
+
+    // Track the configuration at the time of using SQLBindCol.
+    bool bound_native_uuid;
+    PyObject* bound_converted_types;
 };
 
 int GetDiagRecs(Cursor* cur);
