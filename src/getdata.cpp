@@ -277,8 +277,6 @@ static PyObject* GetText(Cursor* cur, Py_ssize_t iCol)
         {
             Py_RETURN_NONE;
         }
-        cbFetched == SQL_NTS;
-        cbFetched == SQL_NO_TOTAL;
         pbData = (byte*)valueBuf;
         cbData = cbFetched;
     }
@@ -611,15 +609,25 @@ static PyObject* GetUUID(Cursor* cur, Py_ssize_t iCol)
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
 
-    const char* szFmt = "(yyy#)";
-    Object args(Py_BuildValue(szFmt, NULL, NULL, &guid, (int)sizeof(guid)));
-    if (!args)
-        return 0;
-
+    PyObject* guid_bytes = PyBytes_FromStringAndSize((char*)&guid, (Py_ssize_t)sizeof(PYSQLGUID));
+    PyObject* uuid_args = PyTuple_New(3);
     PyObject* uuid_type = GetClassForThread("uuid", "UUID");
-    if (!uuid_type)
+
+    if(!guid_bytes || !uuid_args || !uuid_type) {
+        Py_XDECREF(guid_bytes);
+        Py_XDECREF(uuid_args);
+        Py_XDECREF(uuid_type);
         return 0;
-    PyObject* uuid = PyObject_CallObject(uuid_type, args.Get());
+    }
+
+    Py_IncRef(Py_None);
+    Py_IncRef(Py_None);
+    PyTuple_SET_ITEM(uuid_args, 0, Py_None);
+    PyTuple_SET_ITEM(uuid_args, 1, Py_None);
+    PyTuple_SET_ITEM(uuid_args, 2, guid_bytes);
+
+    PyObject* uuid = PyObject_CallObject(uuid_type, uuid_args);
+    Py_DECREF(uuid_args);
     Py_DECREF(uuid_type);
     return uuid;
 }
@@ -933,12 +941,8 @@ bool BindCol(Cursor* cur, Py_ssize_t iCol)
     case SQL_GUID:
         if (UseNativeUUID())
         {
-            // Binding here does not work on 64bit Windows, so we don't.
-            // Not sure why, it works everywhere else.
-
-            // c_type = SQL_GUID;
-            // size = sizeof(PYSQLGUID);
-            return true;
+            c_type = SQL_GUID;
+            size = sizeof(PYSQLGUID);
         }
         else
         {
