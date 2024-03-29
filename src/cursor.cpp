@@ -873,8 +873,6 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                         Py_XDECREF(prevParam->pObject);
                         newParam.BufferLength = newParam.StrLen_or_Ind;
                         newParam.StrLen_or_Ind = SQL_DATA_AT_EXEC;
-                        Py_INCREF(cell);
-                        newParam.pObject = cell;
                         *prevParam = newParam;
                         if(prevParam->ParameterValuePtr == &newParam.Data)
                         {
