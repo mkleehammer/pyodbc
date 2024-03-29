@@ -1266,6 +1266,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
             {
                 // Bind the TVP's columns --- all need to use DAE
                 PyObject *param = PySequence_GetItem(row, i);
+                Py_XDECREF(param);
                 GetParameterInfo(cur, i, param, info.nested[i], true);
                 info.nested[i].BufferLength = info.nested[i].StrLen_or_Ind;
                 info.nested[i].StrLen_or_Ind = SQL_DATA_AT_EXEC;
