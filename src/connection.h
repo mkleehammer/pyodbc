@@ -104,7 +104,7 @@ struct Connection
  * exception is set and zero is returned.
  */
 PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeout, bool fReadOnly,
-                         PyObject* attrs_before, Object& encoding);
+                         PyObject* attrs_before, PyObject* encoding);
 
 /*
  * Used by the Cursor to implement commit and rollback.

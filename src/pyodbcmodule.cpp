@@ -399,7 +399,7 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
     int fAutoCommit = 0;
     int fReadOnly = 0;
     long timeout = 0;
-    Object encoding;
+    PyObject* encoding = 0;
 
     Object attrs_before; // Optional connect attrs set before connecting
 

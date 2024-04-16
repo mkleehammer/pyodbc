@@ -593,3 +593,30 @@ def test_output_conversion(cursor: pyodbc.Cursor):
     cursor.connection.add_output_converter(pyodbc.SQL_WVARCHAR, None)
     value = cursor.execute("select v from t1").fetchone()[0]
     assert value == '123.45'
+
+
+def test_refcount_encoding():
+    """
+    Ensure we handle the reference count to `encoding` properly.  In the past we freed a
+    borrowed reference.  This would cause a segfault.
+    """
+    # https://github.com/mkleehammer/pyodbc/issues/1343
+    import sys
+    encoding = 'utf-16le'
+    count_before = sys.getrefcount(encoding)
+
+    def _test():
+        # I've moved this into a function so the exception's stack trace will be freed under
+        # the covers when we leave the function.  Otherwise we'd have a 2nd reference to
+        # `encoding` in the stack trace of the exception.
+        try:
+            cnxn = pyodbc.connect(CNXNSTR, encoding=encoding)
+        except:
+            pass
+
+    for i in range(10):
+        _test()
+
+    count_after = sys.getrefcount(encoding)
+
+    assert count_after == count_before

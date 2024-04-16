@@ -59,7 +59,7 @@ static char* StrDup(const char* text) {
 }
 
 
-static bool Connect(PyObject* pConnectString, HDBC hdbc, long timeout, Object& encoding)
+static bool Connect(PyObject* pConnectString, HDBC hdbc, long timeout, PyObject* encoding)
 {
     assert(PyUnicode_Check(pConnectString));
 
@@ -170,7 +170,7 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
 }
 
 PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeout, bool fReadOnly,
-                         PyObject* attrs_before, Object& encoding)
+                         PyObject* attrs_before, PyObject* encoding)
 {
     //
     // Allocate HDBC and connect
@@ -196,7 +196,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeou
         PyObject* value = 0;
 
         Object encodingholder;
-        char *strencoding = encoding.Get() ?
+        char *strencoding = (encoding != 0) ?
             (PyUnicode_Check(encoding) ? PyBytes_AsString(encodingholder = PyCodec_Encode(encoding, "utf-8", "strict")) :
              PyBytes_Check(encoding) ? PyBytes_AsString(encoding) : 0) : 0;
 
