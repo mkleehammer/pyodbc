@@ -169,11 +169,11 @@ struct Cursor
 
     // Pointer to buffer used by SQLBindCol and sometimes SQLGetData.
     void* fetch_buffer;
-    SQLULEN fetch_buffer_width;
-    SQLULEN fetch_buffer_length;
-    SQLULEN rows_fetched;
+    long fetch_buffer_width;
+    long fetch_buffer_length;
+    long rows_fetched;
     SQLUSMALLINT* row_status_array;
-    SQLULEN current_row;
+    long current_row;
 
     // Track the configuration at the time of using SQLBindCol.
     bool bound_native_uuid;

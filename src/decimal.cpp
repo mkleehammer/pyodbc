@@ -110,7 +110,7 @@ bool SetDecimalPoint(PyObject* pNew)
 }
 
 
-PyObject* DecimalFromText(const TextEnc* enc, const byte* pb, Py_ssize_t cb)
+PyObject* DecimalFromText(const TextEnc& enc, const byte* pb, Py_ssize_t cb)
 {
     // Creates a Decimal object from a text buffer.
 

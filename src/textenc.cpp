@@ -89,7 +89,7 @@ PyObject* TextEnc::Encode(PyObject* obj) const
 
 
 
-PyObject* TextBufferToObject(const TextEnc* enc, const byte* pbData, Py_ssize_t cbData)
+PyObject* TextBufferToObject(const TextEnc& enc, const byte* pbData, Py_ssize_t cbData)
 {
     // cbData
     //   The length of data in bytes (cb == 'count of bytes').
@@ -104,7 +104,7 @@ PyObject* TextBufferToObject(const TextEnc* enc, const byte* pbData, Py_ssize_t 
     if (cbData == 0)
         return PyUnicode_FromStringAndSize("", 0);
 
-    switch (enc->optenc)
+    switch (enc.optenc)
     {
         case OPTENC_UTF8:
             return PyUnicode_DecodeUTF8((char*)pbData, cbData, "strict");
@@ -129,5 +129,5 @@ PyObject* TextBufferToObject(const TextEnc* enc, const byte* pbData, Py_ssize_t 
     }
 
     // The user set an encoding by name.
-    return PyUnicode_Decode((char*)pbData, cbData, enc->name, "strict");
+    return PyUnicode_Decode((char*)pbData, cbData, enc.name, "strict");
 }

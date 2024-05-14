@@ -210,7 +210,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
         TRACE("Col %d: type=%s (%d) colsize=%d\n", (i+1), SqlTypeName(nDataType), (int)nDataType, (int)nColSize);
 
-        Object name(TextBufferToObject(&enc, (const byte*)szName, cbName));
+        Object name(TextBufferToObject(enc, (const byte*)szName, cbName));
 
         if (!name)
             goto done;
@@ -333,10 +333,19 @@ inline static void BindColsFree(Cursor* self)
 static bool BindCols(Cursor* cur, int cCols, int fetch_rows_cap)
 {
     int iCol;
-    long total_buf_size = 0;
+    unsigned long total_buf_size = 0;
     ColumnInfo* cInfo;
     int cap_alloc = cCols;
     bool bind_all = true;
+
+    if (cur->bind_byte_cap < 0) {
+        PyErr_SetString(ProgrammingError, "Cursor attribute bind_byte_cap must be non negative.");
+        return 0;
+    }
+    if (cur->bind_cell_cap < 0) {
+        PyErr_SetString(ProgrammingError, "Cursor attribute bind_cell_cap must be non negative.");
+        return 0;
+    }
 
     // init buffer info, compute sizes & offsets
     for (iCol = 0; iCol < cCols; iCol++) {
@@ -346,7 +355,7 @@ static bool BindCols(Cursor* cur, int cCols, int fetch_rows_cap)
 
         cInfo = &cur->colinfos[iCol];
 
-        if (total_buf_size + cInfo->buf_size + sizeof(SQLULEN) > cur->bind_byte_cap && iCol < cap_alloc) {
+        if (total_buf_size + cInfo->buf_size + sizeof(SQLULEN) > (unsigned long)cur->bind_byte_cap && iCol < cap_alloc) {
             cap_alloc = iCol;
         }
 
