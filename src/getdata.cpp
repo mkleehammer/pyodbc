@@ -38,6 +38,7 @@ void GetData_init()
 }
 
 static byte* ReallocOrFreeBuffer(byte* pb, Py_ssize_t cbNeed);
+PyObject *GetData_SqlVariant(Cursor *cur, Py_ssize_t iCol);
 
 inline bool IsBinaryType(SQLSMALLINT sqltype)
 {
@@ -751,8 +752,39 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
 
     case SQL_SS_TIME2:
         return GetSqlServerTime(cur, iCol);
+
+    case SQL_SS_VARIANT:
+        return GetData_SqlVariant(cur, iCol);
     }
 
     return RaiseErrorV("HY106", ProgrammingError, "ODBC SQL type %d is not yet supported.  column-index=%zd  type=%d",
                        (int)pinfo->sql_type, iCol, (int)pinfo->sql_type);
+}
+
+PyObject *GetData_SqlVariant(Cursor *cur, Py_ssize_t iCol) {
+    char pBuff;
+
+    SQLLEN indicator, variantType;
+    SQLRETURN retcode;
+
+    // Call SQLGetData on the current column with a data length of 0. According to MS, this makes
+    // the ODBC driver read the sql_variant header which contains the underlying data type
+    pBuff = 0;
+    indicator = 0;
+    retcode = SQLGetData(cur->hstmt, static_cast<SQLSMALLINT>(iCol + 1), SQL_C_BINARY,   
+                                    &pBuff, 0, &indicator);
+    if (!SQL_SUCCEEDED(retcode))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+
+    // Get the SQL_CA_SS_VARIANT_TYPE field for the column which will contain the underlying data type
+    variantType = 0;
+    retcode = SQLColAttribute(cur->hstmt, iCol + 1, SQL_CA_SS_VARIANT_TYPE, NULL, 0, NULL, &variantType);
+    if (!SQL_SUCCEEDED(retcode))
+        return RaiseErrorFromHandle(cur->cnxn, "SQLColAttribute", cur->cnxn->hdbc, cur->hstmt);
+
+    // Replace the original SQL_VARIANT data type with the underlying data type then call GetData() again
+    cur->colinfos[iCol].sql_type = static_cast<SQLSMALLINT>(variantType);
+    return GetData(cur, iCol);
+
+    // NOTE: we don't free the hstmt here as it's managed by the cursor
 }

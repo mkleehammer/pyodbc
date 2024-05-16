@@ -76,6 +76,10 @@ typedef unsigned long long UINT64;
 #define SQL_CA_SS_CATALOG_NAME 1225
 #endif
 
+#ifndef SQL_CA_SS_VARIANT_TYPE
+#define SQL_CA_SS_VARIANT_TYPE 1215
+#endif
+
 inline bool IsSet(DWORD grf, DWORD flags)
 {
     return (grf & flags) == flags;
