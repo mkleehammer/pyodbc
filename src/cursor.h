@@ -40,6 +40,7 @@ struct ColumnInfo
     bool is_bound;
     bool can_bind;
     bool always_alloc;
+    // No need to do refcounting no the converter, since at least cur->bound_converted_types will have one.
     PyObject* converter;
     TextEnc* enc;
 };
@@ -171,15 +172,20 @@ struct Cursor
     void* fetch_buffer;
     long fetch_buffer_width;
     long fetch_buffer_length;
-    long rows_fetched;
+    long fetch_buffer_length_used;
+    SQLULEN rows_fetched;
     SQLUSMALLINT* row_status_array;
     long current_row;
 
     // Track the configuration at the time of using SQLBindCol.
     bool bound_native_uuid;
     PyObject* bound_converted_types;
+    // Only track the ctype of cur->cnxn->sql(w)char_enc. Changing any other attribute of the encoding
+    // would not change the binding process.
+    SQLSMALLINT ctype_of_wchar_enc;
+    SQLSMALLINT ctype_of_char_enc;
 
-    unsigned int bound_columns_count;
+    int bound_columns_count;
     long bind_cell_cap;
     long bind_byte_cap;
 };
