@@ -31,6 +31,18 @@ struct ColumnInfo
     // of the integer types are the same size whether signed and unsigned, so we can allocate memory ahead of time
     // without knowing this.  We use this during the fetch when converting to a Python integer or long.
     bool is_unsigned;
+
+    SQLULEN buf_size;
+    long buf_offset;
+    SQLSMALLINT c_type;
+    PyObject* (*GetData)(void*, SQLLEN, PyObject*, TextEnc*);
+
+    bool is_bound;
+    bool can_bind;
+    bool always_alloc;
+    // No need to do refcounting no the converter, since at least cur->bound_converted_types will have one.
+    PyObject* converter;
+    TextEnc* enc;
 };
 
 struct ParamInfo
@@ -135,6 +147,7 @@ struct Cursor
     // The description tuple described in the DB API 2.0 specification.  Set to None when there are no results.
     PyObject* description;
 
+    // Also serves as a cap on the number of rows allocated for the buffer.
     int arraysize;
 
     // The Cursor.rowcount attribute from the DB API specification.
@@ -155,13 +168,26 @@ struct Cursor
     // Contains a list of all non-data messages provided by the driver, retrieved using SQLGetDiagRec.
     PyObject* messages;
 
-    // Pointers to buffers used by SQLBindCol.
-    void** valueBufs;
-    SQLLEN* cbFetchedBufs;
+    // Pointer to buffer used by SQLBindCol and sometimes SQLGetData.
+    void* fetch_buffer;
+    long fetch_buffer_width;
+    long fetch_buffer_length;
+    long fetch_buffer_length_used;
+    SQLULEN rows_fetched;
+    SQLUSMALLINT* row_status_array;
+    long current_row;
 
     // Track the configuration at the time of using SQLBindCol.
     bool bound_native_uuid;
     PyObject* bound_converted_types;
+    // Only track the ctype of cur->cnxn->sql(w)char_enc. Changing any other attribute of the encoding
+    // would not change the binding process.
+    SQLSMALLINT ctype_of_wchar_enc;
+    SQLSMALLINT ctype_of_char_enc;
+
+    int bound_columns_count;
+    long bind_cell_cap;
+    long bind_byte_cap;
 };
 
 void Cursor_init();

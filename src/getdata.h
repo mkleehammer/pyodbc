@@ -6,8 +6,8 @@ void GetData_init();
 
 PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type);
 
-PyObject* GetData(Cursor* cur, Py_ssize_t iCol);
-bool BindCol(Cursor* cur, Py_ssize_t iCol);
+PyObject* GetData(Cursor* cur, Py_ssize_t iCol, Py_ssize_t iRow);
+bool FetchBufferInfo(Cursor* cur, Py_ssize_t iCol);
 
 /**
  * If this sql type has a user-defined conversion, the index into the connection's `conv_funcs` array is returned.
