@@ -210,7 +210,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
         TRACE("Col %d: type=%s (%d) colsize=%d\n", (i+1), SqlTypeName(nDataType), (int)nDataType, (int)nColSize);
 
-        Object name(TextBufferToObject(enc, (byte*)szName, cbName));
+        Object name(TextBufferToObject(enc, (const byte*)szName, cbName));
 
         if (!name)
             goto done;
@@ -319,6 +319,209 @@ enum free_results_flags
     PREPARED_MASK  = 0x0C
 };
 
+
+inline static void BindColsFree(Cursor* self)
+{
+    if (self->fetch_buffer)
+    {
+        PyMem_Free(self->fetch_buffer);
+        self->fetch_buffer = 0;
+    }
+}
+
+
+static bool BindCols(Cursor* cur, int cCols, int fetch_rows_cap)
+{
+    int iCol;
+    unsigned long total_buf_size = 0;
+    ColumnInfo* cInfo;
+    int cap_alloc = cCols;
+    bool bind_all = true;
+
+    if (cur->bind_byte_cap < 0) {
+        PyErr_SetString(ProgrammingError, "Cursor attribute bind_byte_cap must be non negative.");
+        return 0;
+    }
+    if (cur->bind_cell_cap < 0) {
+        PyErr_SetString(ProgrammingError, "Cursor attribute bind_cell_cap must be non negative.");
+        return 0;
+    }
+
+    // init buffer info, compute sizes & offsets
+    for (iCol = 0; iCol < cCols; iCol++) {
+        if (!FetchBufferInfo(cur, iCol)) {
+            return false;
+        }
+
+        cInfo = &cur->colinfos[iCol];
+
+        if (total_buf_size + cInfo->buf_size + sizeof(SQLULEN) > (unsigned long)cur->bind_byte_cap && iCol < cap_alloc) {
+            cap_alloc = iCol;
+        }
+
+        if (cInfo->buf_size && (iCol < cap_alloc || cInfo->always_alloc)) {
+            cInfo->buf_offset = total_buf_size + sizeof(SQLLEN);
+            total_buf_size += cInfo->buf_size + sizeof(SQLLEN);
+            if (!cInfo->can_bind) {
+                bind_all = false;
+            }
+        } else {
+            cInfo->buf_offset = -1;
+            bind_all = false;
+        }
+    }
+
+    // number of rows to be fetched at a time
+    cur->fetch_buffer_width = total_buf_size;
+    if (bind_all) {
+        cur->fetch_buffer_length = cur->bind_byte_cap / cur->fetch_buffer_width;
+        if (cur->fetch_buffer_length > fetch_rows_cap) {
+            cur->fetch_buffer_length = fetch_rows_cap;
+        }
+        if (cur->fetch_buffer_length > cur->bind_cell_cap / cCols) {
+            cur->fetch_buffer_length = cur->bind_cell_cap / cCols;
+        }
+        if (cur->fetch_buffer_length < 1) {
+            cur->fetch_buffer_length = 1;
+        }
+    } else {
+        cur->fetch_buffer_length = 1;
+    }
+    cur->fetch_buffer_length_used = 0;
+
+    // single large buffer using row-wise layout with row status array at the end
+    cur->fetch_buffer = PyMem_Malloc((cur->fetch_buffer_width + sizeof(SQLUSMALLINT)) * cur->fetch_buffer_length);
+    if (!cur->fetch_buffer) {
+        PyErr_NoMemory();
+        return false;
+    }
+    cur->row_status_array = (SQLUSMALLINT*)((uintptr_t)cur->fetch_buffer + cur->fetch_buffer_width * cur->fetch_buffer_length);
+    cur->current_row = 0;
+
+    SQLRETURN ret_bind = SQL_SUCCESS, ret_attr;
+    Py_BEGIN_ALLOW_THREADS
+    bool keep_binding = true;
+
+    SQLFreeStmt(cur->hstmt, SQL_UNBIND); // somehow columns can still be bound here
+
+    // First two will be read as SQLULEN by driver
+    ret_attr = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROW_BIND_TYPE, (SQLPOINTER)cur->fetch_buffer_width, 0);
+    if (!SQL_SUCCEEDED(ret_attr)) {
+        goto skip;
+    }
+    // TODO use for error checking
+    ret_attr = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROW_STATUS_PTR, cur->row_status_array, 0);
+    if (!SQL_SUCCEEDED(ret_attr)) {
+        goto skip;
+    }
+    ret_attr = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROWS_FETCHED_PTR, &cur->rows_fetched, 0);
+    if (!SQL_SUCCEEDED(ret_attr)) {
+        goto skip;
+    }
+
+    cur->bound_columns_count = 0;
+    for (iCol = 0; iCol < cCols; iCol++) {
+        cInfo = &cur->colinfos[iCol];
+        if (cInfo->can_bind && cInfo->buf_offset >= 0 && keep_binding) {
+            cInfo->is_bound = true;
+            ret_bind = SQLBindCol(
+                cur->hstmt,
+                (SQLUSMALLINT)(iCol+1),
+                cInfo->c_type,
+                (void*)((uintptr_t)cur->fetch_buffer + cInfo->buf_offset),
+                cInfo->buf_size,
+                (SQLLEN*)((uintptr_t)cur->fetch_buffer + cInfo->buf_offset - sizeof(SQLLEN))
+            );
+            if (!SQL_SUCCEEDED(ret_bind)) {
+                break;
+            }
+            cur->bound_columns_count++;
+        } else {
+            keep_binding = false;
+            cInfo->is_bound = false;
+        }
+    }
+  skip:
+    Py_END_ALLOW_THREADS
+
+    if (!SQL_SUCCEEDED(ret_attr)) {
+        return RaiseErrorFromHandle(cur->cnxn, "SQLSetStmtAttr", cur->cnxn->hdbc, cur->hstmt);
+    }
+
+    if (!SQL_SUCCEEDED(ret_bind)) {
+        return RaiseErrorFromHandle(cur->cnxn, "SQLBindCol", cur->cnxn->hdbc, cur->hstmt);
+    }
+
+    return true;
+}
+
+
+static bool PrepareFetch(Cursor* cur, int n_rows)
+{
+    // Returns false on exception, true otherwise.
+    // Need to do this because the API allows changing this after executing a statement.
+
+    bool native_uuid = UseNativeUUID();
+    bool converted_types_changed = false;
+
+    if (cur->cnxn->map_sqltype_to_converter)
+    {
+        if (cur->bound_converted_types)
+        {
+            switch (PyObject_RichCompareBool(cur->bound_converted_types, cur->cnxn->map_sqltype_to_converter, Py_EQ))
+            {
+            case -1: // error
+                return false;
+            case 0: // not equal
+                converted_types_changed = true;
+                break;
+            case 1: // equal
+                break;
+            }
+        }
+        else
+        {
+            converted_types_changed = true;
+        }
+    }
+    else if (cur->bound_converted_types)
+    {
+        converted_types_changed = true;
+    }
+
+    if (
+        !cur->fetch_buffer || cur->bound_native_uuid != native_uuid || converted_types_changed ||
+        cur->ctype_of_char_enc != cur->cnxn->sqlchar_enc.ctype || cur->ctype_of_wchar_enc != cur->cnxn->sqlwchar_enc.ctype
+    )
+    {
+        Py_CLEAR(cur->bound_converted_types);
+        PyObject* converted_types = 0;
+        if (cur->cnxn->map_sqltype_to_converter) {
+            converted_types = PyDict_Copy(cur->cnxn->map_sqltype_to_converter);
+            if (!converted_types)
+                return false;
+        }
+        cur->bound_converted_types = converted_types;
+        cur->bound_native_uuid = native_uuid;
+        cur->ctype_of_char_enc = cur->cnxn->sqlchar_enc.ctype;
+        cur->ctype_of_wchar_enc = cur->cnxn->sqlwchar_enc.ctype;
+
+        if (cur->description != Py_None)
+        {
+            int cCols = PyTuple_GET_SIZE(cur->description);
+            BindColsFree(cur);
+            if (!BindCols(cur, cCols, n_rows))
+            {
+                BindColsFree(cur);
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+
 static bool free_results(Cursor* self, int flags)
 {
     // Internal function called any time we need to free the memory associated with query results.  It is safe to call
@@ -335,6 +538,9 @@ static bool free_results(Cursor* self, int flags)
         Py_XDECREF(self->pPreparedSQL);
         self->pPreparedSQL = 0;
     }
+
+    BindColsFree(self);
+    Py_CLEAR(self->bound_converted_types);
 
     if (self->colinfos)
     {
@@ -555,6 +761,7 @@ static bool PrepareResults(Cursor* cur, int cCols)
 
     int i;
     assert(cur->colinfos == 0);
+    assert(cur->fetch_buffer == 0);
 
     cur->colinfos = (ColumnInfo*)PyMem_Malloc(sizeof(ColumnInfo) * cCols);
     if (cur->colinfos == 0)
@@ -1157,7 +1364,7 @@ static PyObject* Cursor_setinputsizes(PyObject* self, PyObject* sizes)
     Py_RETURN_NONE;
 }
 
-static PyObject* Cursor_fetch(Cursor* cur)
+static PyObject* Cursor_fetch(Cursor* cur, Py_ssize_t max)
 {
     // Internal function to fetch a single row and construct a Row object from it.  Used by all of the fetching
     // functions.
@@ -1166,24 +1373,49 @@ static PyObject* Cursor_fetch(Cursor* cur)
     // exception is set and zero is returned.  (To differentiate between the last two, use PyErr_Occurred.)
 
     SQLRETURN ret = 0;
+    SQLRETURN ret_attr = 0;
     Py_ssize_t field_count, i;
     PyObject** apValues;
 
-    Py_BEGIN_ALLOW_THREADS
-    ret = SQLFetch(cur->hstmt);
-    Py_END_ALLOW_THREADS
+    // One fetch per cycle.
+    if (cur->current_row == 0) {
+        Py_BEGIN_ALLOW_THREADS
+        // Make sure no more rows are fetched than are requested by fetchone/fetchmany.
+        // Otherwise rows might get lost if buffers need to be rebound between fetches.
+        long fetch_buffer_length_used;
+        if (max >= 0 && (long)max < cur->fetch_buffer_length) {
+            fetch_buffer_length_used = (long)max;
+        } else {
+            fetch_buffer_length_used = cur->fetch_buffer_length;
+        }
+        if (cur->fetch_buffer_length_used != fetch_buffer_length_used) {
+            cur->fetch_buffer_length_used = fetch_buffer_length_used;
+            ret_attr = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_ROW_ARRAY_SIZE, (SQLPOINTER)cur->fetch_buffer_length_used, 0);
+        }
+        if (SQL_SUCCEEDED(ret_attr))
+            ret = SQLFetch(cur->hstmt);
+        Py_END_ALLOW_THREADS
 
-    if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
-    {
-        // The connection was closed by another thread in the ALLOW_THREADS block above.
-        return RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
+        if (!SQL_SUCCEEDED(ret_attr)) {
+            return RaiseErrorFromHandle(cur->cnxn, "SQLSetStmtAttr", cur->cnxn->hdbc, cur->hstmt);
+        }
+
+        if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
+        {
+            // The connection was closed by another thread in the ALLOW_THREADS block above.
+            return RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
+        }
+
+        if (ret == SQL_NO_DATA)
+            return 0;
+
+        if (!SQL_SUCCEEDED(ret))
+            return RaiseErrorFromHandle(cur->cnxn, "SQLFetch", cur->cnxn->hdbc, cur->hstmt);
+    } else {
+        if (cur->current_row >= (long)cur->rows_fetched) {
+            return 0;
+        }
     }
-
-    if (ret == SQL_NO_DATA)
-        return 0;
-
-    if (!SQL_SUCCEEDED(ret))
-        return RaiseErrorFromHandle(cur->cnxn, "SQLFetch", cur->cnxn->hdbc, cur->hstmt);
 
     field_count = PyTuple_GET_SIZE(cur->description);
 
@@ -1194,7 +1426,7 @@ static PyObject* Cursor_fetch(Cursor* cur)
 
     for (i = 0; i < field_count; i++)
     {
-        PyObject* value = GetData(cur, i);
+        PyObject* value = GetData(cur, i, cur->current_row);
 
         if (!value)
         {
@@ -1204,6 +1436,7 @@ static PyObject* Cursor_fetch(Cursor* cur)
 
         apValues[i] = value;
     }
+    cur->current_row = (cur->current_row + 1) % cur->fetch_buffer_length_used;
 
     return (PyObject*)Row_InternalNew(cur->description, cur->map_name_to_index, field_count, apValues);
 }
@@ -1225,7 +1458,7 @@ static PyObject* Cursor_fetchlist(Cursor* cur, Py_ssize_t max)
 
     while (max == -1 || max > 0)
     {
-        row = Cursor_fetch(cur);
+        row = Cursor_fetch(cur, max);
 
         if (!row)
         {
@@ -1264,10 +1497,10 @@ static PyObject* Cursor_iternext(PyObject* self)
 
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
 
-    if (!cursor)
+    if (!cursor || !PrepareFetch(cursor, 1))
         return 0;
 
-    result = Cursor_fetch(cursor);
+    result = Cursor_fetch(cursor, 1);
 
     return result;
 }
@@ -1277,10 +1510,10 @@ static PyObject* Cursor_fetchval(PyObject* self, PyObject* args)
     UNUSED(args);
 
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
-    if (!cursor)
+    if (!cursor || !PrepareFetch(cursor, 1))
         return 0;
 
-    Object row(Cursor_fetch(cursor));
+    Object row(Cursor_fetch(cursor, 1));
 
     if (!row)
     {
@@ -1298,10 +1531,10 @@ static PyObject* Cursor_fetchone(PyObject* self, PyObject* args)
 
     PyObject* row;
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
-    if (!cursor)
+    if (!cursor || !PrepareFetch(cursor, 1))
         return 0;
 
-    row = Cursor_fetch(cursor);
+    row = Cursor_fetch(cursor, 1);
 
     if (!row)
     {
@@ -1320,7 +1553,7 @@ static PyObject* Cursor_fetchall(PyObject* self, PyObject* args)
 
     PyObject* result;
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
-    if (!cursor)
+    if (!cursor || !PrepareFetch(cursor, -1))
         return 0;
 
     result = Cursor_fetchlist(cursor, -1);
@@ -1339,7 +1572,7 @@ static PyObject* Cursor_fetchmany(PyObject* self, PyObject* args)
         return 0;
 
     rows = cursor->arraysize;
-    if (!PyArg_ParseTuple(args, "|l", &rows))
+    if (!PyArg_ParseTuple(args, "|l", &rows) || !PrepareFetch(cursor, rows))
         return 0;
 
     result = Cursor_fetchlist(cursor, rows);
@@ -2212,6 +2445,29 @@ static char messages_doc[] =
     "This read-only attribute is a list of all the diagnostic messages in the\n" \
     "current result set.";
 
+static char bound_columns_count_doc[] =
+    "This read-only attribute provides the number of columns bound for fetching.\n" \
+    "Binding columns requires a small enough cap on the size of a column, i.e.\n" \
+    "varchar(200) instead of varchar(max). We bind as many columns as allowed by\n" \
+    "cur.bind_byte_cap.";
+
+static char bound_buffer_rows_doc[] =
+    "This read-only attribute provides the number of rows allocated for fetching.\n" \
+    "It is determined by bind_byte_cap and the size of each row, bind_cell_cap and the\n" \
+    "number of columns as well as the fetch function called.\n" \
+    "Can only be > 1 if all columns are bound.";
+
+static char bind_cell_cap_doc[] =
+    "This read/write attribute specifies a cap on the number of rows fetched at a time\n" \
+    "when binding columns. For example when the cap is 10 and there are 5 columns,\n" \
+    "2 rows will be fetched at a time. If there are 3 columns, 3 rows will be fetched.\n" \
+    "Only takes effect when all columns can be bound.";
+
+static char bind_byte_cap_doc[] =
+    "This read/write attribute specifies a cap on the size of the buffer used for\n" \
+    "fetching. When the cap is reached, further variable length columns will be obtained\n" \
+    "using SQLGetData.";
+
 static PyMemberDef Cursor_members[] =
 {
     {"rowcount",    T_INT,       offsetof(Cursor, rowcount),        READONLY, rowcount_doc },
@@ -2220,6 +2476,10 @@ static PyMemberDef Cursor_members[] =
     {"connection",  T_OBJECT_EX, offsetof(Cursor, cnxn),            READONLY, connection_doc },
     {"fast_executemany",T_BOOL,  offsetof(Cursor, fastexecmany),    0,        fastexecmany_doc },
     {"messages",    T_OBJECT_EX, offsetof(Cursor, messages),        READONLY, messages_doc },
+    {"bound_columns_count", T_INT, offsetof(Cursor, bound_columns_count), READONLY, bound_columns_count_doc },
+    {"bound_buffer_rows", T_LONG, offsetof(Cursor, fetch_buffer_length), READONLY, bound_buffer_rows_doc },
+    {"bind_cell_cap", T_LONG,    offsetof(Cursor, bind_cell_cap),   0,        bind_cell_cap_doc },
+    {"bind_byte_cap", T_LONG,    offsetof(Cursor, bind_byte_cap),   0,        bind_byte_cap_doc },
     { 0 }
 };
 
@@ -2505,6 +2765,15 @@ Cursor_New(Connection* cnxn)
         cur->map_name_to_index = 0;
         cur->fastexecmany      = 0;
         cur->messages          = Py_None;
+        cur->fetch_buffer      = 0;
+        cur->bound_converted_types = 0;
+        cur->bound_native_uuid = 0;
+        cur->ctype_of_char_enc = SQL_C_CHAR;
+        cur->ctype_of_wchar_enc = SQL_C_WCHAR;
+        cur->bind_cell_cap     = 10;
+        cur->bind_byte_cap     = 20 * 1024 * 1024;
+        cur->bound_columns_count = -1; // should indicate that it's not initialized yet
+        cur->fetch_buffer_length = -1;
 
         Py_INCREF(cnxn);
         Py_INCREF(cur->description);
