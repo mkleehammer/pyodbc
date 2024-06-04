@@ -542,9 +542,11 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
 		}
 
 		case SQL_TYPE_DATE:
+        case SQL_DATE:
 			return PyDate_FromDate(value.year, value.month, value.day);
 
 		case SQL_TYPE_TIMESTAMP:
+        case SQL_TIMESTAMP:
 		{
 			if (value.year < 1)
 			{
@@ -646,6 +648,7 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
         break;
 
     case SQL_TYPE_DATE:
+    case SQL_DATE:
         pytype = (PyObject*)PyDateTimeAPI->DateType;
         break;
 
@@ -655,6 +658,7 @@ PyObject* PythonTypeFromSqlType(Cursor* cur, SQLSMALLINT type)
         break;
 
     case SQL_TYPE_TIMESTAMP:
+    case SQL_TIMESTAMP:
         pytype = (PyObject*)PyDateTimeAPI->DateTimeType;
         break;
 
@@ -745,8 +749,10 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
         return GetDataDouble(cur, iCol);
 
 
+    case SQL_DATE:
     case SQL_TYPE_DATE:
     case SQL_TYPE_TIME:
+    case SQL_TIMESTAMP:
     case SQL_TYPE_TIMESTAMP:
         return GetDataTimestamp(cur, iCol);
 
@@ -767,6 +773,8 @@ PyObject *GetData_SqlVariant(Cursor *cur, Py_ssize_t iCol) {
     SQLLEN indicator, variantType;
     SQLRETURN retcode;
 
+    PyObject *decodeResult;
+
     // Call SQLGetData on the current column with a data length of 0. According to MS, this makes
     // the ODBC driver read the sql_variant header which contains the underlying data type
     pBuff = 0;
@@ -784,7 +792,12 @@ PyObject *GetData_SqlVariant(Cursor *cur, Py_ssize_t iCol) {
 
     // Replace the original SQL_VARIANT data type with the underlying data type then call GetData() again
     cur->colinfos[iCol].sql_type = static_cast<SQLSMALLINT>(variantType);
-    return GetData(cur, iCol);
+    decodeResult = GetData(cur, iCol);
+
+    // Restore the original SQL_VARIANT data type so that the next decode will call this method again
+    cur->colinfos[iCol].sql_type = static_cast<SQLSMALLINT>(SQL_SS_VARIANT);
+
+    return decodeResult;
 
     // NOTE: we don't free the hstmt here as it's managed by the cursor
 }
