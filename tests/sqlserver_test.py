@@ -1614,6 +1614,44 @@ def test_tvp_diffschema(cursor: pyodbc.Cursor):
     _test_tvp(cursor, True)
 
 
+@pytest.mark.skipif(SQLSERVER_YEAR < 2000, reason='sql_variant not supported until 2000')
+def test_sql_variant(cursor: pyodbc.Cursor):
+    """
+    Tests decoding of the sql_variant data type as performed by the GetData_SqlVariant() method.
+    """
+
+    cursor.execute("create table t1 (a sql_variant)")
+
+    # insert a number of values of disparate types. this is not exhaustive as not all
+    # types that can be contained within a sql_variant field are supported by pyodbc
+    cursor.execute("insert into t1 values (456.7)")
+    cursor.execute("insert into t1 values ('a string')")
+    cursor.execute("insert into t1 values (CAST('2024-06-03' AS DATE))")
+    cursor.execute("insert into t1 values (CAST('2024-06-03 23:46:03.000' AS DATETIME))")
+    cursor.execute("insert into t1 values (CAST('binary data' AS VARBINARY(200)))")
+    cursor.execute(
+        "insert into t1 values (CAST('0592b437-745f-4b2c-a997-97022c624cf6' AS UNIQUEIDENTIFIER))"
+    )
+
+    # select all of the values we inserted and ensure they have the correct types
+    results = [record[0] for record in cursor.execute("select a from t1").fetchall()]
+    for index, assertion_tuple in enumerate(
+        [
+            (Decimal, Decimal("456.7")),
+            (str, "a string"),
+            (date, date(2024, 6, 3)),
+            (datetime, datetime(2024, 6, 3, 23, 46, 3)),
+            (bytes, b'binary data'),
+            (uuid.UUID, uuid.UUID("0592b437-745f-4b2c-a997-97022c624cf6"))
+        ]
+    ):
+        # pylint: disable=unidiomatic-typecheck
+        expected_type, expected_value = assertion_tuple
+
+        assert type(results[index]) == expected_type
+        assert results[index] == expected_value
+
+
 def get_sqlserver_version(cursor: pyodbc.Cursor):
 
     """

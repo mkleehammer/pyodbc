@@ -76,6 +76,10 @@ typedef unsigned long long UINT64;
 #define SQL_CA_SS_CATALOG_NAME 1225
 #endif
 
+#ifndef SQL_CA_SS_VARIANT_TYPE
+#define SQL_CA_SS_VARIANT_TYPE 1215
+#endif
+
 inline bool IsSet(DWORD grf, DWORD flags)
 {
     return (grf & flags) == flags;
@@ -117,7 +121,7 @@ inline void DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
 
 // issue #880: entry missing from iODBC sqltypes.h
 #ifndef BYTE
-  typedef unsigned char		BYTE;
+  typedef unsigned char BYTE;
 #endif
 bool PyMem_Realloc(BYTE** pp, size_t newlen);
 // A wrapper around realloc with a safer interface.  If it is successful, *pp is updated to the
