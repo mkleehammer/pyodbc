@@ -535,30 +535,30 @@ static PyObject* GetDataTimestamp(Cursor* cur, Py_ssize_t iCol)
 
     switch (cur->colinfos[iCol].sql_type)
     {
-		case SQL_TYPE_TIME:
-		{
-			int micros = (int)(value.fraction / 1000); // nanos --> micros
-			return PyTime_FromTime(value.hour, value.minute, value.second, micros);
-		}
+        case SQL_TYPE_TIME:
+        {
+            int micros = (int)(value.fraction / 1000); // nanos --> micros
+            return PyTime_FromTime(value.hour, value.minute, value.second, micros);
+        }
 
-		case SQL_TYPE_DATE:
+        case SQL_TYPE_DATE:
         case SQL_DATE:
-			return PyDate_FromDate(value.year, value.month, value.day);
+            return PyDate_FromDate(value.year, value.month, value.day);
 
-		case SQL_TYPE_TIMESTAMP:
+        case SQL_TYPE_TIMESTAMP:
         case SQL_TIMESTAMP:
-		{
-			if (value.year < 1)
-			{
-				value.year = 1;
-			}
-			else if (value.year > 9999)
-			{
-				value.year = 9999;
-			}
-		}
+        {
+            if (value.year < 1)
+            {
+                value.year = 1;
+            }
+            else if (value.year > 9999)
+            {
+                value.year = 9999;
+            }
+        }
     }
-	
+
 
     int micros = (int)(value.fraction / 1000); // nanos --> micros
 
@@ -779,7 +779,7 @@ PyObject *GetData_SqlVariant(Cursor *cur, Py_ssize_t iCol) {
     // the ODBC driver read the sql_variant header which contains the underlying data type
     pBuff = 0;
     indicator = 0;
-    retcode = SQLGetData(cur->hstmt, static_cast<SQLSMALLINT>(iCol + 1), SQL_C_BINARY,   
+    retcode = SQLGetData(cur->hstmt, static_cast<SQLSMALLINT>(iCol + 1), SQL_C_BINARY,
                                     &pBuff, 0, &indicator);
     if (!SQL_SUCCEEDED(retcode))
         return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);

@@ -121,7 +121,7 @@ inline void DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
 
 // issue #880: entry missing from iODBC sqltypes.h
 #ifndef BYTE
-  typedef unsigned char		BYTE;
+  typedef unsigned char BYTE;
 #endif
 bool PyMem_Realloc(BYTE** pp, size_t newlen);
 // A wrapper around realloc with a safer interface.  If it is successful, *pp is updated to the
