@@ -247,8 +247,13 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             pNum->precision = (SQLCHAR)pi->ColumnSize;
             pNum->scale = (SQLCHAR)pi->DecimalDigits;
             pNum->sign = _PyLong_Sign(cell) >= 0;
-            if (_PyLong_AsByteArray((PyLongObject*)absVal, pNum->val, sizeof(pNum->val), 1, 0))
+#if PY_VERSION_HEX < 0x030D0000
+            if (_PyLong_AsByteArray((PyLongObject*)absVal, pNum->val, sizeof(pNum->val), 1, 0)) {
+#else
+            if (_PyLong_AsByteArray((PyLongObject*)absVal, pNum->val, sizeof(pNum->val), 1, 0, 1)) {
+#endif
                 goto NumericOverflow;
+            }
             Py_XDECREF(absVal);
             *outbuf += pi->BufferLength;
             ind = sizeof(SQL_NUMERIC_STRUCT);
@@ -477,7 +482,12 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         pNum->precision = (SQLCHAR)pi->ColumnSize;
         pNum->scale = (SQLCHAR)pi->DecimalDigits;
 
+
+#if PY_VERSION_HEX < 0x030D0000
         int ret = _PyLong_AsByteArray((PyLongObject*)digitLong, pNum->val, sizeof(pNum->val), 1, 0);
+#else
+        int ret = _PyLong_AsByteArray((PyLongObject*)digitLong, pNum->val, sizeof(pNum->val), 1, 0, 1);
+#endif
         Py_XDECREF(digitLong);
         if (ret)
         {
