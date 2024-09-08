@@ -129,11 +129,11 @@ jobs:
         docker exec -i "${{ job.services.mssql2017.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2017' -Q "SELECT @@VERSION" || sleep 5
         docker exec -i "${{ job.services.mssql2017.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2017' -Q "CREATE DATABASE test"
         echo "*** SQL Server 2019"
-        docker exec -i "${{ job.services.mssql2019.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2019' -Q "SELECT @@VERSION" || sleep 5
-        docker exec -i "${{ job.services.mssql2019.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2019' -Q "CREATE DATABASE test"
+        docker exec -i "${{ job.services.mssql2019.id }}" /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2019' -C -Q "SELECT @@VERSION" || sleep 5
+        docker exec -i "${{ job.services.mssql2019.id }}" /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2019' -C -Q "CREATE DATABASE test"
         echo "*** SQL Server 2022"
-        docker exec -i "${{ job.services.mssql2022.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2022' -Q "SELECT @@VERSION" || sleep 5
-        docker exec -i "${{ job.services.mssql2022.id }}" /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2022' -Q "CREATE DATABASE test"
+        docker exec -i "${{ job.services.mssql2022.id }}" /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2022' -C -Q "SELECT @@VERSION" || sleep 5
+        docker exec -i "${{ job.services.mssql2022.id }}" /opt/mssql-tools18/bin/sqlcmd -S localhost -U SA -P 'StrongPassword2022' -C -Q "CREATE DATABASE test"
 
     - name: Create test database in PostgreSQL
       run: |
