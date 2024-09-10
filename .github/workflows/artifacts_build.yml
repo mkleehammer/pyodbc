@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4.1.1
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.16.5
+        uses: pypa/cibuildwheel@v2.20.0
         env:
           CIBW_ARCHS_WINDOWS: "AMD64 x86"
           # AMD64 and Intel32 wheels, but not ARM64 (yet)
@@ -60,7 +60,7 @@ jobs:
         uses: docker/setup-qemu-action@v3.0.0
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.16.5
+        uses: pypa/cibuildwheel@v2.20.0
         env:
           # based on CentOS 7; glibc 64-bit builds only; no bundled libraries
           # https://github.com/pypa/manylinux#docker-images
@@ -94,7 +94,7 @@ jobs:
       - uses: actions/checkout@v4.1.1
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.16.5
+        uses: pypa/cibuildwheel@v2.20.0
         # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
         env:
           CIBW_ARCHS_MACOS: x86_64
@@ -122,7 +122,7 @@ jobs:
         run: brew install unixodbc
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.16.5
+        uses: pypa/cibuildwheel@v2.20.0
         # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
         env:
           CIBW_ARCHS_MACOS: arm64
