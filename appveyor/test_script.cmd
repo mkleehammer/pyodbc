@@ -194,7 +194,11 @@ ECHO *** Get MySQL version
 "%MYSQL_PATH%\bin\mysql" -u root -pPassword12! -e "STATUS"
 
 :mysql1
-SET DRIVER={MySQL ODBC 8.0 ANSI Driver}
+IF %PYTHON_ARCH% EQU 32 (
+  SET DRIVER={MySQL ODBC 8.0 ANSI Driver}
+) ELSE (
+  SET DRIVER={MySQL ODBC 8.4 ANSI Driver}
+)
 SET PYODBC_MYSQL=Driver=%DRIVER%;Charset=utf8mb4;Server=localhost;Port=3306;Database=mysql;Uid=root;Pwd=Password12!;
 ECHO.
 ECHO *** Run tests using driver: "%DRIVER%"
