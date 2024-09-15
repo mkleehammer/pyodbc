@@ -498,11 +498,13 @@ class Connection:
         ...
 
     def commit(self) -> None:
-        """Commit all SQL statements executed on the connection since the last commit/rollback."""
+        """Commit all pending transactions since the last commit/rollback.  This includes
+        all SQL statements executed from ALL cursors created on this connection."""
         ...
 
     def rollback(self) -> None:
-        """Rollback all SQL statements executed on the connection since the last commit/rollback."""
+        """Rollback all pending transactions since the last commit/rollback.  This includes
+        all SQL statements executed from ALL cursors created on this connection."""
         ...
 
     def close(self) -> None:
@@ -696,17 +698,17 @@ class Cursor:
         ...
 
     def commit(self) -> None:
-        """Commit all SQL statements executed on the parent connection since the last
-        commit/rollback.  Note, this affects ALL cursors on the parent connection.
-        Hence, consider calling commit() on the parent Connection object instead.
-        """
+        """A convenience function for executing a commit on the parent connection.
+        Commits all pending transactions on the parent connection since the last
+        commit/rollback.  This includes all SQL statements executed from ALL cursors
+        created on the parent connection, not just this cursor."""
         ...
 
     def rollback(self) -> None:
-        """Rollback all SQL statements executed on the parent connection since the last
-        commit/rollback.  Note, this affects ALL cursors on the parent connection.
-        Hence, consider calling rollback() on the parent Connection object instead.
-        """
+        """A convenience function for executing a rollback on the parent connection.
+        Rolls back all pending transactions on the parent connection since the last
+        commit/rollback.  This includes all SQL statements executed from ALL cursors
+        created on the parent connection, not just this cursor."""
         ...
 
     def cancel(self) -> None:
@@ -986,7 +988,7 @@ def connect(connstring: Optional[str] = None,
             encoding: str = 'utf-16le',
             readonly: bool = False,
             timeout: int = 0,
-            attrs_before: Optional[Dict[int, Any]] = None,
+            attrs_before: Optional[Dict[int, Union[int, bytes, bytearray, str, Sequence[str]]]] = None,
             **kwargs: Any) -> Connection:
     """Create a new ODBC connection to a database.  See the Wiki for details:
     https://github.com/mkleehammer/pyodbc/wiki/The-pyodbc-Module#connect
