@@ -189,10 +189,10 @@ if ($python_arch -eq "64") {
     CheckAndInstallZippedMsiFromUrl `
         -driver_name "PostgreSQL Unicode(x64)" `
         -driver_bitness "64-bit" `
-        -driver_url "https://ftp.postgresql.org/pub/odbc/versions.old/msi/psqlodbc_11_01_0000-x64.zip" `
-        -zipfile_path "$temp_dir\psqlodbc_11_01_0000-x64.zip" `
+        -driver_url "https://ftp.postgresql.org/pub/odbc/versions.old/msi/psqlodbc_13_02_0000-x64-1.zip" `
+        -zipfile_path "$temp_dir\psqlodbc_13_02_0000-x64-1.zip" `
         -zip_internal_msi_file "psqlodbc_x64.msi" `
-        -msifile_path "$cache_dir\psqlodbc_11_01_0000-x64.msi";
+        -msifile_path "$cache_dir\psqlodbc_13_02_0000-x64.msi";
 
     CheckAndInstallMsiFromUrl `
         -driver_name "MySQL ODBC 8.4 ANSI Driver" `
@@ -205,10 +205,10 @@ if ($python_arch -eq "64") {
     CheckAndInstallZippedMsiFromUrl `
         -driver_name "PostgreSQL Unicode" `
         -driver_bitness "32-bit" `
-        -driver_url "https://ftp.postgresql.org/pub/odbc/versions.old/msi/psqlodbc_11_01_0000-x86.zip" `
-        -zipfile_path "$temp_dir\psqlodbc_11_01_0000-x86.zip" `
+        -driver_url "https://ftp.postgresql.org/pub/odbc/versions.old/msi/psqlodbc_13_02_0000-x86-1.zip" `
+        -zipfile_path "$temp_dir\psqlodbc_13_02_0000-x86-1.zip" `
         -zip_internal_msi_file "psqlodbc_x86.msi" `
-        -msifile_path "$cache_dir\psqlodbc_11_01_0000-x86.msi";
+        -msifile_path "$cache_dir\psqlodbc_13_02_0000-x86.msi";
 
     CheckAndInstallMsiFromUrl `
         -driver_name "MySQL ODBC 8.0 ANSI Driver" `

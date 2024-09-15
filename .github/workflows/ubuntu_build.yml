@@ -41,7 +41,7 @@ jobs:
           SA_PASSWORD: StrongPassword2022
 
       postgres:
-        image: postgres:11
+        image: postgres:13
         env:
           POSTGRES_DB: postgres_db
           POSTGRES_USER: postgres_user
