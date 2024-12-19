@@ -1321,6 +1321,8 @@ void FreeParameterData(Cursor* cur)
 {
     // Unbinds the parameters and frees the parameter buffer.
 
+    TRACE("FreeParameterData");
+
     if (cur->paramInfos)
     {
         // MS ODBC will crash if we use an HSTMT after the HDBC has been freed.
@@ -1340,6 +1342,8 @@ void FreeParameterInfo(Cursor* cur)
 {
     // Internal function to free just the cached parameter information.  This is not used by the general cursor code
     // since this information is also freed in the less granular free_results function that clears everything.
+
+    TRACE("FreeParameterInfo");
 
     Py_XDECREF(cur->pPreparedSQL);
     PyMem_Free(cur->paramtypes);
