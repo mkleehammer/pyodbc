@@ -14,11 +14,13 @@ ECHO APVYR_GENERATE_WHEELS   : %APVYR_GENERATE_WHEELS%
 ECHO APVYR_VERBOSE           : %APVYR_VERBOSE%
 ECHO.
 ECHO PYTHON_HOME   : %PYTHON_HOME%
+ECHO TEST_MSYS2   : %TEST_MSYS2%
 ECHO MSSQL_INSTANCE: %MSSQL_INSTANCE%
 ECHO POSTGRES_PATH : %POSTGRES_PATH%
 ECHO MYSQL_PATH    : %MYSQL_PATH%
 
 ECHO.
+IF "%TEST_MSYS2%" == "true" GOTO :msys2
 ECHO *** Get build info and compiler for the current Python installation:
 "%PYTHON_HOME%\python" -c "import platform; print(platform.python_build(), platform.python_compiler())"
 
@@ -51,4 +53,35 @@ ECHO.
 ECHO *** Get version of the built pyodbc module:
 "%PYTHON_HOME%\python" -c "import pyodbc; print(pyodbc.version)"
 
+GOTO :end
+
+:msys2
+ECHO *** Get build info and compiler for the current Python installation:
+bash -lc "python -c ""import platform; print(platform.python_build(), platform.python_compiler())"""
+
+ECHO.
+bash -lc "python -m pip freeze --all"
+
+ECHO.
+ECHO *** Installing pyodbc...
+SET PYTHON_ARGS=.
+IF "%APVYR_VERBOSE%" == "true" (
+  SET PYTHON_ARGS=--verbose %PYTHON_ARGS%
+)
+SET PIP_BREAK_SYSTEM_PACKAGES=1
+bash -lc "python -m pip install %PYTHON_ARGS%"
+IF ERRORLEVEL 1 (
+  ECHO *** ERROR: pyodbc install failed
+  EXIT 1
+)
+
+ECHO.
+ECHO *** pip freeze...
+bash -lc "python -m pip freeze --all"
+
+ECHO.
+ECHO *** Get version of the built pyodbc module:
+bash -lc "python -c ""import pyodbc; print(pyodbc.version)"""
+
+:end
 ECHO.

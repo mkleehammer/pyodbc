@@ -4,7 +4,11 @@ SET OVERALL_RESULT=0
 
 REM Output a list of the ODBC drivers available to pyodbc
 ECHO *** Available ODBC Drivers:
-"%PYTHON_HOME%\python" -c "import pyodbc; print('\n'.join(sorted(pyodbc.drivers())))"
+IF "%TEST_MSYS2%" == "true" (
+  bash -lc "python -c ""import pyodbc; print('\n'.join(sorted(pyodbc.drivers())))"""
+) ELSE (
+  "%PYTHON_HOME%\python" -c "import pyodbc; print('\n'.join(sorted(pyodbc.drivers())))"
+)
 
 
 REM check if any testing should be done at all
@@ -40,6 +44,14 @@ sqlcmd -S "%MSSQL_INSTANCE%" -U sa -P "Password12!" -Q "CREATE DATABASE test_db"
 IF ERRORLEVEL 1 (
   ECHO *** ERROR: Could not create the test database
   GOTO :postgresql
+)
+
+
+REM check if only msys2 tests
+IF "%TEST_MSYS2%" == "true" (
+  ECHO.
+  ECHO *** testing MSYS2
+  GOTO :msys2
 )
 
 
@@ -214,6 +226,27 @@ IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
 %PYTHON_ARGS% "tests\mysql_test.py"
+IF ERRORLEVEL 1 SET OVERALL_RESULT=1
+
+GOTO :end
+
+:msys2
+SET DRIVER={ODBC Driver 17 for SQL Server}
+SET PYODBC_SQLSERVER=Driver=%DRIVER%;Server=%MSSQL_INSTANCE%;Database=test_db;UID=sa;PWD=Password12!;
+ECHO.
+ECHO *** Run tests using driver: "%DRIVER%"
+bash -lc "python appveyor/test_connect.py '%PYODBC_SQLSERVER%'"
+IF ERRORLEVEL 1 (
+  ECHO *** ERROR: Could not connect using the connection string:
+  ECHO "%PYODBC_SQLSERVER%"
+  SET OVERALL_RESULT=1
+  GOTO :end
+)
+SET PYTHON_ARGS=-m pytest
+IF "%APVYR_VERBOSE%" == "true" (
+  SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
+)
+bash -lc "python %PYTHON_ARGS% tests/sqlserver_test.py"
 IF ERRORLEVEL 1 SET OVERALL_RESULT=1
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, os, shlex, re
+import sys, os, re, shlex, sysconfig
 from os.path import exists, join, isdir, relpath, expanduser
 from pathlib import Path
 from inspect import cleandoc
@@ -83,7 +83,18 @@ def get_compiler_settings():
         'define_macros': [('PYODBC_VERSION', VERSION)]
     }
 
-    if os.name == 'nt':
+    if 'mingw' in sysconfig.get_platform():
+        # Windows MinGW NOTE os.name = 'nt' and output from
+        # `odbc_config --cflags --libs` does not work as expected, excluding
+        # C:/msys64/ from begining of paths
+        settings['extra_compile_args'].extend([
+            '-Wno-write-strings',
+        ])
+        unixodbc_headers = os.getenv("MSYSTEM_PREFIX") + "/include/unixodbc"
+        settings['include_dirs'] = [unixodbc_headers]
+        settings['libraries'].append('odbc32')
+
+    elif os.name == 'nt':
         settings['extra_compile_args'].extend([
             '/Wall',
             '/wd4514',     # unreference inline function removed

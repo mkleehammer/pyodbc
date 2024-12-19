@@ -1,3 +1,7 @@
+IF "%TEST_MSYS2%" == "true" (
+  ECHO *** MSYS2 - Skipping generation of the wheel file
+  GOTO :end
+)
 IF "%APVYR_GENERATE_WHEELS%" == "true" (
   ECHO *** pip install build/wheel modules
   "%PYTHON_HOME%\python" -m pip install build wheel --quiet --no-warn-script-location
@@ -7,8 +11,8 @@ IF "%APVYR_GENERATE_WHEELS%" == "true" (
   ECHO.
   ECHO *** \dist directory listing:
   DIR /B dist
-  ECHO.
 ) ELSE (
   ECHO *** Skipping generation of the wheel file
-  ECHO.
 )
+:end
+ECHO.

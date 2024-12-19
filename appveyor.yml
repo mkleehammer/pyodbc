@@ -42,10 +42,17 @@ environment:
     MYSQL_PATH: "C:\\Program Files\\MySQL\\MySQL Server 8.0"
     # the cache should always be saved, even on failure, to be available for the next run
     APPVEYOR_SAVE_CACHE_ON_ERROR: "true"
+    TEST_MSYS2: "false"
 
   matrix:
     # all the Python versions to be tested, both 32-bit and 64-bit
     # ref: https://www.appveyor.com/docs/windows-images-software/#python
+    - PYTHON_HOME: "C:\\Python313-x64"
+      CHERE_INVOKING: 1
+      MSYSTEM: UCRT64
+      # breaks $python_arch in install.ps1 but we don't need it here.
+      PATH: C:\msys64\usr\bin;%PATH%
+      TEST_MSYS2: "true"
     - PYTHON_HOME: "C:\\Python313-x64"
     - PYTHON_HOME: "C:\\Python313"
     - PYTHON_HOME: "C:\\Python312-x64"
