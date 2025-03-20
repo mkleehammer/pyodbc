@@ -293,6 +293,7 @@ SQL_TXN_ISOLATION_OPTION: int
 SQL_UNION: int
 SQL_USER_NAME: int
 SQL_XOPEN_CLI_YEAR: int
+SQL_ATTR_DRIVER_THREADING: int
 
 
 # pyodbc-specific constants
