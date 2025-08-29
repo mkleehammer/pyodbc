@@ -186,7 +186,7 @@ jobs:
         echo "*** current python version"
         python -VV
         echo "*** pip install pyodbc"
-        python -m pip install .
+        CPPFLAGS=-UNDEBUG python -m pip install --verbose .
         echo "*** pyodbc version"
         python -c "import pyodbc; print(pyodbc.version)"
         echo "*** pyodbc drivers"
