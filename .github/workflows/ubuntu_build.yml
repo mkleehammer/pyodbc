@@ -107,6 +107,11 @@ jobs:
         CURL_OUTPUT_FORMAT: '%{http_code} %{filename_effective} %{size_download} %{time_total}\n'
         MYSQL_DRIVER: mysql-connector-odbc-8.0.22-linux-glibc2.12-x86-64bit
 
+    - name: Install ODBC driver for SQLite3
+      run: |
+        echo "*** apt-get install the driver"
+        sudo apt install --yes libsqliteodbc
+
     - name: Check ODBC setup
       run: |
         echo "*** odbcinst -j"
@@ -221,3 +226,8 @@ jobs:
       run: |
         cd "$GITHUB_WORKSPACE"
         python -m pytest "./tests/sqlserver_test.py"
+
+    - name: Run SQLite tests
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        python -m pytest "./tests/sqlite_test.py"
