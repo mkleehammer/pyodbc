@@ -5,9 +5,7 @@ on: [push, pull_request]
 jobs:
   run_tests:
     name: Run tests on Python ${{ matrix.python-version }}
-    # ubuntu-20.04 supports more versions of Python than ubuntu-22.04
-    # https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     strategy:
       fail-fast: false
@@ -107,6 +105,11 @@ jobs:
       env:
         CURL_OUTPUT_FORMAT: '%{http_code} %{filename_effective} %{size_download} %{time_total}\n'
         MYSQL_DRIVER: mysql-connector-odbc-8.0.22-linux-glibc2.12-x86-64bit
+
+    - name: Install ODBC driver for SQLite3
+      run: |
+        echo "*** apt-get install the driver"
+        sudo apt install --yes libsqliteodbc
 
     - name: Check ODBC setup
       run: |
@@ -220,3 +223,8 @@ jobs:
       run: |
         cd "$GITHUB_WORKSPACE"
         python -m pytest "./tests/sqlserver_test.py"
+
+    - name: Run SQLite tests
+      run: |
+        cd "$GITHUB_WORKSPACE"
+        python -m pytest "./tests/sqlite_test.py"
