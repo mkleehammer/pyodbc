@@ -1264,14 +1264,13 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
     // parts
     //   A dictionary of text keywords and text values that will be appended.
 
-    assert(PyUnicode_Check(existing));
-
     Py_ssize_t pos = 0;
     PyObject* key = 0;
     PyObject* value = 0;
     Py_ssize_t length = 0;      // length in *characters*
     int result_kind = PyUnicode_1BYTE_KIND;
     if (existing) {
+        assert(PyUnicode_Check(existing));
         length = PyUnicode_GET_LENGTH(existing) + 1; // + 1 to add a trailing semicolon
         int kind = PyUnicode_KIND(existing);
         if (result_kind < kind)
