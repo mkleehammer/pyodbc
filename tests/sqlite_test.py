@@ -636,3 +636,7 @@ def test_no_fetch(cursor):
     cursor.execute('select 1')
     cursor.execute('select 1')
     cursor.execute('select 1')
+
+def test_connect_dict_only(tmp_path):
+    c = pyodbc.connect(driver='SQLite3', database=f'{tmp_path}/test.db')
+    c.close()
