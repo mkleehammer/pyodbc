@@ -45,7 +45,7 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v4.3.0
         with:
-          name: wheels_windows__${{ github.sha }}
+          name: wheels_windows_x86_64_${{ github.sha }}
           path: ./wheelhouse/*.whl
 
   build_windows_ARM_wheels:
@@ -64,7 +64,7 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v4.3.0
         with:
-          name: wheels_windows__${{ github.sha }}
+          name: wheels_windows_arm64_${{ github.sha }}
           path: ./wheelhouse/*.whl
 
   build_ubuntu_wheels:
