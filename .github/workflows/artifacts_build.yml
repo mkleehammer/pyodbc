@@ -28,8 +28,8 @@ jobs:
           name: sdist__${{ github.sha }}
           path: ./dist/*.gz
 
-  build_windows_wheels:
-    name: Build wheels on Windows
+  build_windows_x86_wheels:
+    name: Build wheels on Windows x86_64
     runs-on: windows-2019
 
     steps:
@@ -39,8 +39,27 @@ jobs:
         uses: pypa/cibuildwheel@v2.21.3
         env:
           CIBW_ARCHS_WINDOWS: "AMD64 x86"
-          # AMD64 and Intel32 wheels, but not ARM64 (yet)
+          # AMD64 and Intel32 wheels
           CIBW_BUILD: "cp*-win_amd64* cp*-win32*"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4.3.0
+        with:
+          name: wheels_windows__${{ github.sha }}
+          path: ./wheelhouse/*.whl
+
+  build_windows_ARM_wheels:
+    name: Build wheels on Windows ARM64
+    runs-on: windows-11-arm
+
+    steps:
+      - uses: actions/checkout@v4.1.1
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21.3
+        env:
+          CIBW_ARCHS_WINDOWS: "ARM64"
+          CIBW_BUILD: "cp311-win_arm64 cp312-win_arm64 cp313-win_arm64"
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4.3.0
