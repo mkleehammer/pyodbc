@@ -30,7 +30,7 @@ jobs:
 
   build_windows_x86_wheels:
     name: Build wheels on Windows x86_64
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     steps:
       - uses: actions/checkout@v4.1.1
