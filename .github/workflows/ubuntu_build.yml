@@ -5,9 +5,8 @@ on: [push, pull_request]
 jobs:
   run_tests:
     name: Run tests on Python ${{ matrix.python-version }}
-    # ubuntu-20.04 supports more versions of Python than ubuntu-22.04
     # https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     strategy:
       fail-fast: false
