@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4.1.1
+      - uses: actions/checkout@v4.3.0
 
       - name: Install Python dependencies
         run: python -m pip install --upgrade pip build
@@ -23,7 +23,7 @@ jobs:
         run: python -m build --sdist --no-isolation
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v4.3.0
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: sdist__${{ github.sha }}
           path: ./dist/*.gz
@@ -33,7 +33,7 @@ jobs:
     runs-on: windows-2019
 
     steps:
-      - uses: actions/checkout@v4.1.1
+      - uses: actions/checkout@v4.3.0
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21.3
@@ -43,7 +43,7 @@ jobs:
           CIBW_BUILD: "cp*-win_amd64* cp*-win32*"
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.3.0
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: wheels_windows__${{ github.sha }}
           path: ./wheelhouse/*.whl
@@ -53,11 +53,11 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4.1.1
+      - uses: actions/checkout@v4.3.0
 
       - name: Set up QEMU
         # QEMU is needed for Linux aarch64 wheels
-        uses: docker/setup-qemu-action@v3.0.0
+        uses: docker/setup-qemu-action@v3.6.0
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21.3
@@ -80,7 +80,7 @@ jobs:
               {wheel}
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.3.0
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: wheels_ubuntu__${{ github.sha }}
           path: ./wheelhouse/*.whl
@@ -91,7 +91,7 @@ jobs:
     runs-on: macos-13
 
     steps:
-      - uses: actions/checkout@v4.1.1
+      - uses: actions/checkout@v4.3.0
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21.3
@@ -103,7 +103,7 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.3.0
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: wheels_macos_x86__${{ github.sha }}
           path: ./wheelhouse/*.whl
@@ -114,7 +114,7 @@ jobs:
     runs-on: macos-14
 
     steps:
-      - uses: actions/checkout@v4.1.1
+      - uses: actions/checkout@v4.3.0
 
       - name: Install unixODBC
         # unixODBC is necessary for the SQL C header files, e.g. sql.h, but doesn't appear
@@ -131,7 +131,7 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.3.0
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: wheels_macos_arm64__${{ github.sha }}
           path: ./wheelhouse/*.whl
