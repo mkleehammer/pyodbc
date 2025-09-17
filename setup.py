@@ -60,7 +60,7 @@ def main():
         classifiers=['Development Status :: 5 - Production/Stable',
                      'Intended Audience :: Developers',
                      'Intended Audience :: System Administrators',
-                     'License :: OSI Approved :: MIT No Attribution License (MIT-0)',
+                     'License :: OSI Approved :: MIT-0',
                      'Operating System :: Microsoft :: Windows',
                      'Operating System :: POSIX',
                      'Programming Language :: Python',

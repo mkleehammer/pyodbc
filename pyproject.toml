@@ -10,7 +10,7 @@ requires-python = ">=3.8"
 
 description = "DB API module for ODBC"
 readme = "README.md"
-license = {text = "MIT-0 License"}
+license = {text = "MIT-0"}
 
 authors = [{name = "Michael Kleehammer", email="michael@kleehammer.com"}]
 
@@ -22,7 +22,6 @@ maintainers = [{name = "Michael Kleehammer", email="michael@kleehammer.com"}]
 classifiers=['Development Status :: 5 - Production/Stable',
              'Intended Audience :: Developers',
              'Intended Audience :: System Administrators',
-             'License :: OSI Approved :: MIT No Attribution License (MIT-0)',
              'Operating System :: Microsoft :: Windows',
              'Operating System :: POSIX',
              'Programming Language :: Python',
