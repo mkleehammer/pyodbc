@@ -168,18 +168,20 @@ jobs:
       # pyodbc doesn't have any Python dependencies, but we do need pytest for testing.
       run: |
         cd "$GITHUB_WORKSPACE"
+        echo "*** upgrade pip"
         python -m pip install --upgrade pip
+        echo "*** pip install dev requirements"
         if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+        echo "*** pip freeze"
+        python -m pip freeze --all
 
     - name: Build and install pyodbc
       run: |
         cd "$GITHUB_WORKSPACE"
         echo "*** current python version"
         python -VV
-        echo "*** pip install"
+        echo "*** pip install pyodbc"
         python -m pip install .
-        echo "*** pip freeze"
-        python -m pip freeze --all
         echo "*** pyodbc version"
         python -c "import pyodbc; print(pyodbc.version)"
         echo "*** pyodbc drivers"
