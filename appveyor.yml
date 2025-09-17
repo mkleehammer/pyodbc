@@ -69,7 +69,6 @@ cache:
 
 install:
   - ps: .\appveyor\install.ps1
-  - call .\appveyor\install.cmd
 
 # ref: https://www.appveyor.com/docs/services-databases/
 services:

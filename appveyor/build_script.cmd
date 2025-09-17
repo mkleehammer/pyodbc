@@ -44,6 +44,14 @@ IF ERRORLEVEL 1 (
 )
 
 ECHO.
+ECHO *** Installing test requirements...
+"%PYTHON_HOME%\python" -m pip install -r requirements-dev.txt --quiet --no-warn-script-location
+IF ERRORLEVEL 1 (
+  ECHO *** ERROR: test requirements install failed
+  EXIT 1
+)
+
+ECHO.
 ECHO *** pip freeze...
 "%PYTHON_HOME%\python" -m pip freeze --all
 
