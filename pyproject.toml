@@ -2,7 +2,7 @@
 name = "pyodbc"
 version = "5.2.0"
 
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 # This is used by the GitHub action that builds release artifacts using cibuildwheel.
 # cibuildwheel reads this directly:
 #
@@ -10,8 +10,7 @@ requires-python = ">=3.8"
 
 description = "DB API module for ODBC"
 readme = "README.md"
-# change license to just "MIT-0" when py3.8 is dropped
-license = {text = "MIT-0"}
+license = "MIT-0"
 
 authors = [{name = "Michael Kleehammer", email="michael@kleehammer.com"}]
 
