@@ -28,8 +28,8 @@ def _add_to_path():
     Prepends the build directory to the path so that newly built pyodbc libraries are
     used, allowing it to be tested without pip-installing it.
     """
-    # look for the suffixes used in the build filenames, e.g. ".cp38-win_amd64.pyd",
-    # ".cpython-38-darwin.so", ".cpython-38-x86_64-linux-gnu.so", etc.
+    # look for the suffixes used in the build filenames, e.g. ".cp313-win_amd64.pyd",
+    # ".cpython-313-darwin.so", ".cpython-313-x86_64-linux-gnu.so", etc.
     library_exts = [ext for ext in importlib.machinery.EXTENSION_SUFFIXES if ext != '.pyd']
     # generate the name of the pyodbc build file(s)
     library_names = [f'pyodbc{ext}' for ext in library_exts]
