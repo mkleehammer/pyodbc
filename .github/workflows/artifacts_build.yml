@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4.3.0
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.1.4
+        uses: pypa/cibuildwheel@v3.2.1
         env:
           CIBW_ARCHS_WINDOWS: "AMD64 x86"
           # AMD64 and Intel32 wheels
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/checkout@v4.3.0
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.1.4
+        uses: pypa/cibuildwheel@v3.2.1
         env:
           CIBW_ARCHS_WINDOWS: "ARM64"
           CIBW_BUILD: "cp*-win_arm64"
@@ -79,7 +79,7 @@ jobs:
         uses: docker/setup-qemu-action@v3.6.0
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.1.4
+        uses: pypa/cibuildwheel@v3.2.1
         env:
           # https://github.com/pypa/manylinux#docker-images
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
@@ -113,7 +113,7 @@ jobs:
         uses: docker/setup-qemu-action@v3.6.0
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.1.4
+        uses: pypa/cibuildwheel@v3.2.1
         env:
           # https://github.com/pypa/manylinux#docker-images
           CIBW_MUSLLINUX_X86_64_IMAGE: musllinux_1_2
@@ -143,7 +143,7 @@ jobs:
       - uses: actions/checkout@v4.3.0
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.1.4
+        uses: pypa/cibuildwheel@v3.2.1
         # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
         env:
           CIBW_ARCHS_MACOS: x86_64
@@ -170,7 +170,7 @@ jobs:
         run: brew install unixodbc
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.1.4
+        uses: pypa/cibuildwheel@v3.2.1
         # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
         env:
           CIBW_ARCHS_MACOS: arm64
