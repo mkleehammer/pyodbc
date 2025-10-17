@@ -10,7 +10,7 @@ requires-python = ">=3.9"
 
 description = "DB API module for ODBC"
 readme = "README.md"
-license = "MIT-0"
+license = { text = "MIT" }
 
 authors = [{name = "Michael Kleehammer", email="michael@kleehammer.com"}]
 
