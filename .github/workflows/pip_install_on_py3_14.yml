@@ -1,0 +1,14 @@
+name: pip_install_on_py3_14
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  pip_install_on_py3_14:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
+      with:
+        python-version: 3.14
+    - run: pip install pyodbc
