@@ -1,0 +1,24 @@
+name: pip_install_pyodbc
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  pip_install_on_pyodbc:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+        python-version: ['3.10', '3.12', '3.14']
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+    - if: matrix.python-version == '3.14' && runner.os == 'Linux'
+      run: |
+        sudo apt install unixodbc-dev
+    - if: matrix.python-version == '3.14' && runner.os == 'macOS'
+      run: |
+        brew install unixodbc
+    - run: pip install pyodbc  # Currently v5.2.0
