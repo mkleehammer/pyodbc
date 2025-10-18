@@ -23,7 +23,7 @@
 #include "dbspecific.h"
 #include "row.h"
 #include <datetime.h>
-
+#include "bcp_support.h"
 
 inline Connection* GetConnection(Cursor* cursor)
 {
@@ -1802,6 +1802,463 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
   return ret;
 }
 
+bool ExecuteMulti_BCP(Cursor* cur, PyObject* pSql, PyObject* param_seq)
+{
+    if (!cur || !cur->cnxn || !cur->cnxn->hdbc || !cur->use_bcp_fast)
+        return false;
+
+    if (!PyUnicode_Check(pSql))
+        return false;
+
+    Py_ssize_t sql_len = 0;
+    const char* sql = PyUnicode_AsUTF8AndSize(pSql, &sql_len);
+    if (!sql || sql_len <= 0)
+        return false;
+
+    char table_name[256] = {0};
+    if (!parse_insert_table(sql, table_name, (int)sizeof(table_name)))
+        return false;
+
+    Connection* cn = cur->cnxn;
+
+    // Ensure BCP exports loaded
+    if (!cn->bcp || !cn->bcp->loaded) {
+        if (!cn->bcp) {
+            cn->bcp = (BcpProcs*)PyMem_Calloc(1, sizeof(BcpProcs));
+            if (!cn->bcp) { PyErr_NoMemory(); return true; }
+        }
+        if (!BcpLoadFromDriver(cn->hdbc, *cn->bcp))
+            return false; // fall back
+    }
+    // bcp_init(DB_IN)
+    {
+        SQLRETURN rc;
+        Py_BEGIN_ALLOW_THREADS
+        rc = cn->bcp->bcp_initA(cn->hdbc, table_name, nullptr, nullptr, DB_IN);
+        Py_END_ALLOW_THREADS
+        if (rc != SUCCEED) {
+            RaiseErrorFromHandle(cn, "bcp_init", cn->hdbc, SQL_NULL_HANDLE);
+            return true;
+        }
+    }
+    if (cur->bcp_batch_rows > 0 && cn->bcp->bcp_control) {
+        SQLRETURN r2;
+        Py_BEGIN_ALLOW_THREADS
+        r2 = cn->bcp->bcp_control(cn->hdbc, BCPBATCH, (void*)(size_t)cur->bcp_batch_rows);
+        Py_END_ALLOW_THREADS
+        if (r2 != SUCCEED) {
+            RaiseErrorFromHandle(cn, "bcp_control(BCPBATCH)", cn->hdbc, SQL_NULL_HANDLE);
+            return true;
+        }
+    }
+    PyObject* iter = PyObject_GetIter(param_seq);
+    if (!iter) { PyErr_Clear(); return false; }
+
+    PyObject* first = PyIter_Next(iter);
+    if (!first) {
+        Py_DECREF(iter);
+        cur->rowcount = 0;
+        (void)cn->bcp->bcp_done(cn->hdbc);
+        return true;
+    }
+    if (!PyTuple_Check(first)) { Py_DECREF(first); Py_DECREF(iter); return false; }
+
+    const Py_ssize_t ncols = PyTuple_Size(first);
+    if (ncols <= 0) { Py_DECREF(first); Py_DECREF(iter); return false; }
+
+    // --- Deduce host types from first row -----------------------------------
+    int* types = (int*)PyMem_Malloc(sizeof(int) * (size_t)ncols);
+    if (!types) { Py_DECREF(first); Py_DECREF(iter); PyErr_NoMemory(); return true; }
+
+    auto fits_int32 = [](long long v) -> bool {
+        return (v >= -2147483648LL && v <= 2147483647LL);
+    };
+
+    for (Py_ssize_t i = 0; i < ncols; ++i) {
+        PyObject* cell = PyTuple_GetItem(first, i); // borrowed
+        PyObject* dec_cls = 0;
+
+        if (cell == Py_None) {
+            // Safe generic default: send as text (server will convert)
+            types[i] = SQLCHARACTER;
+        }
+
+        // bool BEFORE int (bool is subclass of int)
+        else if (PyBool_Check(cell)) { types[i] = SQLBIT; }
+
+        else if (PyLong_Check(cell)) {
+            long long lv = PyLong_AsLongLong(cell);
+            if (PyErr_Occurred()) { PyErr_Clear(); PyMem_Free(types); Py_DECREF(first); Py_DECREF(iter); return false; }
+            types[i] = fits_int32(lv) ? SQLINT4 : SQLINT8;
+        }
+
+        else if (PyFloat_Check(cell)) { types[i] = SQLFLT8; }
+
+        else if (PyTime_Check(cell)) {
+            types[i] = SQLTIMEN;
+        }
+        else if (IsInstanceForThread(cell, "decimal", "Decimal", &dec_cls) && dec_cls) {
+            Py_DECREF(dec_cls);
+            types[i] = SQLCHARACTER; // send as text like base path
+        }
+        else if (PyUnicode_Check(cell) || PyBytes_Check(cell) || PyByteArray_Check(cell)) {
+            types[i] = SQLCHARACTER;
+        }
+        else if (PyDateTime_Check(cell)) {
+            // tz-aware? treat as datetimeoffset else datetime2
+            PyObject* tz = PyObject_GetAttrString(cell, "tzinfo");
+            if (tz && tz != Py_None) {
+                Py_DECREF(tz);
+                types[i] = SQLDATETIMEOFFSETN; // 10 bytes at scale 7
+            } else {
+                Py_XDECREF(tz);
+                types[i] = SQLCHARACTER;      // 8 bytes at scale 7
+            }
+        }
+        else if (PyDate_Check(cell)) {
+            types[i] = SQLCHARACTER;              // date -> 3 bytes
+        }
+        else {
+            // Unknown type
+            PyMem_Free(types); Py_DECREF(first); Py_DECREF(iter);
+            return false;
+        }
+    }
+    // --- Build BCP context (column-wise) ------------------------------------
+    BcpCtx* ctx = (BcpCtx*)PyMem_Calloc(1, sizeof(BcpCtx));
+    if (!ctx) { PyMem_Free(types); Py_DECREF(first); Py_DECREF(iter); PyErr_NoMemory(); return true; }
+
+    ctx->conn  = cn;
+    ctx->ncols = (int)ncols;
+    ctx->cols  = (BcpCol*)PyMem_Calloc((size_t)ncols, sizeof(BcpCol));
+    if (!ctx->cols) { PyMem_Free(ctx); PyMem_Free(types); Py_DECREF(first); Py_DECREF(iter); PyErr_NoMemory(); return true; }
+
+    for (int i = 0; i < ctx->ncols; ++i) {
+        BcpCol* c = &ctx->cols[i];
+        c->ordinal  = i + 1;
+        c->hostType = types[i];
+
+        switch (types[i]) {
+        case SQLINT4:       { c->isVarLen=0; c->fixedSize=sizeof(DBINT);     c->scratchCap=(DBINT)c->fixedSize; c->ind=0; break; }
+        case SQLINT8:       { c->isVarLen=0; c->fixedSize=sizeof(long long); c->scratchCap=(DBINT)c->fixedSize; c->ind=0; break; }
+        case SQLBIT:        { c->isVarLen=0; c->fixedSize=1;                 c->scratchCap=(DBINT)c->fixedSize; c->ind=0; break; }
+        case SQLFLT8:       { c->isVarLen=0; c->fixedSize=sizeof(double);    c->scratchCap=(DBINT)c->fixedSize; c->ind=0; break; }
+        case SQLTIMEN:      { c->isVarLen=0; c->fixedSize=5;                 c->scratchCap=(DBINT)c->fixedSize; c->ind=0; break; }
+        case SQLDATETIMEOFFSETN: { c->isVarLen=0; c->fixedSize=10;           c->scratchCap=10;                  c->ind=0; break; } // 5 + 3 + 2
+        default:            { c->isVarLen=1; c->fixedSize=0;  c->scratchCap=256; c->ind=SQL_NULL_DATA; c->hostType=SQLCHARACTER; break; } // CHARACTER
+        }
+
+        c->scratch = (unsigned char*)PyMem_Malloc(c->scratchCap);
+        if (!c->scratch) {
+            for (int k = 0; k < i; ++k) PyMem_Free(ctx->cols[k].scratch);
+            PyMem_Free(ctx->cols); PyMem_Free(ctx); PyMem_Free(types); Py_DECREF(first); Py_DECREF(iter);
+            PyErr_NoMemory(); return true;
+        }
+    }
+    PyMem_Free(types);
+    // Bind columns
+    for (int i = 0; i < ctx->ncols; ++i) {
+        BcpCol* c = &ctx->cols[i];
+        const DBINT cbIndicator = 0;
+        const DBINT cbData      = c->isVarLen ? 0 : (DBINT)c->fixedSize;
+        SQLRETURN rc;
+        Py_BEGIN_ALLOW_THREADS
+        rc = cn->bcp->bcp_bind(cn->hdbc, (LPCBYTE)c->scratch, cbIndicator, cbData, nullptr, 0, c->hostType, c->ordinal);
+        Py_END_ALLOW_THREADS
+        if (rc != SUCCEED) {
+            for (int k = 0; k < ctx->ncols; ++k) PyMem_Free(ctx->cols[k].scratch);
+            PyMem_Free(ctx->cols); PyMem_Free(ctx);
+            RaiseErrorFromHandle(cn, "bcp_bind", cn->hdbc, SQL_NULL_HANDLE);
+            Py_DECREF(first); Py_DECREF(iter);
+            return true;
+        }
+    }
+    // Fill helpers (Option B structs for date/time/datetime)
+    auto fill_cell = [&](PyObject* cell, BcpCol* c) -> int {
+        if (cell == Py_None) {
+            return (cn->bcp->bcp_collen(cn->hdbc, SQL_NULL_DATA, c->ordinal) != FAIL);
+        }
+
+        switch (c->hostType) {
+        case SQLBIT: {
+            unsigned char b = (unsigned char)(PyObject_IsTrue(cell) ? 1 : 0);
+            memcpy(c->scratch, &b, 1);
+            return (cn->bcp->bcp_collen(cn->hdbc, (DBINT)1, c->ordinal) != FAIL);
+        }
+        case SQLINT4: {
+            long long lv = PyLong_AsLongLong(cell);
+            if (PyErr_Occurred()) return 0;
+            DBINT v = (DBINT)lv;
+            memcpy(c->scratch, &v, sizeof(DBINT));
+            return (cn->bcp->bcp_collen(cn->hdbc, (DBINT)sizeof(DBINT), c->ordinal) != FAIL);
+        }
+        case SQLINT8: {
+            long long v = PyLong_AsLongLong(cell);
+            if (PyErr_Occurred()) return 0;
+            memcpy(c->scratch, &v, sizeof(long long));
+            return (cn->bcp->bcp_collen(cn->hdbc, (DBINT)sizeof(long long), c->ordinal) != FAIL);
+        }
+        case SQLFLT8: {
+            double d = PyFloat_AsDouble(cell);
+            if (PyErr_Occurred()) return 0;
+            memcpy(c->scratch, &d, sizeof(double));
+            return (cn->bcp->bcp_collen(cn->hdbc, (DBINT)sizeof(double), c->ordinal) != FAIL);
+        }
+        case SQLTIMEN: {
+            if (cell == Py_None) {
+                SQLRETURN rc; Py_BEGIN_ALLOW_THREADS
+                rc = cn->bcp->bcp_collen(cn->hdbc, SQL_NULL_DATA, c->ordinal);
+                Py_END_ALLOW_THREADS
+                return (rc != FAIL);
+            }
+            int hh = PyDateTime_TIME_GET_HOUR(cell);
+            int mm = PyDateTime_TIME_GET_MINUTE(cell);
+            int ss = PyDateTime_TIME_GET_SECOND(cell);
+            int mu = PyDateTime_TIME_GET_MICROSECOND(cell);
+            unsigned long long ticks = time_to_ticks7(hh, mm, ss, mu);
+            if (c->scratchCap < 5) {
+               unsigned char* np = (unsigned char*)PyMem_Realloc(c->scratch, 5);
+               if (!np) return 0;                
+               c->scratch = np; c->scratchCap = 5;
+               if (cn->bcp->bcp_bind(cn->hdbc, (LPCBYTE)c->scratch, 0, 5, nullptr, 0, c->hostType, c->ordinal) != SUCCEED)
+                   return 0;
+            }
+            write_le(c->scratch, ticks, 5);
+            return 1;
+        }
+        case SQLDATETIMEOFFSETN: {
+            // Extract local wall time components
+            int y  = PyDateTime_GET_YEAR(cell);
+            int m  = PyDateTime_GET_MONTH(cell);
+            int d  = PyDateTime_GET_DAY(cell);
+            int hh = PyDateTime_DATE_GET_HOUR(cell);
+            int mm = PyDateTime_DATE_GET_MINUTE(cell);
+            int ss = PyDateTime_DATE_GET_SECOND(cell);
+            int mu = PyDateTime_DATE_GET_MICROSECOND(cell);
+
+            // Offset in minutes (signed)
+            PyObject* delta = PyObject_CallMethod(cell, "utcoffset", 0);
+            if (!delta || delta == Py_None) { Py_XDECREF(delta); PyErr_SetString(PyExc_ValueError, "datetimeoffset requires tz-aware datetime"); return 0; }
+            long days = PyDateTime_DELTA_GET_DAYS(delta);
+            long secs = PyDateTime_DELTA_GET_SECONDS(delta);
+            long usec = PyDateTime_DELTA_GET_MICROSECONDS(delta);
+            Py_DECREF(delta);
+
+            // Fractional offset smaller than a minute is not representable; require whole minutes
+            if (usec % 60000000 != 0 || (secs % 60) != 0) {
+                PyErr_SetString(PyExc_ValueError, "datetimeoffset offset must be minute-aligned");
+                return 0;
+            }
+            long offset_minutes = days * 1440 + (secs / 60);
+            if (offset_minutes < -14*60 || offset_minutes > 14*60) {
+                PyErr_SetString(PyExc_ValueError, "datetimeoffset out of range (-14:00 to +14:00)");
+                return 0;
+            }
+
+            unsigned long long ticks = time_to_ticks7(hh, mm, ss, mu);
+            unsigned int days_ce = days_since_0001_01_01(y, m, d);
+
+            if (c->scratchCap < 10) {
+                unsigned char* np = (unsigned char*)PyMem_Realloc(c->scratch, 10);
+                if (!np) return 0;
+                c->scratch = np; c->scratchCap = 10;
+                if (cn->bcp->bcp_bind(cn->hdbc, (LPCBYTE)c->scratch, 0, 10, nullptr, 0, c->hostType, c->ordinal) != SUCCEED)
+                    return 0;
+            }
+            write_le(c->scratch + 0,  ticks, 5);
+            write_le(c->scratch + 5,  days_ce, 3);
+            // offset as signed 16-bit minutes, little-endian
+            short off = (short)offset_minutes;
+            memcpy(c->scratch + 8, &off, 2);
+            return 1;
+        }
+        default: {
+            // SQLCHARACTER (varlen)
+            const char* p = NULL; Py_ssize_t n = 0;
+
+            PyObject* dec_cls = 0;
+            // Prefer ISO for date/time family (works for datetime, date, time, and tz-aware)
+            if (PyDateTime_Check(cell) || PyDate_Check(cell) || PyTime_Check(cell)) {
+                // datetime/date/time all support .isoformat(); for datetime use space separator
+                PyObject* s = PyDateTime_Check(cell)
+                                ? PyObject_CallMethod(cell, "isoformat", "s", " ")
+                                : PyObject_CallMethod(cell, "isoformat", NULL);
+                if (!s) return 0;
+                p = PyUnicode_AsUTF8AndSize(s, &n);
+                if (!p) { Py_DECREF(s); return 0; }
+
+                DBINT bytes = (DBINT)n;
+                if (bytes > c->scratchCap) {
+                    unsigned char* np = (unsigned char*)PyMem_Realloc(c->scratch, (size_t)bytes);
+                    if (!np) { Py_DECREF(s); PyErr_NoMemory(); return 0; }
+                    c->scratch = np; c->scratchCap = bytes;
+                    if (cn->bcp->bcp_bind(cn->hdbc, (LPCBYTE)c->scratch, 0, 0, nullptr, 0, c->hostType, c->ordinal) != SUCCEED) {
+                        Py_DECREF(s); return 0;
+                    }
+                }
+                if (bytes > 0) memcpy(c->scratch, p, (size_t)bytes);
+                Py_DECREF(s);
+                return (cn->bcp->bcp_collen(cn->hdbc, bytes, c->ordinal) != FAIL);
+            }
+            if (IsInstanceForThread(cell, "decimal", "Decimal", &dec_cls) && dec_cls) {
+                Py_DECREF(dec_cls);
+                // Build canonical ASCII (no exponent), same as base path
+                PyObject* t = PyObject_CallMethod(cell, "as_tuple", 0);
+                if (!t) return 0;
+
+                long sign = PyLong_AsLong(PyTuple_GET_ITEM(t, 0));
+                PyObject* digits = PyTuple_GET_ITEM(t, 1);
+                long exp = PyLong_AsLong(PyTuple_GET_ITEM(t, 2));
+
+                char* s = CreateDecimalString(sign, digits, exp);  // uses PyMem_Malloc
+                Py_DECREF(t);
+                if (!s) { PyErr_NoMemory(); return 0; }
+
+                n = (Py_ssize_t)strlen(s);
+                DBINT bytes = (DBINT)n;
+                if (bytes > c->scratchCap) {
+                    unsigned char* np = (unsigned char*)PyMem_Realloc(c->scratch, (size_t)bytes);
+                    if (!np) { PyMem_Free(s); PyErr_NoMemory(); return 0; }
+                    c->scratch = np; c->scratchCap = bytes;
+                    // rebind after realloc (cbIndicator=0, cbData=0 for varlen)
+                    if (cn->bcp->bcp_bind(cn->hdbc, (LPCBYTE)c->scratch, 0, 0, nullptr, 0, c->hostType, c->ordinal) != SUCCEED) {
+                        PyMem_Free(s); return 0;
+                    }
+                }
+                if (bytes > 0) memcpy(c->scratch, s, (size_t)bytes);
+                PyMem_Free(s);
+                return (cn->bcp->bcp_collen(cn->hdbc, bytes, c->ordinal) != FAIL);
+            }
+
+            if (PyUnicode_Check(cell)) {
+                p = PyUnicode_AsUTF8AndSize(cell, &n);
+                if (!p) return 0;
+            } else if (PyBytes_Check(cell)) {
+                p = PyBytes_AsString(cell);
+                if (!p) return 0;
+                n = PyBytes_GET_SIZE(cell);
+            } else if (PyByteArray_Check(cell)) {
+                p = PyByteArray_AsString(cell);
+                n = PyByteArray_Size(cell);
+            } else {
+                PyErr_SetString(PyExc_TypeError, "Expected str/bytes/bytearray");
+                return 0;
+            }
+            DBINT bytes = (DBINT)n;
+            if (bytes > c->scratchCap) {
+                unsigned char* np = (unsigned char*)PyMem_Realloc(c->scratch, (size_t)bytes);
+                if (!np) { PyErr_NoMemory(); return 0; }
+                c->scratch = np; c->scratchCap = bytes;
+                // rebind after realloc (cbIndicator=0, cbData=0 for varlen)
+                if (cn->bcp->bcp_bind(cn->hdbc, (LPCBYTE)c->scratch, 0, 0, nullptr, 0, c->hostType, c->ordinal) != SUCCEED)
+                    return 0;
+            }
+            if (bytes > 0) memcpy(c->scratch, p, (size_t)bytes);
+            return (cn->bcp->bcp_collen(cn->hdbc, bytes, c->ordinal) != FAIL);
+        }}
+    };
+
+    auto send_row = [&]() -> int {
+        SQLRETURN rc;
+        Py_BEGIN_ALLOW_THREADS
+        rc = cn->bcp->bcp_sendrow(cn->hdbc);
+        Py_END_ALLOW_THREADS
+        return (rc == SUCCEED);
+    };
+
+    // first row
+    for (int i = 0; i < ctx->ncols; ++i) {
+        PyObject* cell = PyTuple_GetItem(first, i);
+        if (!fill_cell(cell, &ctx->cols[i])) {
+            RaiseErrorFromHandle(cn, "bcp_collen/bcp conversion", cn->hdbc, SQL_NULL_HANDLE);
+            for (int k = 0; k < ctx->ncols; ++k) PyMem_Free(ctx->cols[k].scratch);
+            PyMem_Free(ctx->cols); PyMem_Free(ctx);
+            Py_DECREF(first); Py_DECREF(iter);
+            return true;
+        }
+    }
+    Py_DECREF(first);
+    if (!send_row()) {
+        RaiseErrorFromHandle(cn, "bcp_sendrow", cn->hdbc, SQL_NULL_HANDLE);
+        for (int k = 0; k < ctx->ncols; ++k) PyMem_Free(ctx->cols[k].scratch);
+        PyMem_Free(ctx->cols); PyMem_Free(ctx); Py_DECREF(iter);
+        return true;
+    }
+
+    // remaining rows (+ optional manual batching)
+    DBINT total_committed = 0;
+    DBINT since_last_batch = 0;
+    PyObject* row = nullptr;
+    while ((row = PyIter_Next(iter)) != nullptr) {
+        if (!PyTuple_Check(row) || PyTuple_Size(row) != ncols) {
+            Py_DECREF(row); Py_DECREF(iter);
+            for (int k = 0; k < ctx->ncols; ++k) PyMem_Free(ctx->cols[k].scratch);
+            PyMem_Free(ctx->cols); PyMem_Free(ctx);
+            PyErr_SetString(PyExc_TypeError, "Row must be a tuple matching first row arity");
+            return true;
+        }
+        for (int i = 0; i < ctx->ncols; ++i) {
+            PyObject* cell = PyTuple_GetItem(row, i);
+            if (!fill_cell(cell, &ctx->cols[i])) {
+                Py_DECREF(row); Py_DECREF(iter);
+                for (int k = 0; k < ctx->ncols; ++k) PyMem_Free(ctx->cols[k].scratch);
+                PyMem_Free(ctx->cols); PyMem_Free(ctx);
+                RaiseErrorFromHandle(cn, "bcp_collen/bcp conversion", cn->hdbc, SQL_NULL_HANDLE);
+                return true;
+            }
+        }
+        Py_DECREF(row);
+        if (!send_row()) {
+            Py_DECREF(iter);
+            for (int k = 0; k < ctx->ncols; ++k) PyMem_Free(ctx->cols[k].scratch);
+            PyMem_Free(ctx->cols); PyMem_Free(ctx);
+            RaiseErrorFromHandle(cn, "bcp_sendrow", cn->hdbc, SQL_NULL_HANDLE);
+            return true;
+        }
+
+        if (cur->bcp_batch_rows > 0 && cn->bcp->bcp_batch) {
+            since_last_batch++;
+            if (since_last_batch >= (DBINT)cur->bcp_batch_rows) {
+                DBINT rc;
+                Py_BEGIN_ALLOW_THREADS
+                rc = cn->bcp->bcp_batch(cn->hdbc);
+                Py_END_ALLOW_THREADS
+                if (rc == FAIL) {
+                    Py_DECREF(iter);
+                    for (int k = 0; k < ctx->ncols; ++k) PyMem_Free(ctx->cols[k].scratch);
+                    PyMem_Free(ctx->cols); PyMem_Free(ctx);
+                    RaiseErrorFromHandle(cn, "bcp_batch", cn->hdbc, SQL_NULL_HANDLE);
+                    return true;
+                }
+                if (rc > 0) total_committed += rc;
+                since_last_batch = 0;
+            }
+        }
+    }
+    Py_DECREF(iter);
+    if (PyErr_Occurred()) {
+        for (int k = 0; k < ctx->ncols; ++k) PyMem_Free(ctx->cols[k].scratch);
+        PyMem_Free(ctx->cols); PyMem_Free(ctx);
+        return true;
+    }
+    // done
+    DBINT done_rows;
+    Py_BEGIN_ALLOW_THREADS
+    done_rows = cn->bcp->bcp_done(cn->hdbc);
+    Py_END_ALLOW_THREADS
+    if (done_rows == -1) {
+        for (int k = 0; k < ctx->ncols; ++k) PyMem_Free(ctx->cols[k].scratch);
+        PyMem_Free(ctx->cols); PyMem_Free(ctx);
+        RaiseErrorFromHandle(cn, "bcp_done", cn->hdbc, SQL_NULL_HANDLE);
+        return true;
+    }
+    
+    cur->rowcount = (int)(total_committed + done_rows);
+
+    for (int k = 0; k < ctx->ncols; ++k) PyMem_Free(ctx->cols[k].scratch);
+    PyMem_Free(ctx->cols); PyMem_Free(ctx);
+    return true;
+}
 
 static bool GetParamType(Cursor* cur, Py_ssize_t index, SQLSMALLINT& type)
 {

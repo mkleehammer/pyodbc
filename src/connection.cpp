@@ -16,7 +16,7 @@
 #include "pyodbcmodule.h"
 #include "errors.h"
 #include "cnxninfo.h"
-
+#include "bcp_support.h"
 
 static char connection_doc[] =
     "Connection objects manage connections to the database.\n"
@@ -250,6 +250,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeou
     cnxn->maxwrite     = 0;
     cnxn->timeout      = 0;
     cnxn->map_sqltype_to_converter = 0;
+    cnxn->bcp          = NULL;
 
     cnxn->attrs_before = attrs_before_o.Detach();
 
@@ -425,6 +426,8 @@ static int Connection_clear(PyObject* self)
 
     Py_XDECREF(cnxn->map_sqltype_to_converter);
     cnxn->map_sqltype_to_converter = 0;
+
+    if (cnxn->bcp) { PyMem_Free(cnxn->bcp); cnxn->bcp = nullptr; }
 
     return 0;
 }
@@ -1361,24 +1364,524 @@ static PyObject* Connection_exit(PyObject* self, PyObject* args)
     Py_RETURN_NONE;
 }
 
+/*=======================================================================================*/
+static const char* BCPCTX_CAPSULE = "pyodbc.BCPContext";
+
+static char bcp_init_doc[] =
+"bcp_init(table, direction=DB_IN, batch_rows=0, keep_nulls=0, hints=None, max_errors=0) -> None\n"
+"\n"
+"Initializes a bulk copy operation for the specified table.\n"
+"\n"
+"Arguments:\n"
+"  table      : Name of the destination table as a string.\n"
+"  direction  : Direction of copy (default: DB_IN for insert).\n"
+"  batch_rows : Number of rows per batch (default: 0 for all in one batch).\n"
+"  keep_nulls : If true, preserves NULLs in the destination table (default: 0).\n"
+"  hints      : Optional string of BCP hints (e.g. 'TABLOCK').\n"
+"  max_errors : Maximum errors allowed before aborting (default: 0).\n"
+"\n"
+"Usage:\n"
+"  conn.bcp_init('dbo.MyTable', keep_nulls=1, hints='TABLOCK', max_errors=10)\n"
+"\n"
+"Note:\n"
+"  This must be called before binding columns or sending rows with BCP.";
+
+static PyObject* Connection_bcp_init(PyObject* oself, PyObject* args, PyObject* kwargs)
+{
+    Connection* self = (Connection*)oself;
+
+    const char* table = nullptr;
+    int direction = DB_IN;  // Default: insert
+    int keep_nulls = 0;
+    const char* hints = NULL;       // UTF-8 string of BCP hints (e.g. \"TABLOCK\")
+    long max_errors = 0;
+    long batch_rows = 0;
+
+    static char* kwlist[] = {"table", "direction", "batch_rows", "keep_nulls", "hints", "max_errors", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|ilizl", kwlist, 
+                                    &table, &direction, &batch_rows, &keep_nulls, &hints, &max_errors))
+    {
+        return 0;
+    }    
+
+    if (!self->hdbc)
+    {
+        PyErr_SetString(ProgrammingError, "The connection is closed.");
+        return 0;
+    }
+    if (!ensure_bcp_loaded(self))
+    {
+        PyErr_SetString(PyExc_NotImplementedError, "BCP functions are not available from the ODBC driver.");
+        return 0;
+    }
+
+    RETCODE ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = self->bcp->bcp_initA(self->hdbc, (LPCSTR)table, NULL, NULL, direction);
+    Py_END_ALLOW_THREADS
+    if (ret != SUCCEED)
+    {
+        RaiseErrorFromHandle(self, "bcp_init", self->hdbc, SQL_NULL_HANDLE);
+        return 0;
+    }
+
+    // Set options 
+    if (batch_rows > 0)
+    {
+        RETCODE r2;
+        Py_BEGIN_ALLOW_THREADS
+        r2 = self->bcp->bcp_control(self->hdbc, BCPBATCH, (void*)(size_t)batch_rows);
+        Py_END_ALLOW_THREADS
+        if (r2 != SUCCEED)
+        {
+            return RaiseErrorFromHandle(self, "bcp_control(BCPBATCH)", self->hdbc, SQL_NULL_HANDLE);
+        }
+    }
+    if (keep_nulls)
+    {
+        RETCODE r2;
+        Py_BEGIN_ALLOW_THREADS
+        r2 = self->bcp->bcp_control(self->hdbc, BCPKEEPNULLS, (void*)(size_t)1);
+        Py_END_ALLOW_THREADS
+        if (r2 != SUCCEED)
+        {
+            return RaiseErrorFromHandle(self, "bcp_control(BCPKEEPNULLS)", self->hdbc, SQL_NULL_HANDLE);
+        }
+    }
+    if (max_errors > 0)
+    {
+        RETCODE r2;
+        Py_BEGIN_ALLOW_THREADS
+        r2 = self->bcp->bcp_control(self->hdbc, BCPMAXERRS, (void*)(size_t)max_errors);
+        Py_END_ALLOW_THREADS
+        if (r2 != SUCCEED)
+        {
+            return RaiseErrorFromHandle(self, "bcp_control(BCPMAXERRS)", self->hdbc, SQL_NULL_HANDLE);
+        }
+    }
+    if (hints && *hints)
+    {
+        RETCODE r2;
+        Py_BEGIN_ALLOW_THREADS
+        r2 = self->bcp->bcp_control(self->hdbc, BCPHINTS, (void*)hints);
+        Py_END_ALLOW_THREADS
+        if (r2 != SUCCEED)
+        {
+            return RaiseErrorFromHandle(self, "bcp_control(BCPHINTS)", self->hdbc, SQL_NULL_HANDLE);
+        }
+    }
+
+    Py_RETURN_NONE;
+}
+
+static char bcp_bind_columns_doc[] =
+"bcp_bind_columns(types) -> BCPContext\n"
+"\n"
+"Prepares column-wise buffers for high-performance bulk insert using SQL Server BCP.\n"
+"\n"
+"Arguments:\n"
+"  types : Sequence of host types per column (e.g. pyodbc.SQLINT4, pyodbc.SQLFLT8, pyodbc.SQLCHARACTER).\n"
+"\n"
+"Returns:\n"
+"  A BCPContext capsule for use with bcp_setrow(), bcp_sendrow(), and bcp_done().\n"
+"\n"
+"Usage:\n"
+"  ctx = conn.bcp_bind_columns([pyodbc.SQLINT4, pyodbc.SQLCHARACTER])\n"
+"  for row in rows:\n"
+"      conn.bcp_setrow(ctx, row)\n"
+"      conn.bcp_sendrow()\n"
+"  count = conn.bcp_done()\n"
+"\n"
+"Note:\n"
+"  - This function transforms row-wise Python input into column-wise buffers for efficient insertion.\n"
+"  - Variable-length columns (e.g. strings) are handled automatically.\n"
+"  - Only SQLINT4, SQLFLT8, and SQLCHARACTER types are supported (work in progress).";
+
+static PyObject* Connection_bcp_bind_columns(PyObject* oself, PyObject* args, PyObject* kwargs)
+{
+    Connection* self = (Connection*)oself;
+
+    PyObject* types = NULL;
+
+    static char* kwlist[] = {"types", NULL};
+
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &types))
+    {
+        return 0;
+    }
+
+    if (!self->hdbc)
+    {
+        PyErr_SetString(ProgrammingError, "The connection is closed.");
+        return 0;
+    }
+
+    if (!ensure_bcp_loaded(self))
+    {
+        PyErr_SetString(PyExc_NotImplementedError, "BCP functions are not available from the ODBC driver.");
+        return 0;
+    }
+
+    if (!PySequence_Check(types))
+    {
+        // Accept general sequences too; make an iterator if needed.
+        PyErr_SetString(PyExc_TypeError, "types must be a sequence of host types per column");
+        return 0;
+    }
+
+    PyObject* types_fast = PySequence_Fast(types, "types must be a sequence");
+    if (!types_fast) return 0;
+
+    const Py_ssize_t ncols = PySequence_Fast_GET_SIZE(types_fast);
+    if (ncols <= 0)
+    {
+        Py_DECREF(types_fast);
+        PyErr_SetString(PyExc_ValueError, "types must not be empty");
+        return 0;
+    
+    }
+
+    // Alocate context and columns
+    BcpCtx* ctx = (BcpCtx*)PyMem_Calloc(1, sizeof(BcpCtx));
+    if (!ctx)
+    {
+        Py_DECREF(types_fast);
+        PyErr_NoMemory();
+        return NULL;
+    }
+    ctx->conn = self; // remember who owns this BCP session (borrowed)
+    ctx->ncols = (int)ncols;
+    ctx->cols = (BcpCol*)PyMem_Calloc((size_t)ncols, sizeof(BcpCol));
+    if (!ctx->cols)
+    {
+        Py_DECREF(types_fast); 
+        PyMem_Free(ctx);
+        PyErr_NoMemory();
+        return NULL;
+    }
+
+    // Initialize columns from 'types'
+    for (int i = 0; i < ctx->ncols; ++i)
+    {
+        PyObject* it = PySequence_Fast_GET_ITEM(types_fast, i); // borrowed
+        long t = PyLong_AsLong(it);
+        if (PyErr_Occurred()) 
+        { 
+            Py_DECREF(types_fast); 
+            _bcp_ctx_free(ctx); 
+            return NULL; 
+        }
+
+        BcpCol* c = &ctx->cols[i];
+        c->ordinal = i + 1;
+        c->hostType = (int)t;
+
+        if (t == SQLBIT) {
+            c->isVarLen = 0;
+            c->fixedSize = 1;
+            c->scratchCap = 1;
+        }
+        else if (t == SQLINT2) {
+            c->isVarLen = 0;
+            c->fixedSize = sizeof(short);
+            c->scratchCap = (DBINT)c->fixedSize;
+        }
+        else if (t == SQLINT4)
+        {
+            c->isVarLen = 0;
+            c->fixedSize = sizeof(DBINT);
+            c->scratchCap = (DBINT)c->fixedSize;
+            c->ind = 0;
+        }
+        else if (t == SQLINT8) {
+            c->isVarLen = 0;
+            c->fixedSize = sizeof(long long);
+            c->scratchCap = (DBINT)c->fixedSize;
+        }
+        else if ( t == SQLFLT8)
+        {
+            c->isVarLen = 0;
+            c->fixedSize = sizeof(double);
+            c->scratchCap = (DBINT)c->fixedSize;
+            c->ind = 0;
+        }
+        else if (t == SQLFLT4) {
+            c->isVarLen = 0;
+            c->fixedSize = sizeof(float);
+            c->scratchCap = (DBINT)c->fixedSize;
+        }
+        else if (t == SQLBINARY) {                 // VARBINARY/BINARY
+            c->isVarLen = 1;
+            c->fixedSize = 0;
+            c->scratchCap = 256;                   // grows as needed
+        }
+        else if (t == SQLUNIQUEID) {
+            c->isVarLen = 0;
+            c->fixedSize = 16;
+            c->scratchCap = 16;
+        }
+        else if (t == SQLCHARACTER)
+        {
+            c->isVarLen = 1;
+            c->fixedSize = 0;
+            c->scratchCap = 256; // grows on demand
+            c->ind = SQL_NULL_DATA; // start as NULL
+        }
+        else if (t == SQL_TYPE_TIME) {
+            c->isVarLen = 0;
+            c->fixedSize = sizeof(TIME_STRUCT);
+            c->scratchCap = (DBINT)c->fixedSize;
+        }
+        else
+        {
+            Py_DECREF(types_fast); 
+            PyErr_SetString(PyExc_TypeError, "Unsupported host type in types[]");
+            _bcp_ctx_free(ctx);
+            return NULL;
+        }
+
+        c->scratch = (unsigned char*)PyMem_Malloc(c->scratchCap);
+        if (!c->scratch)
+        {
+            Py_DECREF(types_fast); 
+            PyErr_NoMemory(); 
+            _bcp_ctx_free(ctx);
+            return NULL;
+        }
+    }
+    Py_DECREF(types_fast);
+    
+    // Bind once per column
+    if (!_bcp_bind_all(ctx))
+    {
+        _bcp_ctx_free(ctx);
+        RaiseErrorFromHandle(self, "bcp_bind", self->hdbc, SQL_NULL_HANDLE);
+        return NULL;
+    }
+
+    // Return capsule
+    PyObject* cap = PyCapsule_New(ctx, BCPCTX_CAPSULE, BcpCtx_FreeCapsule);
+    if (!cap)
+    {
+        BcpCtx_FreeCapsule(PyCapsule_New(ctx, BCPCTX_CAPSULE, NULL));
+        return NULL;
+    }
+
+    return cap;
+}
+
+static char bcp_setrow_doc[] =
+"bcp_setrow(ctx, row) -> None\n"
+"Populate all bound column buffers from a Python tuple.\n"
+"\n"
+"Each element in 'row' is converted to the corresponding column’s native format\n"
+"and stored in its bound buffer. Use bcp_sendrow() afterward to send the row\n"
+"to the server.\n"
+"\n"
+"Raises:\n"
+"  ValueError: If the BCP context is invalid or belongs to another connection.\n"
+"  TypeError:  If 'row' is not a tuple matching the number of columns.\n"
+"  RuntimeError or OverflowError: On data conversion or binding errors.";
+
+static PyObject* Connection_bcp_setrow(PyObject* oself, PyObject* args) {
+    Connection* self = (Connection*)oself;
+    PyObject* cap = NULL; 
+    PyObject* row = NULL;
+    if (!PyArg_ParseTuple(args, "OO", &cap, &row)) return NULL;
+
+    if (!ensure_bcp_loaded(self)) {
+        PyErr_SetString(PyExc_NotImplementedError, "BCP functions are not available from the ODBC driver.");
+        return NULL;
+    }
+
+    BcpCtx* ctx = (BcpCtx*)PyCapsule_GetPointer(cap, BCPCTX_CAPSULE);
+    if (!ctx) { PyErr_SetString(PyExc_ValueError, "Invalid BCP context"); return NULL; }
+    if (ctx->conn != self) {
+        PyErr_SetString(PyExc_ValueError, "BCP context belongs to a different connection");
+        return NULL;
+    }
+    if (!PyTuple_Check(row) || PyTuple_Size(row) != ctx->ncols) {
+        PyErr_SetString(PyExc_TypeError, "row must be a tuple matching number of columns");
+        return NULL;
+    }
+    for (int c = 0; c < ctx->ncols; ++c) {
+        PyObject* cell = PyTuple_GetItem(row, c);
+        if (!_bcp_fill_cell(ctx, cell, &ctx->cols[c]))
+            return RaiseErrorFromHandle(self, "bcp_collen/bcp conversion", self->hdbc, SQL_NULL_HANDLE);
+    }
+    Py_RETURN_NONE;
+}
+
+static char bcp_sendrow_doc[] =
+"bcp_sendrow() -> None\n"
+"\n"
+"Sends the current bound row to the server using the active BCP context.\n"
+"\n"
+"Call after bcp_setrow() to transmit the row data prepared in bound buffers.\n"
+"\n"
+"Raises:\n"
+"  ProgrammingError: If the connection is closed.\n"
+"  NotImplementedError: If BCP support is unavailable in the ODBC driver.\n"
+"  DatabaseError: If the row send operation fails.";
+
+static PyObject* Connection_bcp_sendrow(PyObject* oself)
+{
+    Connection* self = (Connection*)oself;
+
+    if (!self->hdbc)
+    {
+        PyErr_SetString(ProgrammingError, "The connection is closed.");
+        return 0;
+    }
+    if (!ensure_bcp_loaded(self))
+    {
+        PyErr_SetString(PyExc_NotImplementedError, "BCP functions are not available from the ODBC driver.");
+        return 0;
+    }
+
+
+    RETCODE ret;
+    Py_BEGIN_ALLOW_THREADS
+    ret = self->bcp->bcp_sendrow(self->hdbc);
+    Py_END_ALLOW_THREADS
+
+    if (ret != SUCCEED)
+    {
+        RaiseErrorFromHandle(self, "bcp_sendrow", self->hdbc, SQL_NULL_HANDLE);
+        return 0;
+    }
+
+    Py_RETURN_NONE;
+}
+
+static char bcp_batch_doc[] =
+"bcp_batch([ctx]) -> int\n"
+"\n"
+"Commits all rows sent since the last bcp_batch(), bcp_init(), or bcp_done().\n"
+"Returns the number of rows successfully committed by the driver.\n"
+"If a BCP context is provided, its total committed count is updated.\n"
+"\n"
+"Raises:\n"
+"  ProgrammingError: If the connection is closed.\n"
+"  NotImplementedError: If BCP support is unavailable in the ODBC driver.\n"
+"  ValueError: If the BCP context is invalid or from another connection.\n"
+"  DatabaseError: If the commit operation fails.";
+
+static PyObject* Connection_bcp_batch(PyObject* oself, PyObject* args)
+{
+    Connection* self = (Connection*)oself;
+
+    PyObject* cap = NULL;  // optional BCP context capsule
+    if (!PyArg_ParseTuple(args, "|O", &cap))
+        return NULL;
+
+    if (!self->hdbc)
+    {
+        PyErr_SetString(ProgrammingError, "The connection is closed.");
+        return NULL;
+    }
+
+    if (!ensure_bcp_loaded(self))
+    {
+        PyErr_SetString(PyExc_NotImplementedError, "BCP functions are not available from the ODBC driver.");
+        return NULL;
+    }
+
+    // If a capsule was provided, validate it (but it's fine if not).
+    BcpCtx* ctx = NULL;
+    if (cap && cap != Py_None)
+    {
+        ctx = (BcpCtx*)PyCapsule_GetPointer(cap, BCPCTX_CAPSULE);
+        if (!ctx)
+        {
+            PyErr_SetString(PyExc_ValueError, "Invalid BCP context");
+            return NULL;
+        }
+        // (Optional sanity) ensure the capsule belongs to this connection:
+        if (ctx->conn->hdbc != self->hdbc)
+        {
+            PyErr_SetString(PyExc_ValueError, "BCP context belongs to a different connection");
+            return NULL;
+        }
+    }
+
+    DBINT rc;
+    Py_BEGIN_ALLOW_THREADS
+    rc = self->bcp->bcp_batch(self->hdbc);
+    Py_END_ALLOW_THREADS
+
+    if (rc == -1)
+        return RaiseErrorFromHandle(self, "bcp_batch", self->hdbc, SQL_NULL_HANDLE);
+
+    if (ctx && rc > 0)
+        ctx->total_committed += rc;
+
+    return PyLong_FromLong((long)rc);
+}
+
+static char bcp_done_doc[] =
+"bcp_done() -> int\n"
+"\n"
+"Finalizes the bulk copy (BCP) operation and commits any remaining rows.\n"
+"Returns the total number of rows successfully copied.\n"
+"\n"
+"Raises:\n"
+"  ProgrammingError: If the connection is closed.\n"
+"  NotImplementedError: If BCP support is unavailable in the ODBC driver.\n"
+"  DatabaseError: If the finalization fails.";
+
+static PyObject* Connection_bcp_done(PyObject* oself)
+{
+    Connection* self = (Connection*)oself;
+
+    if (!self->hdbc)
+    {
+        PyErr_SetString(ProgrammingError, "The connection is closed.");
+        return 0;
+    }
+
+    if (!ensure_bcp_loaded(self))
+    {
+        PyErr_SetString(PyExc_NotImplementedError, "BCP functions are not available from the ODBC driver.");
+        return 0;
+    }
+
+    DBINT rows = self->bcp->bcp_done(self->hdbc);
+    if (rows == -1)
+    {
+        RaiseErrorFromHandle(self, "bcp_done", self->hdbc, SQL_NULL_HANDLE);
+        return 0;
+    }
+
+    return PyLong_FromLong(rows);
+}
+
 
 static struct PyMethodDef Connection_methods[] =
 {
-    { "cursor",                  Connection_cursor,          METH_NOARGS,  cursor_doc     },
-    { "close",                   Connection_close,           METH_NOARGS,  close_doc      },
-    { "execute",                 Connection_execute,         METH_VARARGS, execute_doc    },
-    { "commit",                  Connection_commit,          METH_NOARGS,  commit_doc     },
-    { "rollback",                Connection_rollback,        METH_NOARGS,  rollback_doc   },
-    { "getinfo",                 Connection_getinfo,         METH_VARARGS, getinfo_doc    },
-    { "add_output_converter",    Connection_conv_add,        METH_VARARGS, conv_add_doc   },
-    { "remove_output_converter", Connection_conv_remove,     METH_VARARGS, conv_remove_doc },
-    { "get_output_converter",    Connection_conv_get,        METH_VARARGS, conv_get_doc },
-    { "clear_output_converters", Connection_conv_clear,      METH_NOARGS,  conv_clear_doc },
+    { "cursor",                  Connection_cursor,          METH_NOARGS,  cursor_doc       },
+    { "close",                   Connection_close,           METH_NOARGS,  close_doc        },
+    { "execute",                 Connection_execute,         METH_VARARGS, execute_doc      },
+    { "commit",                  Connection_commit,          METH_NOARGS,  commit_doc       },
+    { "rollback",                Connection_rollback,        METH_NOARGS,  rollback_doc     },
+    { "getinfo",                 Connection_getinfo,         METH_VARARGS, getinfo_doc      },
+    { "add_output_converter",    Connection_conv_add,        METH_VARARGS, conv_add_doc     },
+    { "remove_output_converter", Connection_conv_remove,     METH_VARARGS, conv_remove_doc  },
+    { "get_output_converter",    Connection_conv_get,        METH_VARARGS, conv_get_doc     },
+    { "clear_output_converters", Connection_conv_clear,      METH_NOARGS,  conv_clear_doc   },
     { "setdecoding",             (PyCFunction)Connection_setdecoding,     METH_VARARGS|METH_KEYWORDS, setdecoding_doc },
     { "setencoding",             (PyCFunction)Connection_setencoding,     METH_VARARGS|METH_KEYWORDS, 0 },
     { "set_attr",                Connection_set_attr,        METH_VARARGS, set_attr_doc   },
     { "__enter__",               Connection_enter,           METH_NOARGS,  enter_doc      },
     { "__exit__",                Connection_exit,            METH_VARARGS, exit_doc       },
+    { "bcp_init",                (PyCFunction)Connection_bcp_init,      METH_VARARGS|METH_KEYWORDS, bcp_init_doc },
+    { "bcp_bind_columns",        (PyCFunction)Connection_bcp_bind_columns, METH_VARARGS|METH_KEYWORDS, bcp_bind_columns_doc },
+    { "bcp_setrow",              (PyCFunction)Connection_bcp_setrow,    METH_VARARGS, bcp_setrow_doc    },
+    { "bcp_sendrow",             (PyCFunction)Connection_bcp_sendrow,   METH_NOARGS,  bcp_sendrow_doc   },
+    { "bcp_batch",               (PyCFunction)Connection_bcp_batch,     METH_VARARGS, bcp_batch_doc     },
+    { "bcp_done",                (PyCFunction)Connection_bcp_done,      METH_NOARGS,  bcp_done_doc      },
+
 
     { 0, 0, 0, 0 }
 };
