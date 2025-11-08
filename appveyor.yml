@@ -46,6 +46,8 @@ environment:
   matrix:
     # all the Python versions to be tested, both 32-bit and 64-bit
     # ref: https://www.appveyor.com/docs/windows-images-software/#python
+    - PYTHON_HOME: "C:\\Python314-x64"
+    - PYTHON_HOME: "C:\\Python314"
     - PYTHON_HOME: "C:\\Python313-x64"
     - PYTHON_HOME: "C:\\Python313"
     - PYTHON_HOME: "C:\\Python312-x64"
