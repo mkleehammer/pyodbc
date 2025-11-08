@@ -28,6 +28,9 @@ import pyodbc
 import pytest
 
 
+# the typical name of the SQLite driver on different platforms
+DEFAULT_DRIVER = 'SQLite3 ODBC Driver' if platform.system() == 'Windows' else 'SQLite3'
+
 _TESTSTR = '0123456789-abcdefghijklmnopqrstuvwxyz-'
 
 
@@ -58,8 +61,8 @@ IMAGE_FENCEPOSTS = BYTE_FENCEPOSTS + [bytes(_generate_test_string(size), 'ascii'
 
 
 @pytest.fixture
-def connection_string(tmp_path):
-    return os.environ.get('PYODBC_SQLITE', f'driver=SQLite3;database={tmp_path}/test.db')
+def connection_string(tmp_path: pathlib.Path):
+    return os.environ.get('PYODBC_SQLITE', f'driver={DEFAULT_DRIVER};database={tmp_path}/test.db')
 
 
 @pytest.fixture
@@ -689,6 +692,15 @@ def test_no_fetch(cursor: pyodbc.Cursor):
     cursor.execute('select 1')
     cursor.execute('select 1')
 
-def test_connect_dict_only(tmp_path):
-    c = pyodbc.connect(driver='SQLite3', database=f'{tmp_path}/test.db')
+
+def test_connect_dict_only():
+    # get the name of the ODBC driver used in these tests
+    conn_str = os.environ.get('PYODBC_SQLITE')
+    if conn_str:
+        match = re.search(r'(^|;)driver={?([A-Z0-9 ()_.-]+)}?(;|$)', conn_str, flags=re.IGNORECASE)
+        driver = match.group(2)
+    else:
+        driver = DEFAULT_DRIVER
+
+    c = pyodbc.connect(driver=driver, database=':memory:')
     c.close()
