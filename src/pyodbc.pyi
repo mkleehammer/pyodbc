@@ -336,7 +336,7 @@ class Connection:
     https://www.python.org/dev/peps/pep-0249/#connection-objects
 
     This class should not be instantiated directly, instead call pyodbc.connect() to
-    create a Connection object.
+    create a Connection object.  Connection objects cannot be pickled.
     """
 
     @property
@@ -518,7 +518,7 @@ class Cursor:
     https://www.python.org/dev/peps/pep-0249/#cursor-objects
 
     This class should not be instantiated directly, instead call cursor() from a Connection
-    object to create a Cursor object.
+    object to create a Cursor object.  Cursor objects cannot be pickled.
     """
 
     @property
@@ -913,7 +913,7 @@ class Cursor:
 class Row:
     """The class representing a single record in the result set from a query.  Objects of
     this class behave somewhat similarly to a NamedTuple.  Column values can be accessed
-    by column name (i.e. using dot notation) or by row index.
+    by column name (i.e. using dot notation) or by row index.  Row objects can be pickled.
     """
 
     @property
