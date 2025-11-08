@@ -1,12 +1,15 @@
 #!/usr/bin/python
 
-import os, uuid, re, sys
+import os
+import re
+import uuid
+from collections.abc import Iterator
 from decimal import Decimal
 from datetime import date, time, datetime
 from functools import lru_cache
-from typing import Iterator
 
-import pyodbc, pytest
+import pyodbc
+import pytest
 
 
 # WARNING: Wow Microsoft always manages to do the stupidest thing possible always trying to be
@@ -56,7 +59,7 @@ def _get_sqlserver_year():
 SQLSERVER_YEAR = _get_sqlserver_year()
 
 
-@pytest.fixture()
+@pytest.fixture
 def cursor() -> Iterator[pyodbc.Cursor]:
     cnxn = connect()
     cur = cnxn.cursor()
@@ -114,10 +117,10 @@ def test_bigint(cursor: pyodbc.Cursor):
 
 def test_overflow_int(cursor: pyodbc.Cursor):
     # python allows integers of any size, bigger than an 8 byte int can contain
-    input = 9999999999999999999999999999999999999
+    value = 9999999999999999999999999999999999999
     cursor.execute("create table t1(d bigint)")
     with pytest.raises(OverflowError):
-        cursor.execute("insert into t1 values (?)", input)
+        cursor.execute("insert into t1 values (?)", value)
     result = cursor.execute("select * from t1").fetchall()
     assert result == []
 
@@ -128,9 +131,9 @@ def test_float(cursor: pyodbc.Cursor):
 
 def test_non_numeric_float(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(d float)")
-    for input in (float('+Infinity'), float('-Infinity'), float('NaN')):
+    for value in (float('+Infinity'), float('-Infinity'), float('NaN')):
         with pytest.raises(pyodbc.ProgrammingError):
-            cursor.execute("insert into t1 values (?)", input)
+            cursor.execute("insert into t1 values (?)", value)
 
 
 def test_drivers():
@@ -1045,14 +1048,14 @@ def test_description(cursor: pyodbc.Cursor):
     # int
     t = cursor.description[0]
     assert t[0] == 'n'
-    assert t[1] == int
+    assert t[1] is int
     assert t[5] == 0       # scale
     assert t[6] is True    # nullable
 
     # varchar(8)
     t = cursor.description[1]
     assert t[0] == 's'
-    assert t[1] == str
+    assert t[1] is str
     assert t[4] == 8       # precision
     assert t[5] == 0       # scale
     assert t[6] is True    # nullable
