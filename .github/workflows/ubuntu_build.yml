@@ -73,7 +73,7 @@ jobs:
       run: |
         echo "*** apt-get install the driver"
         sudo ACCEPT_EULA=Y apt-get install --yes msodbcsql18
-        echo '*** ls -l /usr/lib/x86_64-linux-gnu/odbc'
+        echo '*** ls -l /opt/microsoft/msodbcsql18/lib64'
         ls -l /opt/microsoft/msodbcsql18/lib64 || true
 
     - name: Install ODBC driver for PostgreSQL
@@ -110,7 +110,7 @@ jobs:
     - name: Install ODBC driver for SQLite3
       run: |
         echo "*** apt-get install the driver"
-        sudo apt install --yes libsqliteodbc
+        sudo apt-get install --yes libsqliteodbc
 
     - name: Check ODBC setup
       run: |
