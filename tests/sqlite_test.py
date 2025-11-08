@@ -704,3 +704,25 @@ def test_connect_dict_only():
 
     c = pyodbc.connect(driver=driver, database=':memory:')
     c.close()
+
+
+def test_pickling(cnxn: pyodbc.Connection):
+    crsr = cnxn.cursor()
+    crsr.execute("create table t1(n int, s varchar(20))")
+    crsr.execute("insert into t1 values (1, 'test1')")
+    crsr.execute("insert into t1 values (2, 'test2')")
+    cnxn.commit()
+    original_rows = crsr.execute("select n, s from t1").fetchall()
+
+    # connections cannot be pickled
+    with pytest.raises(TypeError, match=r"cannot pickle"):
+        pickle.dumps(cnxn)
+
+    # cursors cannot be pickled
+    with pytest.raises(TypeError, match=r"cannot pickle"):
+        pickle.dumps(crsr)
+
+    # rows can be pickled
+    pickled_rows = pickle.dumps(original_rows)
+    unpickled_rows = pickle.loads(pickled_rows)
+    assert unpickled_rows == original_rows
