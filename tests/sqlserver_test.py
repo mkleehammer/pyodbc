@@ -1,4 +1,5 @@
-#!/usr/bin/python
+# ignore naive dates/datetimes (DTZnnn):
+# ruff: noqa: DTZ001, DTZ005, DTZ011
 
 import os
 import re
@@ -32,7 +33,7 @@ def connect(autocommit=False, attrs_before=None):
 
 DRIVER = connect().getinfo(pyodbc.SQL_DRIVER_NAME)
 
-IS_FREEDTS   = bool(re.search('tsodbc', DRIVER, flags=re.IGNORECASE))
+IS_FREEDTS   = bool(re.search(r'tsodbc', DRIVER, flags=re.IGNORECASE))
 IS_MSODBCSQL = bool(re.search(r'(msodbcsql|sqlncli|sqlsrv32\.dll)', DRIVER, re.IGNORECASE))
 
 
@@ -236,7 +237,7 @@ def _test_vartype(cursor: pyodbc.Cursor, datatype):
     for length in lengths:
         cursor.execute("delete from t1")
 
-        encoding = (datatype in ('blob', 'varbinary')) and 'utf8' or None
+        encoding = 'utf8' if datatype in {'blob', 'varbinary'} else None
         value = _generate_str(length, encoding=encoding)
 
         try:
@@ -317,7 +318,7 @@ def test_nextset(cursor: pyodbc.Cursor):
 def test_nextset_with_raiserror(cursor: pyodbc.Cursor):
     cursor.execute("select i = 1; RAISERROR('c', 16, 1);")
     row = next(cursor)
-    assert 1 == row.i
+    assert row.i == 1
     with pytest.raises(pyodbc.ProgrammingError):
         cursor.nextset()
 
@@ -363,7 +364,7 @@ def test_decimal(cursor: pyodbc.Cursor):
 
         try:
             cursor.execute("drop table t1")
-        except:
+        except Exception:
             pass
 
         cursor.execute(f"create table t1(d decimal({precision}, {scale}))")
@@ -478,7 +479,7 @@ def test_negative_row_index(cursor: pyodbc.Cursor):
 
 
 def test_version():
-    assert 3 == len(pyodbc.version.split('.'))  # 1.3.1 etc.
+    assert len(pyodbc.version.split('.')) == 3  # 1.3.1 etc.
 
 
 @pytest.mark.skipif(IS_MSODBCSQL and SQLSERVER_YEAR < 2008,
@@ -956,7 +957,7 @@ def test_sqlserver_callproc(cursor: pyodbc.Cursor):
     try:
         cursor.execute("drop procedure pyodbctest")
         cursor.commit()
-    except:
+    except Exception:
         pass
 
     cursor.execute("create table t1(s varchar(10))")
@@ -1085,7 +1086,7 @@ def test_cursor_messages_with_print(cursor: pyodbc.Cursor):
         assert len(messages[0]) == 2
         assert isinstance(messages[0][0], str)
         assert isinstance(messages[0][1], str)
-        assert '[01000] (0)' == messages[0][0]
+        assert messages[0][0] == '[01000] (0)'
         assert messages[0][1].endswith(msg)
 
     # maximum size message
@@ -1361,7 +1362,7 @@ def test_large_update_nodata(cursor: pyodbc.Cursor):
 def test_func_param(cursor: pyodbc.Cursor):
     try:
         cursor.execute("drop function func1")
-    except:
+    except Exception:
         pass
     cursor.execute("""
                    create function func1 (@testparam varchar(4))
@@ -1502,16 +1503,16 @@ def _test_tvp(cursor: pyodbc.Cursor, diff_schema):
     # (Don't use "if exists" since older SQL Servers don't support it.)
     try:
         cursor.execute("drop procedure " + procname)
-    except:
+    except Exception:
         pass
     try:
         cursor.execute("drop type " + typename)
-    except:
+    except Exception:
         pass
     if diff_schema:
         try:
             cursor.execute("drop schema " + schemaname)
-        except:
+        except Exception:
             pass
     cursor.commit()
 
@@ -1651,7 +1652,7 @@ def test_sql_variant(cursor: pyodbc.Cursor):
         # pylint: disable=unidiomatic-typecheck
         expected_type, expected_value = assertion_tuple
 
-        assert type(results[index]) == expected_type
+        assert type(results[index]) is expected_type
         assert results[index] == expected_value
 
 
