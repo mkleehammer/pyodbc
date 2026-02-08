@@ -1,6 +1,7 @@
 name: Ubuntu build
 
-on: [push, pull_request]
+# include "workflow_dispatch" so this workflow can be run manually from the Actions portal
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
   run_tests:
