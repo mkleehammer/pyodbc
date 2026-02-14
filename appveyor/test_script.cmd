@@ -60,8 +60,7 @@ SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-%PYTHON_ARGS% "tests\sqlserver_test.py"
-IF ERRORLEVEL 1 SET OVERALL_RESULT=1
+%PYTHON_ARGS% "tests\sqlserver_test.py" || SET OVERALL_RESULT=1
 
 
 :mssql3
@@ -80,8 +79,7 @@ SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-%PYTHON_ARGS% "tests\sqlserver_test.py"
-IF ERRORLEVEL 1 SET OVERALL_RESULT=1
+%PYTHON_ARGS% "tests\sqlserver_test.py" || SET OVERALL_RESULT=1
 
 :mssql4
 SET DRIVER={ODBC Driver 13 for SQL Server}
@@ -99,8 +97,7 @@ SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-%PYTHON_ARGS% "tests\sqlserver_test.py"
-IF ERRORLEVEL 1 SET OVERALL_RESULT=1
+%PYTHON_ARGS% "tests\sqlserver_test.py" || SET OVERALL_RESULT=1
 
 :mssql5
 SET DRIVER={ODBC Driver 17 for SQL Server}
@@ -118,8 +115,7 @@ SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-%PYTHON_ARGS% "tests\sqlserver_test.py"
-IF ERRORLEVEL 1 SET OVERALL_RESULT=1
+%PYTHON_ARGS% "tests\sqlserver_test.py" || SET OVERALL_RESULT=1
 
 :mssql6
 SET DRIVER={ODBC Driver 18 for SQL Server}
@@ -137,8 +133,7 @@ SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-%PYTHON_ARGS% "tests\sqlserver_test.py"
-IF ERRORLEVEL 1 SET OVERALL_RESULT=1
+%PYTHON_ARGS% "tests\sqlserver_test.py" || SET OVERALL_RESULT=1
 
 
 :postgresql
@@ -174,8 +169,7 @@ SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-%PYTHON_ARGS% "tests\postgresql_test.py"
-IF ERRORLEVEL 1 SET OVERALL_RESULT=1
+%PYTHON_ARGS% "tests\postgresql_test.py" || SET OVERALL_RESULT=1
 
 
 :mysql
@@ -213,10 +207,11 @@ SET PYTHON_ARGS="%PYTHON_HOME%\python" -m pytest
 IF "%APVYR_VERBOSE%" == "true" (
   SET PYTHON_ARGS=%PYTHON_ARGS% --verbose
 )
-%PYTHON_ARGS% "tests\mysql_test.py"
-IF ERRORLEVEL 1 SET OVERALL_RESULT=1
+%PYTHON_ARGS% "tests\mysql_test.py" || SET OVERALL_RESULT=1
 
 
 :end
+ECHO.
+ECHO Overall Tests Result: %OVERALL_RESULT%
 ECHO.
 EXIT /B %OVERALL_RESULT%

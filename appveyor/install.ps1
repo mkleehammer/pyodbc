@@ -116,6 +116,17 @@ function CheckAndInstallZippedMsiFromUrl ($driver_name, $driver_bitness, $driver
     Write-Output "...driver installed successfully"
 }
 
+function ListOdbcDrivers () {
+    Get-OdbcDriver | ForEach-Object {
+        $driverFileName = $_.Attribute.Driver
+        if (Test-Path $driverFileName) {
+            $driverFile = Get-Item $driverFileName
+            Write-Output ("MSFT_OdbcDriver (Name = ""{0}"", Platform = ""{1}"", Version = ""{2}"")" -f $_.Name, $_.Platform, $driverFile.VersionInfo.ProductVersion)
+        } else {
+            Write-Output ("MSFT_OdbcDriver (Name = ""{0}"", Platform = ""{1}"")" -f $_.Name, $_.Platform)
+        }
+    } | Sort-Object
+}
 
 # get Python bitness
 $python_arch = cmd /c "${env:PYTHON_HOME}\python" -c "import sys; sys.stdout.write('64' if sys.maxsize > 2**32 else '32')"
@@ -141,7 +152,7 @@ if (-not (Test-Path $temp_dir)) {
 # output the already available ODBC drivers before installation
 Write-Output ""
 Write-Output "*** Installed ODBC drivers:"
-Get-OdbcDriver | ForEach-Object -Process {Write-Output "$_"} | Sort-Object
+ListOdbcDrivers
 
 
 # Microsoft SQL Server
@@ -232,4 +243,4 @@ Write-Output "*** Contents of the temporary directory: $temp_dir"
 Get-ChildItem $temp_dir
 Write-Output ""
 Write-Output "*** Installed ODBC drivers:"
-Get-OdbcDriver | ForEach-Object -Process {Write-Output "$_"} | Sort-Object
+ListOdbcDrivers
