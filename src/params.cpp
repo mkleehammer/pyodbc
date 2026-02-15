@@ -534,9 +534,15 @@ static void FreeInfos(ParamInfo* a, Py_ssize_t count)
     PyMem_Free(a);
 }
 
-static bool GetNullInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
+static bool GetNullInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info, bool isTVP)
 {
-    if (!GetParamType(cur, index, info.ParameterType))
+    // GetParamType won't work for TVP columns, so we fall back on SQL_VARCHAR.
+    if (isTVP)
+    {
+        if (info.ParameterType == SQL_UNKNOWN_TYPE)
+            info.ParameterType = SQL_VARCHAR;
+    }
+    else if (!GetParamType(cur, index, info.ParameterType))
         return false;
 
     info.ValueType     = SQL_C_DEFAULT;
@@ -1023,7 +1029,7 @@ bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo&
     // Populates `info`.
 
     if (param == Py_None)
-        return GetNullInfo(cur, index, info);
+        return GetNullInfo(cur, index, info, isTVP);
 
     if (param == null_binary)
         return GetNullBinaryInfo(cur, index, info);

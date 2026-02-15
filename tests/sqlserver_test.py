@@ -1,6 +1,7 @@
 # ignore naive dates/datetimes (DTZnnn):
 # ruff: noqa: DTZ001, DTZ005, DTZ011
 
+import gc
 import os
 import re
 import uuid
@@ -1616,6 +1617,53 @@ def test_tvp(cursor: pyodbc.Cursor):
 @pytest.mark.skipif(IS_FREEDTS, reason='FreeTDS does not support TVP')
 def test_tvp_diffschema(cursor: pyodbc.Cursor):
     _test_tvp(cursor, True)
+
+
+def _test_tvp_with_nulls_cleanup(cursor: pyodbc.Cursor, procname: str, typename: str):
+    """Leave the forest as pristine as you found it."""
+
+    cursor.execute(f"""\
+        IF OBJECT_ID(N'dbo.{procname}', N'P') IS NOT NULL
+        DROP PROCEDURE dbo.{procname};
+    """)
+    cursor.execute(f"""
+        IF TYPE_ID(N'dbo.{typename}') IS NOT NULL
+            DROP TYPE dbo.{typename};
+    """)
+
+
+@pytest.mark.skipif(SQLSERVER_YEAR < 2008, reason="TVP not supported until 2008")
+@pytest.mark.skipif(IS_FREEDTS, reason="FreeTDS does not support TVP")
+def test_tvp_with_nulls(cursor: pyodbc.Cursor):
+    """Make sure NULL values in a TVP don't crash the interpreter."""
+
+    # Start with a clean slate.
+    typename = "typeTestNullsInTVP"
+    procname = "spTestNullsInTVP"
+    _test_tvp_with_nulls_cleanup(cursor, procname, typename)
+
+    # Create the custom type and stored procedure.
+    ncols = 100
+    cols = ", ".join([f"col_{c:03d} DECIMAL(36,20)" for c in range(1, ncols+1)])
+    cursor.execute(f"CREATE TYPE dbo.{typename} AS TABLE ({cols})")
+    cursor.execute(f"""\
+        CREATE PROCEDURE dbo.{procname}
+            @data dbo.{typename} READONLY
+        AS
+        BEGIN
+            RETURN 0;
+        END;
+    """)
+    cursor.commit()
+
+    # Invoke the stored procedure.
+    tvp: list[list] = [[3.14159] * ncols, [None] * ncols]
+    cursor.execute(f"EXEC [dbo].{procname} @data=?", [tvp])
+    gc.collect()
+
+    # Be a good digital citizen.
+    _test_tvp_with_nulls_cleanup(cursor, procname, typename)
+    cursor.commit()
 
 
 @pytest.mark.skipif(SQLSERVER_YEAR < 2000, reason='sql_variant not supported until 2000')
