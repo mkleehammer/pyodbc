@@ -53,6 +53,10 @@ jobs:
 
     steps:
 
+    # to ensure the drivers are installed correctly with apt-get
+    - name: apt-get update
+      run: sudo apt-get update
+
     - name: Start MySQL service
       run: |
         sudo systemctl start mysql.service
