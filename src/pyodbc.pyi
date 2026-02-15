@@ -620,14 +620,16 @@ class Cursor:
         ...
 
     def execute(self, sql: str, *params: Any) -> Cursor:
-        """Run a SQL query and return the cursor.
+        """Run a SQL query and return the cursor.  If the query returns multiple result
+        sets (generally because the SQL query contained multiple statements), retrieve
+        them by making multiple calls to the nextset() function.
 
         Args:
             sql: The SQL query.
             *params: Any parameters for the SQL query, as positional arguments or a single iterable.
 
         Returns:
-            The cursor, so that calls on the cursor can be chained.
+            The cursor, hence calls on the cursor can be chained.
         """
         ...
 
@@ -689,8 +691,8 @@ class Cursor:
         ...
 
     def nextset(self) -> bool:
-        """Switch to the next result set in the SQL query (e.g. if there are
-        multiple SELECT statements in the SQL script).
+        """Switch to the next result set returned by the SQL query (this happens when
+        there are multiple statements within the SQL query that was just executed).
 
         Returns:
             True if there are more result sets, False otherwise.
