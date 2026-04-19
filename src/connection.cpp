@@ -13,6 +13,7 @@
 #include "textenc.h"
 #include "connection.h"
 #include "cursor.h"
+#include "bcp.h"
 #include "pyodbcmodule.h"
 #include "errors.h"
 #include "cnxninfo.h"
@@ -213,6 +214,9 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeou
         }
     }
 
+    // Find out if bcp is supported.  We have to do this *before* calling SQLDriverConnect().
+    bool bcp_enabled = SQL_SUCCEEDED(SQLSetConnectAttr(hdbc, SQL_COPT_SS_BCP, (void *)SQL_BCP_ON, SQL_IS_INTEGER));
+
     if (!Connect(pConnectString, hdbc, timeout, encoding))
     {
         // Connect has already set an exception.
@@ -246,6 +250,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeou
 
     cnxn->hdbc         = hdbc;
     cnxn->nAutoCommit  = fAutoCommit ? SQL_AUTOCOMMIT_ON : SQL_AUTOCOMMIT_OFF;
+    cnxn->bcp_enabled  = bcp_enabled;
     cnxn->searchescape = 0;
     cnxn->maxwrite     = 0;
     cnxn->timeout      = 0;
@@ -1325,6 +1330,41 @@ static PyObject* Connection_setdecoding(PyObject* self, PyObject* args, PyObject
     Py_RETURN_NONE;
 }
 
+static char bcp_doc[] =
+    "bcp(self, action, table, datafile, /, **kwargs)\n\n"
+    "Required positional arguments\n"
+    "  action: BCP_IN or BCP_OUT\n"
+    "  table: required name of table to copy or populate\n"
+    "  datafile: path to table data file\n\n"
+    "Optional keyword arguments\n"
+    "  formatfile: custom specification for copying\n"
+    "  errorfile: used to report rows which failed import\n"
+    "  firstrow: used to skip past the first rows (1-based)\n"
+    "  lastrow: tells bcp to stop after processing the row at this position\n"
+    "  maxerrors: tells bcp to abort after detecting this many errors (default 10)";
+static PyObject* Connection_bcp(PyObject* self, PyObject* args, PyObject *kwargs)
+{
+    // Arguments.
+    BCP_OPTS opts;
+    opts.formatfile = Py_None;
+    opts.errorfile  = Py_None;
+    opts.firstrow   = Py_None;
+    opts.lastrow    = Py_None;
+    opts.maxerrors  = Py_None;
+
+    // First three arguments are positional-only.
+    static char* kwlist[] = { "", "", "", "formatfile", "errorfile", "firstrow", "lastrow", "maxerrors", NULL };
+
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwargs,
+            "lUO|OOOOO:bcp",
+            kwlist,
+            &opts.action, &opts.table, &opts.datafile,
+            &opts.formatfile, &opts.errorfile, &opts.firstrow, &opts.lastrow, &opts.maxerrors))
+        return NULL;
+
+    return _bcp_impl(self, opts);
+}
 
 
 static char enter_doc[] = "__enter__() -> self.";
@@ -1377,6 +1417,7 @@ static struct PyMethodDef Connection_methods[] =
     { "setdecoding",             (PyCFunction)Connection_setdecoding,     METH_VARARGS|METH_KEYWORDS, setdecoding_doc },
     { "setencoding",             (PyCFunction)Connection_setencoding,     METH_VARARGS|METH_KEYWORDS, 0 },
     { "set_attr",                Connection_set_attr,        METH_VARARGS, set_attr_doc   },
+    { "bcp",                     (PyCFunction)Connection_bcp,             METH_VARARGS|METH_KEYWORDS, bcp_doc },
     { "__enter__",               Connection_enter,           METH_NOARGS,  enter_doc      },
     { "__exit__",                Connection_exit,            METH_VARARGS, exit_doc       },
 

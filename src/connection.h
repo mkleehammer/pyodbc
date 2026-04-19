@@ -39,6 +39,9 @@ struct Connection
     // to insert NULLs into binary columns.
     bool supports_describeparam;
 
+    // True if the driver supports BCP.
+    bool bcp_enabled;
+
     // The column size of datetime columns, obtained from SQLGetInfo(), used to determine the datetime precision.
     int datetime_precision;
 

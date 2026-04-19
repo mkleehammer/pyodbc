@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from decimal import Decimal
 from datetime import date, time, datetime
 from functools import lru_cache
+from pathlib import Path
 
 import pyodbc
 import pytest
@@ -32,6 +33,7 @@ def connect(autocommit=False, attrs_before=None):
 
 
 DRIVER = connect().getinfo(pyodbc.SQL_DRIVER_NAME)
+DRIVER_VERSION = tuple(int(n) for n in connect().getinfo(pyodbc.SQL_DRIVER_VER).split("."))
 
 IS_FREEDTS   = bool(re.search(r'tsodbc', DRIVER, flags=re.IGNORECASE))
 IS_MSODBCSQL = bool(re.search(r'(msodbcsql|sqlncli|sqlsrv32\.dll)', DRIVER, re.IGNORECASE))
@@ -1654,6 +1656,101 @@ def test_sql_variant(cursor: pyodbc.Cursor):
 
         assert type(results[index]) is expected_type
         assert results[index] == expected_value
+
+
+@pytest.mark.skipif(IS_FREEDTS, reason="the FreeTDS driver does not provide the bcp_* functions")
+@pytest.mark.skipif(DRIVER_VERSION < (13, 2, 0), reason="earier drivers don't pass this test")
+def test_bcp(cursor: pyodbc.Cursor):
+    """Exercise Connection.bcp()"""
+
+    # Create two test tables and populate one of them.
+    sql = "create table {} (i int, t nvarchar(20), n numeric(5,2), d date)"
+    for table in ("t1", "t2"):
+        cursor.execute(sql.format(table))
+    test_data = (
+        (1, "turkey", Decimal('123.45'), date(2000, 1, 1)),
+        (2, "tofu", Decimal('234.56'), None),
+        (3, None, Decimal('345.67'), date(2000, 1, 3)),
+        (4, "Käse", None, date(2000, 1, 4)),
+    )
+    cursor.executemany("insert into t1 values (?, ?, ?, ?)", test_data)
+
+    # Make sure this fails for a non-existent table.
+    conn = cursor.connection
+    test_directory = Path(__file__).parent
+    datafile = test_directory / "test_native.bcp"
+    with pytest.raises(pyodbc.OperationalError):
+        conn.bcp(pyodbc.BCP_OUT, "__no_way_this_table_exists__", datafile)
+
+    # Round-trip the table data without specifying a format.
+    count_out = conn.bcp(pyodbc.BCP_OUT, "t1", datafile)
+    count_in = conn.bcp(pyodbc.BCP_IN, "t2", datafile)
+    assert count_out == len(test_data)
+    assert count_in == len(test_data)
+    cursor.execute("select * from t2 order by 1")
+    round_tripped = tuple(tuple(row) for row in cursor.fetchall())
+    assert round_tripped == test_data
+
+    # Round-trip table data using an explicitly-provided native format.
+    cursor.execute("truncate table t2")
+    fmtfile = test_directory / "bcp_native.fmt"
+    count_in = conn.bcp(pyodbc.BCP_IN, "t2", datafile, formatfile=fmtfile)
+    assert count_in == len(test_data)
+    cursor.execute("select * from t2 order by 1")
+    round_tripped = tuple(tuple(row) for row in cursor.fetchall())
+    assert round_tripped == test_data
+
+    # Round-trip table data using an explicitly-provided character format.
+    # Also test passing str objects directly instead of pathlib.Path arguments.
+    cursor.execute("truncate table t2")
+    fmtfile = test_directory / "bcp_character.fmt"
+    datafile = test_directory / "test_character.bcp"
+    count_out = conn.bcp(pyodbc.BCP_OUT, "t1", str(datafile), formatfile=str(fmtfile))
+    count_in = conn.bcp(pyodbc.BCP_IN, "t2", str(datafile), formatfile=str(fmtfile))
+    assert count_out == len(test_data)
+    assert count_in == len(test_data)
+    cursor.execute("select * from t2 order by 1")
+    round_tripped = tuple(tuple(row) for row in cursor.fetchall())
+    assert round_tripped == test_data
+
+    # Test restoring a subset of the data.
+    cursor.execute("truncate table t2")
+    count_in = conn.bcp(pyodbc.BCP_IN, "t2", datafile, formatfile=fmtfile, firstrow=2, lastrow=3)
+    cursor.execute("select * from t2 order by 1")
+    round_tripped = tuple(tuple(row) for row in cursor.fetchall())
+    assert round_tripped == test_data[1:3]
+
+    # See what happens when we deliberately introduce errors.
+    cursor.execute("truncate table t2")
+    character_data = datafile.read_text()
+    baddatafile = test_directory / "test_baddata.bcp"
+    flawed_data = character_data.replace("123.45", "chicken")
+    with open(baddatafile, "w", newline="\n") as f:
+        f.write(flawed_data)
+    errorfile = test_directory / "bcp.errors"
+    count_in = conn.bcp(pyodbc.BCP_IN, "t2", baddatafile, formatfile=fmtfile, errorfile=errorfile)
+    assert count_in == len(test_data) - 1
+    cursor.execute("select * from t2 order by 1")
+    round_tripped = tuple(tuple(row) for row in cursor.fetchall())
+    assert round_tripped == test_data[1:]
+    expected = (
+        "#@ Row 1, Column 3: Invalid character value for cast specification @#",
+        "1\tturkey\tchicken\t2000-01-01",
+    )
+    error_lines = errorfile.read_text().splitlines()
+    for i, line in enumerate(error_lines):
+        assert line == expected[i]
+
+    # Test override of the default error threshold: job should abort, leaving the table empty.
+    cursor.execute("truncate table t2")
+    flawed_data = flawed_data.replace("2000-01-04", "last Tuesday")
+    with open(baddatafile, "w", newline="\n") as f:
+        f.write(flawed_data)
+    with pytest.raises(pyodbc.OperationalError):
+        conn.bcp(pyodbc.BCP_IN, "t2", baddatafile, formatfile=fmtfile, maxerrors=1)
+    cursor.execute("select * from t2 order by 1")
+    round_tripped = tuple(tuple(row) for row in cursor.fetchall())
+    assert not round_tripped
 
 
 def get_sqlserver_version(cursor: pyodbc.Cursor):

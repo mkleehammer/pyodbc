@@ -2,6 +2,7 @@
 # ruff: noqa: E303, N802, N803
 from __future__ import annotations
 from collections.abc import Generator, Iterable, Iterator, Sequence
+from pathlib import Path
 from typing import Any, Callable, Final, Union
 
 
@@ -294,7 +295,6 @@ SQL_UNION: int
 SQL_USER_NAME: int
 SQL_XOPEN_CLI_YEAR: int
 
-
 # pyodbc-specific constants
 BinaryNull: Any  # to distinguish binary NULL values from char NULL values
 SQLWCHAR_SIZE: int
@@ -308,6 +308,10 @@ apilevel: Final[str] = '2.0'
 paramstyle: Final[str] = 'qmark'
 threadsafety: Final[int] = 1
 version: Final[str]  # not pep-0249
+
+# Bulk copy actions
+BCP_IN: Final[int] = 1
+BCP_OUT: Final[int] = 2
 
 # read-write (not pep-0249)
 lowercase: bool = False
@@ -510,6 +514,36 @@ class Connection:
     def close(self) -> None:
         """Close the connection.  Any uncommitted SQL statements will be rolled back."""
         ...
+
+    # method for bulk import/export of data
+
+    def bcp(self,
+            action: int,
+            table: str,
+            datafile: str | Path,
+            /, *,
+            formatfile: str | Path | None = None,
+            errorfile: str | Path | None = None,
+            firstrow: int | None = None,
+            lastrow: int | None = None,
+            maxerrors: int | None = None) -> int:
+        """Perform a bulk copy
+
+        Arguments:
+            action: pyodbc.BCP_IN or pyodbc.BCP_OUT
+            table: required name of table to copy or populate
+            datafile: path to table data file
+            formatfile: custom specification for copying
+            errorfile: used to report rows which failed import
+            firstrow: used to skip past the first rows (1-based)
+            lastrow: tells bcp to stop after processing the row at this position
+            maxerrors: tells bcp to abort after detecting this many errors (default 10)
+
+        Returns:
+            the number of rows copied
+        """
+        ...
+
 
 
 class Cursor:

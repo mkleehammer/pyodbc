@@ -62,3 +62,7 @@ xxx_*
 # The Access unit tests copy empty.accdb and empty.mdb to these names and use them.
 test.accdb
 test.mdb
+
+# Don't commit bcp test files.
+test*.bcp
+bcp.errors
