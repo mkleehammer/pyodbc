@@ -12,6 +12,8 @@
 #ifndef CONNECTION_H
 #define CONNECTION_H
 
+struct BcpProcs;
+
 struct Cursor;
 
 extern PyTypeObject ConnectionType;
@@ -31,6 +33,11 @@ struct Connection
     // The ODBC version the driver supports, from SQLGetInfo(DRIVER_ODBC_VER).  This is set after connecting.
     char odbc_major;
     char odbc_minor;
+
+    // BCP support, loaded on demand.
+    // If bcp.loaded is false, BCP is not supported.
+    // If bcp.loaded is true, all function pointers are valid.
+    BcpProcs* bcp;
 
     // The escape character from SQLGetInfo.  This is not initialized until requested, so this may be zero!
     PyObject* searchescape;
