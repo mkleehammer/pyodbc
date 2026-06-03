@@ -8,7 +8,7 @@ import os
 import random
 import re
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from decimal import Decimal
 from datetime import date, time, datetime
 from functools import lru_cache
@@ -39,6 +39,7 @@ DRIVER = connect().getinfo(pyodbc.SQL_DRIVER_NAME)
 DRIVER_VERSION = tuple(int(n) for n in connect().getinfo(pyodbc.SQL_DRIVER_VER).split("."))
 IS_FREETDS   = bool(re.search(r'(tsodbc|tdsodbc)', DRIVER, flags=re.IGNORECASE))
 IS_MSODBCSQL = bool(re.search(r'(msodbcsql|sqlncli|sqlsrv32\.dll)', DRIVER, re.IGNORECASE))
+IS_BCP_DRIVER = bool(re.search(r'msodbcsql', DRIVER, re.I)) and DRIVER_VERSION[0] >= 13
 
 
 def _get_sqlserver_year():
@@ -73,6 +74,33 @@ def cursor() -> Iterator[pyodbc.Cursor]:
     cur.execute("drop table if exists t2")
     cur.execute("drop table if exists t3")
     cnxn.commit()
+
+    yield cur
+
+    if not cnxn.closed:
+        cur.close()
+        cnxn.close()
+
+
+# The bulk copy (BCP) API needs a connection opened with SQL_COPT_SS_BCP.  The connection pool
+# matches on the connection string, so BCP connections get their own APP name; otherwise a
+# pooled connection opened without the attribute could be handed back.
+BCP_CNXNSTR = CNXNSTR + ';APP=pyodbc-bcp-tests'
+
+
+def bcp_connect(autocommit=True):
+    return pyodbc.connect(BCP_CNXNSTR, autocommit=autocommit,
+                          attrs_before={pyodbc.SQL_COPT_SS_BCP: pyodbc.SQL_BCP_ON})
+
+
+@pytest.fixture
+def bcp_cursor() -> Iterator[pyodbc.Cursor]:
+    cnxn = bcp_connect()
+    cur = cnxn.cursor()
+
+    cur.execute("set lock_timeout 30000")
+    cur.execute("drop table if exists t1")
+    cur.execute("drop table if exists t2")
 
     yield cur
 
@@ -1671,6 +1699,245 @@ def test_emoticons_as_literal(cursor: pyodbc.Cursor):
     result = cursor.execute("select s from t1").fetchone()[0]
 
     assert result == v
+
+
+_BCP_SKIP = 'BCP requires the Microsoft ODBC Driver 13 or later for SQL Server'
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_low_level_api(bcp_cursor: pyodbc.Cursor):
+    """The Connection.bcp_* methods load every host type, with NULLs, and report row counts."""
+    cur = bcp_cursor
+    cur.execute("""
+        create table t1(i2 smallint, i4 int, i8 bigint, f4 real, f8 float, b bit,
+                        n nvarchar(max), c varchar(20), v varbinary(20), u uniqueidentifier)
+    """)
+    cnxn = cur.connection
+    types = [pyodbc.SQLINT2, pyodbc.SQLINT4, pyodbc.SQLINT8, pyodbc.SQLFLT4, pyodbc.SQLFLT8,
+             pyodbc.SQLBIT, pyodbc.SQLNCHAR, pyodbc.SQLCHARACTER, pyodbc.SQLBINARY,
+             pyodbc.SQLUNIQUEID]
+    text = "Zürich 東京 \U0001D518"
+    rows = [
+        (1, 2, 2**40, 1.5, 0.1, True, text, "abc", b"\x00\xff", uuid.UUID(int=1)),
+        (None,) * 10,
+        (-1, -2, -3, -0.5, 1e300, False, "", b"xyz", bytearray(), uuid.UUID(int=2).bytes_le),
+    ]
+    cnxn.bcp_init("t1", keep_nulls=True)
+    ctx = cnxn.bcp_bind_columns(types)
+    for row in rows[:2]:
+        cnxn.bcp_setrow(ctx, row)
+        cnxn.bcp_sendrow()
+    assert cnxn.bcp_batch(ctx) == 2
+    with bcp_connect() as observer:
+        assert observer.execute("select count(*) from t1").fetchval() == 2
+    cnxn.bcp_setrow(ctx, list(rows[2]))
+    cnxn.bcp_sendrow()
+    assert cnxn.bcp_done() == 1
+
+    stored = [tuple(r) for r in cur.execute("select * from t1")]
+    assert stored[0] == (1, 2, 2**40, 1.5, 0.1, True, text, "abc", b"\x00\xff",
+                         "00000000-0000-0000-0000-000000000001")
+    assert stored[1] == (None,) * 10
+    assert stored[2] == (-1, -2, -3, -0.5, 1e300, False, "", "xyz", b"",
+                         "00000000-0000-0000-0000-000000000002")
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_low_level_api_manual_commit(bcp_cursor: pyodbc.Cursor):
+    """In manual-commit mode a low-level session's rows join the open transaction."""
+    bcp_cursor.execute("create table t1(id int)")
+    cnxn = bcp_connect(autocommit=False)
+    try:
+        cnxn.bcp_init("t1")
+        ctx = cnxn.bcp_bind_columns([pyodbc.SQLINT4])
+        for i in (1, 2):
+            cnxn.bcp_setrow(ctx, (i,))
+            cnxn.bcp_sendrow()
+        assert cnxn.bcp_done() == 2
+        assert cnxn.execute("select count(*) from t1").fetchval() == 2
+        cnxn.rollback()
+        assert bcp_cursor.execute("select count(*) from t1").fetchval() == 0
+    finally:
+        cnxn.close()
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_low_level_api_misuse(bcp_cursor: pyodbc.Cursor):
+    """Misuse of the Connection.bcp_* methods raises instead of corrupting data or memory."""
+    cur = bcp_cursor
+    cur.execute("create table t1(c varchar(10), b bit)")
+    cnxn = cur.connection
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_sendrow()
+    with pytest.raises(ValueError):
+        cnxn.bcp_init("t1", direction=2)
+
+    cnxn.bcp_init("t1")
+    with pytest.raises(ValueError):
+        cnxn.bcp_bind_columns([12345])
+    ctx = cnxn.bcp_bind_columns([pyodbc.SQLCHARACTER, pyodbc.SQLBIT])
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_bind_columns([pyodbc.SQLCHARACTER, pyodbc.SQLBIT])
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_sendrow()
+    cnxn.bcp_setrow(ctx, ("z", False))
+    with pytest.raises(ValueError):
+        cnxn.bcp_setrow(ctx, ("é", True))
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_sendrow()
+    with pytest.raises(ValueError):
+        cnxn.bcp_setrow(ctx, ("a", 5))
+    with pytest.raises(TypeError):
+        cnxn.bcp_setrow(ctx, ("a",))
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.autocommit = False
+    cnxn.bcp_setrow(ctx, ("a", True))
+    del ctx
+    gc.collect()
+    cnxn.bcp_sendrow()
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_sendrow()
+    assert cnxn.bcp_done() == 1
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_done()
+
+    other = bcp_connect()
+    other.bcp_init("t1")
+    stale = other.bcp_bind_columns([pyodbc.SQLCHARACTER, pyodbc.SQLBIT])
+    cnxn.bcp_init("t1")
+    with pytest.raises(ValueError):
+        cnxn.bcp_setrow(stale, ("x", True))
+    cnxn.bcp_done()
+    other.bcp_setrow(stale, ("b", False))
+    other.bcp_sendrow()
+    other.close()
+    with pytest.raises(pyodbc.ProgrammingError):
+        other.bcp_setrow(stale, ("c", True))
+    cur.execute("set lock_timeout 5000")
+    assert cur.execute("select count(*) from t1").fetchval() == 1
+
+
+class _ClosesConnection:
+    """A value whose conversion closes a connection, as a hostile __float__ might."""
+
+    def __init__(self, cnxn: pyodbc.Connection) -> None:
+        self.cnxn = cnxn
+
+    def __float__(self) -> float:
+        self.cnxn.close()
+        return 1.0
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_conversion_that_closes_the_connection(bcp_cursor: pyodbc.Cursor):
+    """
+    A value whose conversion closes the connection mid-row raises ProgrammingError instead of
+    using the connection's freed state.
+    """
+    bcp_cursor.execute("create table t1(f float, s nvarchar(10))")
+    victim = bcp_connect()
+    victim.bcp_init("t1")
+    ctx = victim.bcp_bind_columns([pyodbc.SQLFLT8, pyodbc.SQLNCHAR])
+    victim.bcp_setrow(ctx, (None, "first"))
+    with pytest.raises(pyodbc.ProgrammingError):
+        victim.bcp_setrow(ctx, (_ClosesConnection(victim), "second"))
+    assert victim.closed
+
+
+class _HostType:
+    """A host type whose __index__ runs `action` first, as a hostile int-like value might."""
+
+    def __init__(self, host_type: int, action: Callable[[], object]) -> None:
+        self.host_type = host_type
+        self.action = action
+
+    def __index__(self) -> int:
+        self.action()
+        return self.host_type
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_bind_columns_reads_its_types_once(bcp_cursor: pyodbc.Cursor):
+    """
+    bcp_bind_columns binds the types it was given even when reading one empties the list, and
+    raises when reading one closes the connection.
+    """
+    bcp_cursor.execute("create table t1(a int, b int)")
+    cnxn = bcp_connect()
+    types: list = [None, pyodbc.SQLINT4]
+    types[0] = _HostType(pyodbc.SQLINT4, types.clear)
+    cnxn.bcp_init("t1")
+    ctx = cnxn.bcp_bind_columns(types)
+    cnxn.bcp_setrow(ctx, (1, 2))
+    cnxn.bcp_sendrow()
+    assert cnxn.bcp_done() == 1
+
+    cnxn.bcp_init("t1")
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_bind_columns([_HostType(pyodbc.SQLINT4, cnxn.close), pyodbc.SQLINT4])
+    assert cnxn.closed
+    assert [tuple(row) for row in bcp_cursor.execute("select a, b from t1")] == [(1, 2)]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_autocommit_is_checked_after_its_value(bcp_cursor: pyodbc.Cursor):
+    """Setting autocommit to a value whose truth test opens a BCP session raises."""
+    bcp_cursor.execute("create table t1(a int)")
+    cnxn = bcp_connect()
+
+    class OpensSession:
+        def __bool__(self) -> bool:
+            cnxn.bcp_init("t1")
+            return False
+
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.autocommit = OpensSession()
+    assert cnxn.autocommit
+    cnxn.bcp_done()
+    cnxn.close()
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_init_table_name_and_hints(bcp_cursor: pyodbc.Cursor):
+    """
+    A table name or hints with a NUL raise rather than reach the driver cut short, and hints
+    naming a non-ASCII column reach the server intact: rows out of an ORDER hint's order fail.
+    """
+    cur = bcp_cursor
+    cur.execute("create table t1(Größe int primary key)")
+    cnxn = cur.connection
+    with pytest.raises(ValueError):
+        cnxn.bcp_init("t1\x00other")
+    with pytest.raises(ValueError):
+        cnxn.bcp_init("t1", hints="TABLOCK\x00")
+    for rows in ((1, 2), (4, 3)):
+        cnxn.bcp_init("t1", hints="ORDER([Größe] ASC)")
+        ctx = cnxn.bcp_bind_columns([pyodbc.SQLINT4])
+        for i in rows:
+            cnxn.bcp_setrow(ctx, (i,))
+            cnxn.bcp_sendrow()
+        if rows == (1, 2):
+            assert cnxn.bcp_done() == 2
+        else:
+            with pytest.raises(pyodbc.ProgrammingError, match="sorted"):
+                cnxn.bcp_done()
+    assert [row[0] for row in cur.execute("select Größe from t1 order by 1")] == [1, 2]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_low_level_api_batch_rows(bcp_cursor: pyodbc.Cursor):
+    """bcp_init's batch_rows ends a batch every batch_rows rows, and a failing batch raises."""
+    cur = bcp_cursor
+    cur.execute("create table t1(id int primary key)")
+    cnxn = cur.connection
+    cnxn.bcp_init("t1", batch_rows=2)
+    ctx = cnxn.bcp_bind_columns([pyodbc.SQLINT4])
+    with pytest.raises(pyodbc.IntegrityError):
+        for i in (1, 2, 3, 3):
+            cnxn.bcp_setrow(ctx, (i,))
+            cnxn.bcp_sendrow()
+    cnxn.bcp_done()
+    assert [r[0] for r in cur.execute("select id from t1 order by id")] == [1, 2]
 
 
 def _test_tvp(cursor: pyodbc.Cursor, diff_schema):
