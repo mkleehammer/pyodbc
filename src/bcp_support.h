@@ -1,7 +1,7 @@
 #pragma once
 
-// SQL Server bulk copy (BCP) support for the low-level Connection.bcp_* methods
-// (connection.cpp).  Include after pyodbc.h.
+// SQL Server bulk copy (BCP) support shared by the fast executemany path (bcp_executemany.cpp)
+// and the low-level Connection.bcp_* methods (connection.cpp).  Include after pyodbc.h.
 //
 // The BCP entry points are exported by the Microsoft ODBC driver itself rather than the driver
 // manager, so they are resolved from the loaded driver at run time and no SQL Server SDK
@@ -75,6 +75,25 @@ typedef int DBINT;
 #endif
 
 struct Connection;
+struct Cursor;
+
+/** Imports the datetime C API for the fast executemany path; called once at module load. */
+void BcpExecuteMany_init();
+
+/**
+ * Carries out Cursor.executemany with the BCP API, for a cursor with use_bcp_fast set.
+ *
+ * Everything that could make BCP store something other than the plain fast_executemany path
+ * would is checked before the bulk copy starts, in which case false is returned so the caller
+ * runs the plain path.  That includes the setinputsizes entries in effect, under which the
+ * plain path sends each value as the entry's type for the server to convert.  Once rows are
+ * being sent, any failure rolls back everything this call sent (its own transaction in
+ * autocommit mode, a savepoint otherwise) and raises.
+ *
+ * @return false to fall back to the plain path (no Python exception set), true when handled:
+ *         either done, with cur->rowcount set, or failed with a Python exception set.
+ */
+bool ExecuteMulti_BCP(Cursor* cur, PyObject* pSql, PyObject* param_seq);
 
 /** The driver's BCP entry points. */
 struct BcpProcs
@@ -97,11 +116,13 @@ struct BcpProcs
  * In autocommit mode the session runs in its own transaction (`ownsTransaction`), committed by
  * each batch, so rows sent since the last batch can be discarded rather than committed.
  * `rowReady` is set by a successful bcp_setrow and cleared by bcp_sendrow, so a row is never
- * sent half converted or twice by mistake.
+ * sent half converted or twice by mistake.  `driverVersion` is the driver's major version times
+ * 100 plus its minor version (1704 for 17.4), or 0 if unknown.
  */
 struct BcpState
 {
     bool loaded;
+    int driverVersion;
     BcpProcs procs;
     bool sessionOpen;
     bool ownsTransaction;
@@ -141,6 +162,49 @@ struct BcpCtx
 };
 
 /**
+ * A parsed `INSERT [INTO] [[catalog.]schema.]table [(columns)] VALUES (?, ...)` statement.
+ *
+ * Names are unquoted UTF-8; catalog and schema are empty when omitted.
+ */
+struct BcpInsert
+{
+    char catalog[520];
+    char schema[520];
+    char table[520];
+    char** names;
+    int nnames;
+    int nmarkers;
+};
+
+/**
+ * One column of the destination table, from its catalog metadata.  codePage is that of the
+ * column's collation (65001 for a UTF-8 one), or 0 for a column without a collation.
+ */
+struct BcpTargetColumn
+{
+    SQLWCHAR name[129];
+    int systemType;
+    int maxLength;
+    int scale;
+    int codePage;
+    bool identity;
+    bool computed;
+    bool hasDefault;
+};
+
+/**
+ * The columns of a destination user table, in table order, with whether it has an enabled
+ * INSERT trigger and whether its database compares identifiers ignoring case.
+ */
+struct BcpTarget
+{
+    int ncols;
+    BcpTargetColumn* cols;
+    bool hasInsertTrigger;
+    bool caseInsensitive;
+};
+
+/**
  * Resolves the driver's BCP entry points once per connection.
  *
  * @return true if the driver exports them; false if not, or on allocation failure (with a
@@ -148,11 +212,62 @@ struct BcpCtx
  */
 bool BcpEnsureLoaded(Connection* cnxn);
 
+/** Returns true if the connection was opened with SQL_COPT_SS_BCP enabled. */
+bool BcpIsEnabled(HDBC hdbc);
+
 /** Switches the connection's autocommit mode, leaving the diagnostics on the hdbc on failure. */
 bool BcpSetAutocommit(HDBC hdbc, bool on);
 
 /** Commits or rolls back the connection's transaction, leaving the diagnostics on failure. */
 bool BcpEndTransaction(HDBC hdbc, bool commit);
+
+/**
+ * Parses an INSERT statement the fast path can carry out with BCP.
+ *
+ * Only a single parameterized VALUES row of bare ? markers is accepted, optionally followed
+ * by a semicolon: anything else (TOP, hints, OUTPUT, SELECT/EXEC sources, DEFAULT VALUES,
+ * literals or expressions, several rows, further statements) means BCP would not do what the
+ * statement says.
+ *
+ * @return 1 if parsed, 0 if the statement is not one BCP can carry out, or -1 on allocation
+ *         failure (Python exception set).  On success free with BcpFreeInsert.
+ */
+int BcpParseInsert(const char* sql, BcpInsert* out);
+
+/** Frees the column names of a parsed INSERT. */
+void BcpFreeInsert(BcpInsert* ins);
+
+/**
+ * Converts a UTF-8 string to a PyMem-allocated, NUL-terminated UTF-16LE SQLWCHAR string.
+ *
+ * @return NULL with a Python exception set on failure.
+ */
+SQLWCHAR* BcpUtf8ToSqlWChar(const char* s);
+
+/**
+ * Builds the bracket-quoted name of the INSERT's table, e.g. "[db].[dbo].[t]".
+ *
+ * @return A PyMem-allocated, NUL-terminated SQLWCHAR string, or NULL with a Python exception set.
+ */
+SQLWCHAR* BcpQuotedTableName(const BcpInsert& ins);
+
+/**
+ * Loads the destination columns of a parsed INSERT from the catalog views.
+ *
+ * Temporary tables are looked up in tempdb and three-part names in their own database.  The
+ * target also records whether the table has an enabled INSERT trigger and whether its database
+ * compares identifiers ignoring case.  With
+ * `setSavepoint`, the same round trip also sets the savepoint `pyodbc_bcp` in the caller's
+ * transaction, for the fast path to roll back to if a load fails in manual-commit mode; an
+ * unused savepoint is harmless, so this costs nothing when the load falls back.
+ *
+ * @return 1 if the target is a user table whose columns are visible, 0 otherwise, or -1 on
+ *         allocation failure (Python exception set).  On success free with BcpFreeTarget.
+ */
+int BcpLoadTarget(Connection* cnxn, const BcpInsert& ins, bool setSavepoint, BcpTarget* out);
+
+/** Frees the columns of a loaded target. */
+void BcpFreeTarget(BcpTarget* target);
 
 /**
  * Sizes and allocates a column's buffer.
@@ -189,6 +304,9 @@ bool BcpPutBytes(Connection* cnxn, BcpCol* c, const void* data, Py_ssize_t n);
  * the same value: exact for ASCII and for the data of a 1-byte (Latin-1) str.
  */
 bool BcpPutWidened(Connection* cnxn, BcpCol* c, const unsigned char* text, Py_ssize_t n);
+
+/** Writes a str as UTF-16LE into a SQLNCHAR column. */
+bool BcpPutWideStr(Connection* cnxn, BcpCol* c, PyObject* s);
 
 /**
  * A low-level API value converted for its column, ready to be written without running any

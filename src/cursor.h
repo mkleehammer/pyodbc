@@ -98,6 +98,16 @@ struct Cursor
     // Set to SQL_NULL_HANDLE when the cursor is closed.
     HSTMT hstmt;
 
+    // If true, fast executemany loads INSERTs with the SQL Server bulk copy API when it can.
+    bool use_bcp_fast = false;
+
+    // Rows per BCP batch; 0 sends all rows as one batch.
+    long bcp_batch_rows = 0;
+
+    // If true, the BCP fast path passes the TABLOCK hint, which enables a bulk-update
+    // lock and (with a SIMPLE/BULK_LOGGED recovery model + heap) minimal logging.
+    bool bcp_tablock = false;
+
     //
     // SQL Parameters
     //
