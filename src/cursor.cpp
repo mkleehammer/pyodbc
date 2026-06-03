@@ -1123,6 +1123,25 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
         if (cursor->fastexecmany)
         {
             free_results(cursor, FREE_STATEMENT | KEEP_PREPARED);
+            // Prefer the BCP fast path if BCP is enabled.
+            // If BCP is not handled properly, fall back to the standard execute-many path.
+            // If BCP is handled but errors occur, finalize and propagate the errors.
+            // If BCP completes successfully, return None.
+            if (cursor->use_bcp_fast)
+            {
+                bool bcp_ok = ExecuteMulti_BCP(cursor, pSql, param_seq);
+                if (bcp_ok)
+                {
+                    if (PyErr_Occurred())
+                        return NULL;
+                    cursor->rowcount = -1;
+                    Py_RETURN_NONE;
+                }
+                if (PyErr_Occurred())
+                    return 0;
+                // ExecuteMulti_BCP returned false: BCP isn't usable for this
+                // statement (e.g. not a parseable INSERT) -- fall back below.
+            }
             if (!ExecuteMulti(cursor, pSql, param_seq))
                 return 0;
         }
@@ -2520,6 +2539,9 @@ static PyMemberDef Cursor_members[] =
     {"fast_executemany",T_BOOL,  offsetof(Cursor, fastexecmany),    0,        fastexecmany_doc },
     {"messages",    T_OBJECT_EX, offsetof(Cursor, messages),        READONLY, messages_doc },
     {"rows_as_dicts", T_BOOL,    offsetof(Cursor, rows_as_dicts),   0,        rowsasdicts_doc },
+    {"use_bcp_fast", T_BOOL,     offsetof(Cursor, use_bcp_fast), 0, "Prefer BCP for fast_executemany" },
+    {"bcp_batch_rows", T_LONG,   offsetof(Cursor, bcp_batch_rows), 0, "Number of rows per batch when using BCP" },
+    {"bcp_tablock",  T_BOOL,     offsetof(Cursor, bcp_tablock), 0, "Pass the TABLOCK hint when using BCP (enables minimal logging)" },
     { 0 }
 };
 
@@ -2825,6 +2847,9 @@ Cursor_New(Connection* cnxn)
         cur->fastexecmany      = 0;
         cur->rows_as_dicts     = 0;
         cur->messages          = Py_None;
+        cur->use_bcp_fast      = false;
+        cur->bcp_batch_rows    = 0;
+        cur->bcp_tablock       = false;
 
         Py_INCREF(cnxn);
         Py_INCREF(cur->description);

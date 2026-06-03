@@ -98,6 +98,16 @@ struct Cursor
     // Set to SQL_NULL_HANDLE when the cursor is closed.
     HSTMT hstmt;
 
+    // If true, fast executemany will default to using BCP if available.
+    bool use_bcp_fast = false;
+    
+    // BCP configuration
+    long bcp_batch_rows = 0;            // amount of rows per batch, 0 means driver default (no batching)
+
+    // If true, the BCP fast path passes the TABLOCK hint, which enables a bulk-update
+    // lock and (with a SIMPLE/BULK_LOGGED recovery model + heap) minimal logging.
+    bool bcp_tablock = false;
+
     //
     // SQL Parameters
     //
