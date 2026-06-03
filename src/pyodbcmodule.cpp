@@ -313,6 +313,7 @@ static bool import_types()
     GetData_init();
     if (!Params_init())
         return false;
+    BcpExecuteMany_init();
     if (!InitializeDecimal())
         return false;
 

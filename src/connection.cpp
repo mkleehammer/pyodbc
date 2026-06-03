@@ -1735,6 +1735,10 @@ static Connection* ConnectionWithBcp(PyObject* self)
             PyErr_SetString(PyExc_NotImplementedError, "BCP needs the Microsoft ODBC Driver 13 or later for SQL Server.");
         return 0;
     }
+    if (cnxn->bcp->fastLoad) {
+        PyErr_SetString(ProgrammingError, "A fast_executemany BCP load is running on this connection.");
+        return 0;
+    }
     return cnxn;
 }
 
