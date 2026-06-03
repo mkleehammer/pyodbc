@@ -21,6 +21,7 @@
 #include "params.h"
 #include "dbspecific.h"
 #include "decimal.h"
+#include "bcp_support.h"
 #include <datetime.h>
 
 #include <time.h>
@@ -1210,6 +1211,21 @@ static const ConstantDef aConstants[] = {
     MAKECONST(SQL_OJ_NOT_ORDERED),
     MAKECONST(SQL_OJ_INNER),
     MAKECONST(SQL_OJ_ALL_COMPARISON_OPS),
+
+    // SQL Server bulk copy (BCP)
+    MAKECONST(SQL_COPT_SS_BCP),
+    MAKECONST(SQL_BCP_ON),
+    MAKECONST(DB_IN),
+    MAKECONST(SQLBIT),
+    MAKECONST(SQLINT2),
+    MAKECONST(SQLINT4),
+    MAKECONST(SQLINT8),
+    MAKECONST(SQLFLT4),
+    MAKECONST(SQLFLT8),
+    MAKECONST(SQLBINARY),
+    MAKECONST(SQLUNIQUEID),
+    MAKECONST(SQLCHARACTER),
+    MAKECONST(SQLNCHAR),
 };
 
 
