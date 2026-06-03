@@ -666,6 +666,41 @@ class Cursor:
         ...
 
     @property
+    def use_bcp_fast(self) -> bool:
+        """With fast_executemany, load SQL Server INSERTs with the bulk copy (BCP) API whenever
+        that stores the same data as the plain path; otherwise the plain path runs.  The
+        connection must be opened with attrs_before={pyodbc.SQL_COPT_SS_BCP:
+        pyodbc.SQL_BCP_ON}, or the plain path runs; connection pooling matches on the
+        connection string alone, so give BCP connections their own (e.g. a distinct APP=).  A
+        failed load is rolled back in full and raised, and after a load rowcount is the number
+        of rows copied."""
+        ...
+
+    @use_bcp_fast.setter
+    def use_bcp_fast(self, value: bool) -> None:
+        ...
+
+    @property
+    def bcp_batch_rows(self) -> int:
+        """Rows per BCP batch; 0 sends all rows as one batch.  In autocommit mode each
+        completed batch is committed, and a failure discards only the batch it occurred in."""
+        ...
+
+    @bcp_batch_rows.setter
+    def bcp_batch_rows(self, value: int) -> None:
+        ...
+
+    @property
+    def bcp_tablock(self) -> bool:
+        """Pass the TABLOCK hint when using BCP, which takes a bulk-update table lock and allows
+        minimal logging."""
+        ...
+
+    @bcp_tablock.setter
+    def bcp_tablock(self, value: bool) -> None:
+        ...
+
+    @property
     def rows_as_dicts(self) -> bool:
         """If True, rows are returned as dicts instead of Row objects."""
         ...

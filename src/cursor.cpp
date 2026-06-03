@@ -22,6 +22,7 @@
 #include "params.h"
 #include "errors.h"
 #include "getdata.h"
+#include "bcp_support.h"
 #include "dbspecific.h"
 #include <datetime.h>
 
@@ -1123,6 +1124,14 @@ static PyObject* Cursor_executemany(PyObject* self, PyObject* args)
         if (cursor->fastexecmany)
         {
             free_results(cursor, FREE_STATEMENT | KEEP_PREPARED);
+            // The BCP fast path loads the rows with the SQL Server bulk copy API when it can
+            // store exactly what the path below would, and otherwise declines so that path runs.
+            if (cursor->use_bcp_fast && ExecuteMulti_BCP(cursor, pSql, param_seq))
+            {
+                if (PyErr_Occurred())
+                    return 0;
+                Py_RETURN_NONE;
+            }
             if (!ExecuteMulti(cursor, pSql, param_seq))
                 return 0;
         }
@@ -2520,6 +2529,17 @@ static PyMemberDef Cursor_members[] =
     {"fast_executemany",T_BOOL,  offsetof(Cursor, fastexecmany),    0,        fastexecmany_doc },
     {"messages",    T_OBJECT_EX, offsetof(Cursor, messages),        READONLY, messages_doc },
     {"rows_as_dicts", T_BOOL,    offsetof(Cursor, rows_as_dicts),   0,        rowsasdicts_doc },
+    {"use_bcp_fast", T_BOOL,     offsetof(Cursor, use_bcp_fast), 0,
+     "With fast_executemany, load SQL Server INSERTs with the bulk copy (BCP) API whenever that stores the\n"
+     "same data as the plain path; the connection must be opened with\n"
+     "attrs_before={pyodbc.SQL_COPT_SS_BCP: pyodbc.SQL_BCP_ON}, or the plain path runs.  Connection\n"
+     "pooling matches on the connection string alone, so give BCP connections their own (e.g. a distinct\n"
+     "APP=).  A failed load is rolled back in full and raised, and after a load rowcount is the number of\n"
+     "rows copied." },
+    {"bcp_batch_rows", T_LONG,   offsetof(Cursor, bcp_batch_rows), 0,
+     "Rows per BCP batch; 0 sends all rows as one batch.  In autocommit mode each completed batch is\n"
+     "committed, and a failure discards only the batch it occurred in." },
+    {"bcp_tablock",  T_BOOL,     offsetof(Cursor, bcp_tablock), 0, "Pass the TABLOCK hint when using BCP (enables minimal logging)" },
     { 0 }
 };
 
@@ -2825,6 +2845,9 @@ Cursor_New(Connection* cnxn)
         cur->fastexecmany      = 0;
         cur->rows_as_dicts     = 0;
         cur->messages          = Py_None;
+        cur->use_bcp_fast      = false;
+        cur->bcp_batch_rows    = 0;
+        cur->bcp_tablock       = false;
 
         Py_INCREF(cnxn);
         Py_INCREF(cur->description);
