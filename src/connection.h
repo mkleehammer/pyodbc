@@ -12,6 +12,8 @@
 #ifndef CONNECTION_H
 #define CONNECTION_H
 
+struct BcpState;
+
 struct Cursor;
 
 extern PyTypeObject ConnectionType;
@@ -31,6 +33,9 @@ struct Connection
     // The ODBC version the driver supports, from SQLGetInfo(DRIVER_ODBC_VER).  This is set after connecting.
     char odbc_major;
     char odbc_minor;
+
+    // SQL Server bulk copy (BCP) state, allocated the first time BCP is used (see bcp_support.h).
+    BcpState* bcp;
 
     // The escape character from SQLGetInfo.  This is not initialized until requested, so this may be zero!
     PyObject* searchescape;
