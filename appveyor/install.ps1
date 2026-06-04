@@ -220,12 +220,13 @@ CheckAndInstallMsiFromUrl `
 # 18.5     : https://download.microsoft.com/download/26bc9eb1-ba24-4b62-8274-bff0f935bb75/amd64/1033/msodbcsql.msi (2025-03-17)
 # 18.5.2   : https://download.microsoft.com/download/48a8e0c3-556b-4012-ba65-fcea935447f2/amd64/1033/msodbcsql.msi (2025-09-26)
 # 18.6     : https://download.microsoft.com/download/8d6e3acc-bf5b-41fe-ad51-a9ad406a780f/amd64/1033/msodbcsql.msi (2025-12-17)
-# NOTE 2026-02-14: version 18.6.1.1 causes the MS SQL _test_tvp() unit test to raise an access violation fault, so using 18.5.2 for the time being
+# 18.6.2   : https://download.microsoft.com/download/7bf9fad4-0f21-486d-a750-fc990ded5624/amd64/1033/msodbcsql.msi (2026-03-31)
+# NOTE: 18.6.1.1 caused an access violation in the MS SQL _test_tvp() unit test (#1459); fixed in 18.6.2.1
 CheckAndInstallMsiFromUrl `
     -driver_name "ODBC Driver 18 for SQL Server" `
     -driver_bitness "64-bit" `
-    -driver_url "https://download.microsoft.com/download/48a8e0c3-556b-4012-ba65-fcea935447f2/amd64/1033/msodbcsql.msi" `
-    -msifile_path "$cache_dir\msodbcsql_18.5.2.1_x64.msi" `
+    -driver_url "https://download.microsoft.com/download/7bf9fad4-0f21-486d-a750-fc990ded5624/amd64/1033/msodbcsql.msi" `
+    -msifile_path "$cache_dir\msodbcsql_18.6.2.1_x64.msi" `
     -msiexec_paras @("IACCEPTMSODBCSQLLICENSETERMS=YES", "ADDLOCAL=ALL");
 
 # some drivers must be installed in alignment with Python's bitness
