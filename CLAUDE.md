@@ -8,7 +8,7 @@ repository.
 pyodbc is a Python module implementing the DB API 2.0 spec on top of ODBC. It is a **C++
 extension** (everything in `src/` compiles into a single `pyodbc` shared library); there is no
 Python source for the runtime — `src/pyodbc.pyi` is only a type stub. The package targets
-Python 3.9+ and links against an ODBC driver manager (unixODBC/iODBC on Unix, built-in on
+Python 3.10+ and links against an ODBC driver manager (unixODBC/iODBC on Unix, built-in on
 Windows, via `odbc_config`).
 
 ## Build & test
@@ -29,7 +29,7 @@ python setup.py build_ext --inplace -D PYODBC_TRACE
 pytest tests/sqlite_test.py -vxs -k test_text
 ```
 
-Full multi-version test matrix uses tox (`pipx install tox`), covering py39–py314:
+Full multi-version test matrix uses tox (`pipx install tox`), covering py310–py314:
 
 ```sh
 tox                 # all interpreters + all databases

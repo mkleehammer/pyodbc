@@ -2,7 +2,7 @@
 # https://peps.python.org/pep-0508/
 # https://peps.python.org/pep-0440/
 
-pytest ~= 7.3
+pytest >= 9.0.3   # 9.0.3 fixes GHSA-6w46-j5rx-g56g (tmpdir handling); requires Python 3.10+
 
 # I'm going to try leaving the versions off since we're supporting drastically different Python
 # versions.  I want the most up to date I can get in each, at least until one of them makes a

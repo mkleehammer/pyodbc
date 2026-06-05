@@ -56,7 +56,7 @@ def main():
         package_dir={'': 'src'},
         package_data={'': ['pyodbc.pyi']},  # places pyodbc.pyi alongside pyodbc.{platform}.{pyd|so} in site-packages
         license='MIT-0',
-        python_requires='>=3.9',
+        python_requires='>=3.10',
         classifiers=['Development Status :: 5 - Production/Stable',
                      'Intended Audience :: Developers',
                      'Intended Audience :: System Administrators',
