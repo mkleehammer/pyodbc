@@ -119,11 +119,22 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
     }
     else if (PyByteArray_Check(value))
     {
-        // Keep the value alive beyond this function invocation's lifetime.
-        if (PyList_Append(keepalives, value))  // OOM
-            return false;
-        ivalue = (SQLPOINTER)PyByteArray_AsString(value);
+        // A bytearray is mutable: PyByteArray_AsString returns a pointer into its internal
+        // storage, which a concurrent resize (.extend(), +=, slice assignment) reallocates,
+        // invalidating the pointer we hand to the driver.  Some drivers read the buffer late
+        // (during SQLDriverConnectW, after the GIL has been released), so snapshot the contents
+        // into an immutable bytes and keep that alive instead -- matching the bytes/str paths
+        // and closing the race for the bytearray case.
+        // https://github.com/mkleehammer/pyodbc/issues/1497
+        Object po(PyBytes_FromObject(value));
+        if (!po)
+            return false;  // OOM
+        ivalue = (SQLPOINTER)PyBytes_AsString(po);
         vallen = SQL_IS_POINTER;
+        // PyList_Append increments the refcount, so the list owns the snapshot for as long as
+        // the driver needs it; po releases our own reference when it goes out of scope.
+        if (PyList_Append(keepalives, po))  // OOM
+            return false;
     }
     else if (PyBytes_Check(value))
     {
@@ -135,16 +146,14 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
     }
     else if (PyUnicode_Check(value))
     {
-        PyObject* po = PyUnicode_AsEncodedString(value, strencoding ? strencoding : "utf-16le", "strict");
+        Object po(PyUnicode_AsEncodedString(value, strencoding ? strencoding : "utf-16le", "strict"));
         if (!po)
             return false;  // OOM
         ivalue = (SQLPOINTER)PyBytes_AsString(po);
         vallen = SQL_NTS;
-        // Keep the value alive beyond this function invocation's lifetime ...
-        int failed = PyList_Append(keepalives, po);
-        // ... but not forever.
-        Py_DECREF(po);
-        if (failed)  // OOM
+        // PyList_Append increments the refcount, so the list owns the encoded buffer for as long
+        // as the driver needs it; po releases our own reference when it goes out of scope.
+        if (PyList_Append(keepalives, po))  // OOM
             return false;
     }
     else if (PySequence_Check(value))
