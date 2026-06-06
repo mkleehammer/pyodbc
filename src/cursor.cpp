@@ -338,6 +338,9 @@ static bool free_results(Cursor* self, int flags)
 
     if (self->colinfos)
     {
+        size_t n = (size_t)PyTuple_GET_SIZE(self->description);
+        for (size_t i = 0; i < n; ++i)
+            Py_XDECREF(self->colinfos[i].converter);
         PyMem_Free(self->colinfos);
         self->colinfos = 0;
     }
@@ -495,6 +498,7 @@ bool InitColumnInfo(Cursor* cursor, SQLUSMALLINT iCol, ColumnInfo* pinfo)
 
     pinfo->sql_type    = DataType;
     pinfo->column_size = ColumnSize;
+    pinfo->converter   = 0;
 
     if (cursor->cnxn->hdbc == SQL_NULL_HANDLE)
     {
@@ -1134,7 +1138,7 @@ static PyObject* Cursor_setinputsizes(PyObject* self, PyObject* sizes)
         PyErr_SetString(ProgrammingError, "Invalid cursor object.");
         return 0;
     }
-    
+
     Cursor *cur = (Cursor*)self;
     if (Py_None == sizes)
     {
@@ -2447,6 +2451,71 @@ static PyObject* Cursor_exit(PyObject* self, PyObject* args)
     Py_RETURN_NONE;
 }
 
+static char setconv_doc[] =
+    "set_column_converter(column, converter) -> None\n\n"
+    "Register an output converter function or method that will be called\n"
+    "for the specified column of the results set created by the statement\n"
+    "most recently executed by the Cursor.\n\n"
+    "After executing a batch containing multiple statements, be sure to\n"
+    "use this function after calling nextset() if the results set for\n"
+    "which you need to register a converter is not the first statement\n"
+    "in the batch.\n\n"
+    "If no results set is active a RuntimeError exception will be raised.\n\n"
+    "column\n"
+    "  The zero-based integer index of the column for which the converter\n"
+    "  is to be registered.  An IndexError exception will be raised if the\n"
+    "  value is lower than zero or greater than or equal to the number of\n"
+    "  columns in the results set.\n\n"
+    "converter\n"
+    "  The converter function or method which will be called with a single\n"
+    "  argument for the raw value retrieved from the database, and should\n"
+    "  return the appropriately converted value.  If the database value is\n"
+    "  NULL, the argument given to the converter will be None.  Otherwise\n"
+    "  it will be a bytes object.  If converter is None any existing con-\n"
+    "  verter registered for the column is removed.  If converter is not a\n"
+    "  callable object a TypeError exception will be raised."
+    ;
+static PyObject* Cursor_setconv(PyObject* self, PyObject* args)
+{
+    // Make sure we have a results set.
+    Cursor *cur = (Cursor*)self;
+    if (!PySequence_Check(cur->description))
+    {
+        PyErr_SetString(PyExc_RuntimeError, "no results set is active");
+        return 0;
+    }
+
+    // Extract the function arguments.
+    int pos;
+    PyObject* func;
+    if (!PyArg_ParseTuple(args, "iO", &pos, &func))
+        return 0;
+
+    // Check the converter's type.
+    if (!PyCallable_Check(func) && func != Py_None)
+    {
+        PyErr_SetString(PyExc_TypeError, "converter is not callable");
+        return 0;
+    }
+
+    // Make sure this converter has a home.
+    int count = (int)PyTuple_GET_SIZE(cur->description);
+    if (pos < 0 || pos >= count)
+    {
+        PyErr_Format(PyExc_IndexError, "index %d out of range", pos);
+        return 0;
+    }
+
+    // Free up any previous converter and install the new value.
+    Py_XDECREF(cur->colinfos[pos].converter);
+    if (func == Py_None)
+        cur->colinfos[pos].converter = NULL;
+    else
+        cur->colinfos[pos].converter = func;
+    Py_XINCREF(cur->colinfos[pos].converter);
+
+    Py_RETURN_NONE;
+}
 
 static PyMethodDef Cursor_methods[] =
 {
@@ -2473,6 +2542,7 @@ static PyMethodDef Cursor_methods[] =
     { "skip",             (PyCFunction)Cursor_skip,             METH_VARARGS,               skip_doc             },
     { "commit",           (PyCFunction)Cursor_commit,           METH_NOARGS,                commit_doc           },
     { "rollback",         (PyCFunction)Cursor_rollback,         METH_NOARGS,                rollback_doc         },
+    { "set_column_converter", (PyCFunction)Cursor_setconv,      METH_VARARGS,               setconv_doc          },
     {"cancel",           (PyCFunction)Cursor_cancel,           METH_NOARGS,                cancel_doc},
     {"__enter__",        Cursor_enter,                         METH_NOARGS,                enter_doc            },
     {"__exit__",         Cursor_exit,                          METH_VARARGS,               exit_doc             },

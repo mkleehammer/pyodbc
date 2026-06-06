@@ -646,6 +646,15 @@ class Cursor:
         """
         ...
 
+    def set_column_converter(self, column: int, converter: Callable | None, /) -> None:
+        """Register an output converter for a column's value.
+
+        Args:
+            column: The zero-based integer index of the column
+            converter: function/method to be registered (None to remove)
+        """
+        ...
+
     def fetchone(self) -> Row | None:
         """Retrieve the next row in the current result set for the query.
 

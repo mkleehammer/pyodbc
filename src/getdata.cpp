@@ -692,7 +692,9 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
     ColumnInfo* pinfo = &cur->colinfos[iCol];
 
     // First see if there is a user-defined conversion.
-
+    if (pinfo->converter) {
+        return GetDataUser(cur, iCol, pinfo->converter);
+    }
     if (cur->cnxn->map_sqltype_to_converter) {
         PyObject* func = Connection_GetConverter(cur->cnxn, pinfo->sql_type);
         if (func) {

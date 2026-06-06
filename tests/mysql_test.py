@@ -455,6 +455,96 @@ def test_emoticons_as_literal(cursor: pyodbc.Cursor):
     assert result == v
 
 
+def test_column_converters():
+    """Test the behavior of column-specific converters."""
+
+    # Create some converters.
+    def ucconv(raw): return raw.decode().upper()
+    class Converters:
+        now = datetime.now()
+        def __init__(self, name): self.name = name
+        def add_name(self, raw): return f"{raw.decode()} {self.name}"
+        @staticmethod
+        def show_raw(raw): return raw
+        @classmethod
+        def dt(cls, raw): return cls.now if b"e" in raw else None
+    object1 = Converters("Smith")
+    object2 = Converters("Čermák")
+
+    # Create & populate a table with the test data.
+    names = "Leoš", "Kathy", "Renée", "Abdul", "George"
+    values = [[v] for v in names]
+    conn = connect()
+    cursor1 = conn.cursor()
+    cursor2 = conn.cursor()
+    cursor1.execute("drop table if exists t1")
+    conn.commit()
+    cursor1.execute("create table t1(v varchar(50))")
+    cursor1.executemany("insert into t1 values (?)", values)
+
+    # Confirm that the documented exceptions get raised.
+    with pytest.raises(RuntimeError):
+        cursor1.set_column_converter(0, ucconv)
+    cursor1.execute("select v, v, v, v, v from t1")
+    cursor2.execute("select v, v, v, v, v from t1")
+    with pytest.raises(IndexError):
+        cursor1.set_column_converter(-1, ucconv)
+    with pytest.raises(IndexError):
+        cursor1.set_column_converter(5, ucconv)
+    with pytest.raises(TypeError):
+        cursor1.set_column_converter(0, "not callable")
+
+    # Register initial conversions.
+    cursor1.set_column_converter(0, Converters.dt)
+    cursor1.set_column_converter(1, ucconv)
+    cursor1.set_column_converter(2, object1.add_name)
+    cursor1.set_column_converter(3, Converters.show_raw)
+    cursor2.set_column_converter(0, ucconv)
+    cursor2.set_column_converter(1, Converters.dt)
+    cursor2.set_column_converter(3, Converters.show_raw)
+    cursor2.set_column_converter(4, object2.add_name)
+
+    # Create the validation tests.
+    expected_values = {
+        "cursor1": (
+            (Converters.now, "LEOŠ", "Leoš Smith", "Leoš".encode(), "Leoš"),
+            ("Kathy", "KATHY", "Kathy Smith", b"Kathy", "Kathy"),
+            ("Renée", "RENÉE", "Renée Smith", "Renée".encode(), "Renée"),
+            ("Abdul", None, "Abdul Smith", b"Abdul", "Abdul"),
+            ("George", "George", "George", "George", "George"),
+        ),
+        "cursor2": (
+            ("LEOŠ", Converters.now, "Leoš", "Leoš".encode(), "Leoš Čermák"),
+            ("KATHY", None, "Kathy", b"Kathy", "Kathy Čermák"),
+            ("RENÉE", Converters.now, "Renée".encode(), "Renée", "Renée Čermák"),
+            ("ABDUL", "ABDUL", b"Abdul", "Abdul", "Abdul Čermák"),
+            ("GEORGE", "GEORGE", b"George", "George", "George Čermák"),
+        ),
+    }
+    def check_row(cursor_name, index, row):
+        expected = expected_values[cursor_name][index]
+        assert tuple(row) == expected
+
+    # Fetch a row at a time interleaving the cursors and modifying converter registrations as we go.
+    check_row("cursor1", 0, cursor1.fetchone())
+    check_row("cursor2", 0, cursor2.fetchone())
+    cursor1.set_column_converter(0, None)
+    check_row("cursor1", 1, cursor1.fetchone())
+    check_row("cursor2", 1, cursor2.fetchone())
+    cursor2.set_column_converter(2, Converters.show_raw)
+    cursor2.set_column_converter(3, None)
+    check_row("cursor1", 2, cursor1.fetchone())
+    check_row("cursor2", 2, cursor2.fetchone())
+    cursor1.set_column_converter(1, Converters.dt)
+    cursor2.set_column_converter(1, ucconv)
+    check_row("cursor1", 3, cursor1.fetchone())
+    check_row("cursor2", 3, cursor2.fetchone())
+    for i in range(len(cursor1.description)):
+        cursor1.set_column_converter(i, None)
+    check_row("cursor1", 4, cursor1.fetchone())
+    check_row("cursor2", 4, cursor2.fetchone())
+
+
 @lru_cache
 def _generate_str(length, encoding=None):
     """

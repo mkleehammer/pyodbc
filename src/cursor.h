@@ -31,6 +31,10 @@ struct ColumnInfo
     // of the integer types are the same size whether signed and unsigned, so we can allocate memory ahead of time
     // without knowing this.  We use this during the fetch when converting to a Python integer or long.
     bool is_unsigned;
+
+    // If not NULL, this represents a user-supplied function registered to perform custom
+    // transformation of the column's values.
+    PyObject* converter;
 };
 
 struct ParamInfo
@@ -117,10 +121,10 @@ struct Cursor
 
     // Parameter set array (used with executemany)
     unsigned char *paramArray;
-    
+
     // Whether to use fast executemany with parameter arrays and other optimisations
     char fastexecmany;
-    
+
     // The list of information for setinputsizes().
     PyObject *inputsizes;
 
