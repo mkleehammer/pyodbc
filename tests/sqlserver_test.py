@@ -8,7 +8,7 @@ import re
 import uuid
 from collections.abc import Iterator
 from decimal import Decimal
-from datetime import date, time, datetime
+from datetime import date, time, datetime, timedelta, timezone
 from functools import lru_cache
 
 import pyodbc
@@ -561,6 +561,46 @@ def test_datetime(cursor: pyodbc.Cursor):
     result = cursor.execute("select dt from t1").fetchone()[0]
     assert isinstance(result, datetime)
     assert value == result
+
+
+def test_datetime_with_offset(cursor: pyodbc.Cursor):
+    """Verify correct behavior of opt-in to preserve time zone offsets"""
+    tz = timezone(timedelta(hours=2))
+    aware = datetime(2007, 1, 15, 3, 4, 5, 987654, tzinfo=tz)
+    cursor.execute("create table t1 (dt datetime)")
+    cursor.execute("create table t2 (dt datetimeoffset)")
+    cursor.commit()
+
+    # Opt-in not set, offset should be ignored
+    cursor.execute("insert into t1 values (?)", aware)
+    result = cursor.execute("select dt from t1").fetchval()
+    assert isinstance(result, datetime)
+    expected = datetime(2007, 1, 15, 3, 4, 5, 987000)
+    assert result == expected
+
+    # With the opt-in set, a exception should now be raised.
+    cursor.connection.preserve_tzoffsets = True
+    with pytest.raises(pyodbc.DataError):
+        cursor.execute("insert into t1 values (?)", aware)
+
+    # Make sure the offset is preserved.
+    cursor.execute("insert into t2 values (?)", aware)
+    result = cursor.execute("select cast(dt AS varchar(50)) AS dt from t2").fetchval()
+    expected = "2007-01-15 03:04:05.9876540 +02:00"
+    assert result == expected
+
+    # Try executemany.
+    cursor.executemany("insert into t2 values (?)", [[aware], [None], [aware], [aware]])
+    cursor.execute("select cast(dt AS varchar(50)) AS dt from t2 order by 1")
+    results = [row[0] for row in cursor.fetchall()]
+    assert results == [None] + [expected] * 4
+
+    # And for the curtain call, fast_executemany.
+    cursor.fast_executemany = True
+    cursor.executemany("insert into t2 values (?)", [[aware], [None], [aware], [aware]])
+    cursor.execute("select cast(dt AS varchar(50)) AS dt from t2 order by 1")
+    results = [row[0] for row in cursor.fetchall()]
+    assert results == [None, None] + [expected] * 7
 
 
 def test_datetime_fraction(cursor: pyodbc.Cursor):

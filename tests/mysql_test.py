@@ -6,7 +6,7 @@ pytest unit tests for MySQL.  Uses a DNS name 'mysql' and uses UTF-8
 import ctypes
 import os
 from decimal import Decimal
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Iterator
 
@@ -264,6 +264,49 @@ def test_datetime(cursor: pyodbc.Cursor):
 
     result = cursor.execute("select dt from t1").fetchone()[0]
     assert value == result
+
+
+def test_datetime_with_offset(cursor: pyodbc.Cursor):
+    """Verify correct behavior of opt-in to preserve time zone offsets"""
+    tz = timezone(timedelta(hours=-12))
+    aware = datetime(2007, 1, 15, 3, 4, 5, 123456, tzinfo=tz)
+    cursor.connection.autocommit = True
+    cursor.execute("create table t1 (dt timestamp(6))")
+    cursor.execute("create table t2 (id int, dt timestamp(6))")
+
+    # Opt-in not set, offset should be ignored.
+    # Oracle's and MariaDB's ODBC drivers each have bugs here.
+    # https://bugs.mysql.com/bug.php?id=120402
+    # https://jira.mariadb.org/browse/ODBC-492
+    # Until those get fixed, we can't compare the entire object.
+    # naive = aware = datetime(2007, 1, 15, 3, 4, 5, 123456)
+    cursor.execute("insert into t1 values (?)", aware)
+    result = cursor.execute("select dt from t1").fetchval()
+    assert isinstance(result, datetime)
+    assert result.hour == 3
+
+    # Make sure the offset is applied to the result. The new opt-in behavior avoids those bugs.
+    cursor.execute("set time_zone = '+02:00'")
+    expected = datetime(2007, 1, 15, 17, 4, 5, 123456)
+    cursor.connection.preserve_tzoffsets = True
+    cursor.execute("insert into t2 values (?, ?)", (1, aware))
+    result = cursor.execute("select dt from t2").fetchval()
+    assert result == expected
+
+    # Try executemany.
+    params = (2, aware), (3, None), (4, aware), (5, aware)
+    cursor.executemany("insert into t2 values (?, ?)", params)
+    cursor.execute("select dt from t2 order by id")
+    results = [row[0] for row in cursor.fetchall()]
+    assert results == [expected, expected, None, expected, expected]
+
+    # And for the pièce de résistance, fast_executemany.
+    cursor.fast_executemany = True
+    params = (6, aware), (7, None), (8, aware), (9, aware)
+    cursor.executemany("insert into t2 values (?, ?)", params)
+    cursor.execute("select dt from t2 order by id")
+    results = [row[0] for row in cursor.fetchall()]
+    assert results == [expected] * 2 + [None] + [expected] * 3 + [None] + [expected] * 2
 
 
 def test_rowcount_delete(cursor: pyodbc.Cursor):

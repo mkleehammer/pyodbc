@@ -5,6 +5,7 @@ Unit tests for PostgreSQL
 
 import ctypes
 import os, uuid
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Iterator
 
@@ -643,6 +644,47 @@ def test_refcount_encoding():
     count_after = sys.getrefcount(encoding)
 
     assert count_after == count_before
+
+
+def test_datetime_with_offset(cursor: pyodbc.Cursor):
+    """Verify correct behavior of opt-in to preserve time zone offsets"""
+    tz = timezone(timedelta(hours=-5))
+    naive = datetime(2007, 1, 15, 3, 4, 5, 987654)
+    aware = datetime(2007, 1, 15, 3, 4, 5, 987654, tzinfo=tz)
+    cursor.connection.autocommit = True
+    cursor.execute("create table t1 (dt timestamp)")
+    cursor.execute("create table t2 (id int, dt timestamptz)")
+
+    # Opt-in not set, offset should be ignored
+    cursor.execute("insert into t1 values (?)", aware)
+    result = cursor.execute("select dt from t1").fetchval()
+    assert isinstance(result, datetime)
+    assert result == naive
+
+    # Use a separate connection for reading the value. The cursor used for
+    # the INSERTs gets confused by SET TIME ZONE.
+    cursor2 = connect().cursor()
+    cursor2.execute("SET TIME ZONE 'Europe/Helsinki'")
+
+    # Make sure the offset is preserved.
+    cursor.connection.preserve_tzoffsets = True
+    cursor.execute("insert into t2 values (?, ?)", (1, aware))
+    result = cursor2.execute("select cast(dt AS varchar(50)) AS dt from t2").fetchval()
+    expected = "2007-01-15 10:04:05.987654+02"
+    assert result == expected
+
+    # Try executemany.
+    cursor.executemany("insert into t2 values (?, ?)", [[2, aware], [3, None], [4, aware], [5, aware]])
+    cursor2.execute("select cast(dt AS varchar(50)) AS dt from t2 order by id")
+    results = [row[0] for row in cursor2.fetchall()]
+    assert results == [expected, expected, None, expected, expected]
+
+    # And for the curtain call, fast_executemany.
+    cursor.fast_executemany = True
+    cursor.executemany("insert into t2 values (?, ?)", [[6, aware], [7, None], [8, aware], [9, aware]])
+    cursor2.execute("select cast(dt AS varchar(50)) AS dt from t2 order by id")
+    results = [row[0] for row in cursor2.fetchall()]
+    assert results == [expected, expected, None, expected, expected, expected, None, expected, expected]
 
 
 def test_rows_as_dicts(cursor: pyodbc.Cursor):

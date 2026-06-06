@@ -16,6 +16,7 @@
 #define SQL_DB2_DECFLOAT -360   // IBM DB/2 DECFLOAT type
 #define SQL_DB2_XML -370        // IBM DB/2 XML type
 #define SQL_SS_TIME2 -154       // SQL Server 2008 time type
+#define SQL_SS_TIMESTAMPOFFSET -155  // a misnomer; it's not an offset, it's a TIMESTAMP *with* an offset
 #define SQL_DB2_BLOB -98        // IBM DB/2 BLOB type
 
 struct SQL_SS_TIME2_STRUCT
