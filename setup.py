@@ -89,10 +89,12 @@ def get_compiler_settings():
             '/wd4514',     # unreference inline function removed
             '/wd4820',     # padding after struct member
             '/wd4668',     # is not defined as a preprocessor macro
+            '/wd4710',     # function not inlined
             '/wd4711',     # function selected for automatic inline expansion
             '/wd4100',     # unreferenced formal parameter
             '/wd4127',     # "conditional expression is constant" testing compilation constants
             '/wd4191',     # casts to PYCFunction which doesn't have the keywords parameter
+            '/wd5045',     # information note about Spectre mitigation (which we're not using)
         ])
 
         if '--windbg' in sys.argv:

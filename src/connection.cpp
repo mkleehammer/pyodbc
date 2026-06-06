@@ -107,14 +107,17 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
 
     if (PyLong_Check(value))
     {
-        if (_PyLong_Sign(value) >= 0)
+        unsigned long long uval = PyLong_AsUnsignedLongLong(value);
+        if (PyErr_Occurred())
         {
-            ivalue = (SQLPOINTER)PyLong_AsUnsignedLong(value);
-            vallen = SQL_IS_UINTEGER;
-        } else
-        {
-            ivalue = (SQLPOINTER)PyLong_AsLong(value);
+            PyErr_Clear();
+            ivalue = (SQLPOINTER)PyLong_AsLongLong(value);
             vallen = SQL_IS_INTEGER;
+        }
+        else
+        {
+            ivalue = (SQLPOINTER)uval;
+            vallen = SQL_IS_UINTEGER;
         }
     }
     else if (PyByteArray_Check(value))
@@ -405,9 +408,8 @@ static char conv_clear_doc[] =
     "clear_output_converters() --> None\n\n"
     "Remove all output converter functions.";
 
-static PyObject* Connection_conv_clear(PyObject* self, PyObject* args)
+static PyObject* Connection_conv_clear(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
     Connection* cnxn = (Connection*)self;
     Py_XDECREF(cnxn->map_sqltype_to_converter);
     cnxn->map_sqltype_to_converter = 0;
@@ -473,10 +475,8 @@ static char close_doc[] =
     "Note that closing a connection without committing the changes first will cause\n"
     "an implicit rollback to be performed.";
 
-static PyObject* Connection_close(PyObject* self, PyObject* args)
+static PyObject* Connection_close(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
-
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
         return 0;
@@ -486,10 +486,8 @@ static PyObject* Connection_close(PyObject* self, PyObject* args)
     Py_RETURN_NONE;
 }
 
-static PyObject* Connection_cursor(PyObject* self, PyObject* args)
+static PyObject* Connection_cursor(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
-
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
         return 0;
@@ -787,10 +785,8 @@ PyObject* Connection_endtrans(Connection* cnxn, SQLSMALLINT type)
     Py_RETURN_NONE;
 }
 
-static PyObject* Connection_commit(PyObject* self, PyObject* args)
+static PyObject* Connection_commit(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
-
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
         return 0;
@@ -800,10 +796,8 @@ static PyObject* Connection_commit(PyObject* self, PyObject* args)
     return Connection_endtrans(cnxn, SQL_COMMIT);
 }
 
-static PyObject* Connection_rollback(PyObject* self, PyObject* args)
+static PyObject* Connection_rollback(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
-
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
         return 0;
@@ -838,10 +832,8 @@ static char getinfo_doc[] =
     "Calls SQLGetInfo, passing `type`, and returns the result formatted as a Python object.";
 
 
-PyObject* Connection_getautocommit(PyObject* self, void* closure)
+PyObject* Connection_getautocommit(PyObject* self, void* /* closure (unused) */)
 {
-    UNUSED(closure);
-
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
         return 0;
@@ -851,10 +843,8 @@ PyObject* Connection_getautocommit(PyObject* self, void* closure)
     return result;
 }
 
-static int Connection_setautocommit(PyObject* self, PyObject* value, void* closure)
+static int Connection_setautocommit(PyObject* self, PyObject* value, void* /* closure (unused) */)
 {
-    UNUSED(closure);
-
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
         return -1;
@@ -882,9 +872,8 @@ static int Connection_setautocommit(PyObject* self, PyObject* value, void* closu
 }
 
 
-static PyObject* Connection_getclosed(PyObject* self, void* closure)
+static PyObject* Connection_getclosed(PyObject* self, void* /* closure (unused) */)
 {
-    UNUSED(closure);
     Connection* cnxn;
 
     if (self == 0 || !Connection_Check(self))
@@ -904,10 +893,8 @@ static PyObject* Connection_getclosed(PyObject* self, void* closure)
 }
 
 
-static PyObject* Connection_getsearchescape(PyObject* self, void* closure)
+static PyObject* Connection_getsearchescape(PyObject* self, void* /* closure (unused) */)
 {
-    UNUSED(closure);
-
     Connection* cnxn = (Connection*)self;
 
     if (!cnxn->searchescape)
@@ -929,10 +916,8 @@ static PyObject* Connection_getsearchescape(PyObject* self, void* closure)
     return cnxn->searchescape;
 }
 
-static PyObject* Connection_getmaxwrite(PyObject* self, void* closure)
+static PyObject* Connection_getmaxwrite(PyObject* self, void* /* closure (unused) */)
 {
-    UNUSED(closure);
-
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
         return 0;
@@ -940,10 +925,8 @@ static PyObject* Connection_getmaxwrite(PyObject* self, void* closure)
     return PyLong_FromSsize_t(cnxn->maxwrite);
 }
 
-static int Connection_setmaxwrite(PyObject* self, PyObject* value, void* closure)
+static int Connection_setmaxwrite(PyObject* self, PyObject* value, void* /* closure (unused) */)
 {
-    UNUSED(closure);
-
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
         return -1;
@@ -971,10 +954,8 @@ static int Connection_setmaxwrite(PyObject* self, PyObject* value, void* closure
 }
 
 
-static PyObject* Connection_gettimeout(PyObject* self, void* closure)
+static PyObject* Connection_gettimeout(PyObject* self, void* /* closure (unused) */)
 {
-    UNUSED(closure);
-
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
         return 0;
@@ -982,10 +963,8 @@ static PyObject* Connection_gettimeout(PyObject* self, void* closure)
     return PyLong_FromLong(cnxn->timeout);
 }
 
-static int Connection_settimeout(PyObject* self, PyObject* value, void* closure)
+static int Connection_settimeout(PyObject* self, PyObject* value, void* /* closure (unused) */)
 {
-    UNUSED(closure);
-
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
         return -1;
@@ -1356,9 +1335,8 @@ static PyObject* Connection_setdecoding(PyObject* self, PyObject* args, PyObject
 
 
 static char enter_doc[] = "__enter__() -> self.";
-static PyObject* Connection_enter(PyObject* self, PyObject* args)
+static PyObject* Connection_enter(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
     Py_INCREF(self);
     return self;
 }

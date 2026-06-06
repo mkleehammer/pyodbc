@@ -435,10 +435,8 @@ static char close_doc[] =
     "be unusable from this point forward; a ProgrammingError exception will be\n"
     "raised if any operation is attempted with the cursor.";
 
-static PyObject* Cursor_close(PyObject* self, PyObject* args)
+static PyObject* Cursor_close(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
-
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
     if (!cursor)
         return 0;
@@ -643,13 +641,12 @@ int GetDiagRecs(Cursor* cur)
         // Default to UTF-16, which may not work if the driver/manager is using some other encoding
         const char *unicode_enc = cur->cnxn ? cur->cnxn->metadata_enc.name : ENCSTR_UTF16NE;
         PyObject* msg_value = PyUnicode_Decode(
-            (char*)cMessageText, iTextLength * sizeof(uint16_t), unicode_enc, "strict"
+            (char*)cMessageText, (Py_ssize_t)(iTextLength * sizeof(uint16_t)), unicode_enc, "strict"
         );
         if (!msg_value)
         {
             // If the char cannot be decoded, return something rather than nothing.
-            Py_XDECREF(msg_value);
-            msg_value = PyBytes_FromStringAndSize((char*)cMessageText, iTextLength * sizeof(uint16_t));
+            msg_value = PyBytes_FromStringAndSize((char*)cMessageText, (Py_ssize_t)(iTextLength * sizeof(uint16_t)));
         }
 
         PyObject* msg_tuple = PyTuple_New(2);  // the message as a Python tuple of class and value
@@ -1272,10 +1269,8 @@ static PyObject* Cursor_iternext(PyObject* self)
     return result;
 }
 
-static PyObject* Cursor_fetchval(PyObject* self, PyObject* args)
+static PyObject* Cursor_fetchval(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
-
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
     if (!cursor)
         return 0;
@@ -1292,10 +1287,8 @@ static PyObject* Cursor_fetchval(PyObject* self, PyObject* args)
     return Row_item(row, 0);
 }
 
-static PyObject* Cursor_fetchone(PyObject* self, PyObject* args)
+static PyObject* Cursor_fetchone(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
-
     PyObject* row;
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
     if (!cursor)
@@ -1314,10 +1307,8 @@ static PyObject* Cursor_fetchone(PyObject* self, PyObject* args)
 }
 
 
-static PyObject* Cursor_fetchall(PyObject* self, PyObject* args)
+static PyObject* Cursor_fetchall(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
-
     PyObject* result;
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_RESULTS | CURSOR_RAISE_ERROR);
     if (!cursor)
@@ -1874,10 +1865,8 @@ static char getTypeInfo_doc[] =
     "17) num_prec_radix\n"
     "18) interval_precision";
 
-static PyObject* Cursor_getTypeInfo(PyObject* self, PyObject* args, PyObject* kwargs)
+static PyObject* Cursor_getTypeInfo(PyObject* self, PyObject* args, PyObject* /* kwargs (unused) */)
 {
-    UNUSED(kwargs);
-
     int nDataType = SQL_ALL_TYPES;
 
     if (!PyArg_ParseTuple(args, "|i", &nDataType))
@@ -1916,10 +1905,8 @@ static PyObject* Cursor_getTypeInfo(PyObject* self, PyObject* args, PyObject* kw
 }
 
 
-static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
+static PyObject* Cursor_nextset(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
-
     Cursor* cur = Cursor_Validate(self, 0);
 
     if (!cur)
@@ -2214,9 +2201,8 @@ static char cancel_doc[] =
     "This calls SQLCancel and is designed to be called from another thread to"
     "stop processing of an ongoing query.";
 
-static PyObject* Cursor_cancel(PyObject* self, PyObject* args)
+static PyObject* Cursor_cancel(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
     Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
     if (!cur)
         return 0;
@@ -2232,9 +2218,8 @@ static PyObject* Cursor_cancel(PyObject* self, PyObject* args)
 }
 
 
-static PyObject* Cursor_ignored(PyObject* self, PyObject* args)
+static PyObject* Cursor_ignored(PyObject* /* self (unused) */, PyObject* /* args (unused) */)
 {
-    UNUSED(self, args);
     Py_RETURN_NONE;
 }
 
@@ -2288,10 +2273,8 @@ static PyMemberDef Cursor_members[] =
     { 0 }
 };
 
-static PyObject* Cursor_getnoscan(PyObject* self, void *closure)
+static PyObject* Cursor_getnoscan(PyObject* self, void* /* closure (unused) */)
 {
-    UNUSED(closure);
-
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
     if (!cursor)
         return 0;
@@ -2314,10 +2297,8 @@ static PyObject* Cursor_getnoscan(PyObject* self, void *closure)
     Py_RETURN_TRUE;
 }
 
-static int Cursor_setnoscan(PyObject* self, PyObject* value, void *closure)
+static int Cursor_setnoscan(PyObject* self, PyObject* value, void* /* closure (unused) */)
 {
-    UNUSED(closure);
-
     Cursor* cursor = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
     if (!cursor)
         return -1;
@@ -2416,9 +2397,8 @@ static char setinputsizes_doc[] =
     "Setting sizes to None reverts all parameters to the defaults.";
 
 static char enter_doc[] = "__enter__() -> self.";
-static PyObject* Cursor_enter(PyObject* self, PyObject* args)
+static PyObject* Cursor_enter(PyObject* self, PyObject* /* args (unused) */)
 {
-    UNUSED(args);
     Py_INCREF(self);
     return self;
 }

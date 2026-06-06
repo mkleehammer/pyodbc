@@ -37,7 +37,15 @@ typedef unsigned long long UINT64;
 
 #define PY_SSIZE_T_CLEAN 1
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4365 5039)
+#endif
 #include <Python.h>
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
 #include <floatobject.h>
 #include <longobject.h>
 #include <boolobject.h>
@@ -85,12 +93,6 @@ inline bool IsSet(DWORD grf, DWORD flags)
     return (grf & flags) == flags;
 }
 
-#ifdef UNUSED
-#undef UNUSED
-#endif
-
-inline void UNUSED(...) { }
-
 #include <stdarg.h>
 
 #if defined(__SUNPRO_CC) || defined(__SUNPRO_C) || (defined(__GNUC__) && !defined(__MINGW32__))
@@ -115,7 +117,7 @@ inline void _strlwr(char* name)
 #ifdef PYODBC_TRACE
 void DebugTrace(const char* szFmt, ...);
 #else
-inline void DebugTrace(const char* szFmt, ...) { UNUSED(szFmt); }
+#define DebugTrace(...) do {} while(0)
 #endif
 #define TRACE DebugTrace
 

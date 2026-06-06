@@ -100,7 +100,8 @@ struct Cursor
     PyObject* pPreparedSQL;
 
     // The number of parameter markers in pPreparedSQL.  This will be zero when pPreparedSQL is zero but is set
-    // immediately after preparing the SQL.
+    // immediately after preparing the SQL. Must be between 0 and SHRT_MAX - 1 because ODBC uses a signed short for
+    // indexing into the parameters in some places, with one-based (not zero-based) counting.
     int paramcount;
 
     // If non-zero, a pointer to an array of SQL type values allocated via malloc.  This is zero until we actually ask

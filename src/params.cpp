@@ -80,7 +80,7 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
         // Assume the SQL type is also character (2.x) or binary (3.x).
         // If it is a max-type (ColumnSize == 0), use DAE.
         pi->ValueType = SQL_C_BINARY;
-        pi->BufferLength = pi->ColumnSize ? pi->ColumnSize : sizeof(DAEParam);
+        pi->BufferLength = (SQLLEN)(pi->ColumnSize ? pi->ColumnSize : sizeof(DAEParam));
     }
     else if (PyUnicode_Check(cell))
     {
@@ -88,7 +88,7 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
         // Assume the SQL type is also wide character.
         // If it is a max-type (ColumnSize == 0), use DAE.
         pi->ValueType = SQL_C_WCHAR;
-        pi->BufferLength = pi->ColumnSize ? pi->ColumnSize * sizeof(SQLWCHAR) : sizeof(DAEParam);
+        pi->BufferLength = (SQLLEN)(pi->ColumnSize ? pi->ColumnSize * sizeof(SQLWCHAR) : sizeof(DAEParam));
     }
     else if (PyDateTime_Check(cell))
     {
@@ -120,7 +120,7 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
     {
         // Type_ByteArray:
         pi->ValueType = SQL_C_BINARY;
-        pi->BufferLength = pi->ColumnSize ? pi->ColumnSize : sizeof(DAEParam);
+        pi->BufferLength = (SQLLEN)(pi->ColumnSize ? pi->ColumnSize : sizeof(DAEParam));
     }
     else if (cell == Py_None || cell == null_binary)
     {
@@ -244,9 +244,16 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                 Py_XDECREF(absVal);
                 absVal = scaledVal;
             }
+            // Yes, it's strange that ODBC supports negative scale, despite the fact that the SQL standard
+            // itself does not (and PostgreSQL is the only DBMS which supports that extension), but this
+            // really is supposed to be a signed char, reducing the possible values to a maximum of 127.
+            pNum->scale = (SQLSCHAR)pi->DecimalDigits;
             pNum->precision = (SQLCHAR)pi->ColumnSize;
-            pNum->scale = (SQLCHAR)pi->DecimalDigits;
-            pNum->sign = _PyLong_Sign(cell) >= 0;
+#if PY_VERSION_HEX < 0x030E0000
+            pNum->sign = (SQLCHAR)(_PyLong_Sign(cell) < 0 ? 0 : 1);
+#else
+            pNum->sign = (SQLCHAR)(PyLong_IsNegative(cell) ? 0 : 1);
+#endif
 #if PY_VERSION_HEX < 0x030D0000
             if (_PyLong_AsByteArray((PyLongObject*)absVal, pNum->val, sizeof(pNum->val), 1, 0)) {
 #else
@@ -289,7 +296,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                 RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
                 return false;
             }
-            memcpy(*outbuf, PyBytes_AS_STRING(cell), len);
+            memcpy(*outbuf, PyBytes_AS_STRING(cell), (size_t)len);
             *outbuf += pi->BufferLength;
             ind = len;
         }
@@ -328,7 +335,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                 RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
                 return false;
             }
-            memcpy(*outbuf, PyBytes_AS_STRING((PyObject*)encoded), len);
+            memcpy(*outbuf, PyBytes_AS_STRING((PyObject*)encoded), (size_t)len);
             *outbuf += pi->BufferLength;
             ind = len;
         }
@@ -346,9 +353,9 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         pts->second = PyDateTime_DATE_GET_SECOND(cell);
 
         // Truncate the fraction according to precision
-        size_t digits = min(9, pi->DecimalDigits);
+        size_t digits = (size_t)min(9, pi->DecimalDigits);
         long fast_pow10[] = {1,10,100,1000,10000,100000,1000000,10000000,100000000,1000000000};
-        SQLUINTEGER milliseconds = PyDateTime_DATE_GET_MICROSECOND(cell) * 1000;
+        SQLUINTEGER milliseconds = (SQLUINTEGER)(PyDateTime_DATE_GET_MICROSECOND(cell) * 1000);
         pts->fraction = milliseconds - (milliseconds % fast_pow10[9 - digits]);
 
         *outbuf += sizeof(SQL_TIMESTAMP_STRUCT);
@@ -376,7 +383,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             pt2s->minute = PyDateTime_TIME_GET_MINUTE(cell);
             pt2s->second = PyDateTime_TIME_GET_SECOND(cell);
             // This is in units of nanoseconds.
-            pt2s->fraction = PyDateTime_TIME_GET_MICROSECOND(cell)*1000;
+            pt2s->fraction = (SQLUINTEGER)(PyDateTime_TIME_GET_MICROSECOND(cell)*1000);
             *outbuf += sizeof(SQL_SS_TIME2_STRUCT);
             ind = sizeof(SQL_SS_TIME2_STRUCT);
         }
@@ -413,7 +420,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                 RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
                 return false;
             }
-            memcpy(*outbuf, PyByteArray_AS_STRING(cell), len);
+            memcpy(*outbuf, PyByteArray_AS_STRING(cell), (size_t)len);
             *outbuf += pi->BufferLength;
             ind = len;
         }
@@ -464,7 +471,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         PyObject *newDigits = PyTuple_New(numDigits + scaleDiff);
         for (Py_ssize_t i = 0; i < numDigits; i++)
         {
-            PyTuple_SET_ITEM(newDigits, i, PyLong_FromLong(PyNumber_AsSsize_t(PyTuple_GET_ITEM(digits, i), 0)));
+            PyTuple_SET_ITEM(newDigits, i, PyLong_FromLong((long)PyNumber_AsSsize_t(PyTuple_GET_ITEM(digits, i), 0)));
         }
         for (Py_ssize_t i = numDigits; i < scaleDiff + numDigits; i++)
         {
@@ -479,8 +486,11 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         Py_XDECREF(newDigits);
         Py_XDECREF(cellParts);
 
+        // Yes, it's strange that ODBC supports negative scale, despite the fact that the SQL standard
+        // itself does not (and PostgreSQL is the only DBMS which supports that extension), but this
+        // really is supposed to be a signed char, reducing the possible values to a maximum of 127.
+        pNum->scale = (SQLSCHAR)pi->DecimalDigits;
         pNum->precision = (SQLCHAR)pi->ColumnSize;
-        pNum->scale = (SQLCHAR)pi->DecimalDigits;
 
 
 #if PY_VERSION_HEX < 0x030D0000
@@ -1005,14 +1015,14 @@ static bool GetTableInfo(Cursor *cur, Py_ssize_t index, PyObject* param, ParamIn
         // Need to describe in order to fill in IPD with the TVP's type name, because user has
         // not provided it
         SQLSMALLINT tvptype;
-        SQLDescribeParam(cur->hstmt, index + 1, &tvptype, 0, 0, 0);
+        SQLDescribeParam(cur->hstmt, (SQLUSMALLINT)(index + 1), &tvptype, 0, 0, 0);
     }
 
     info.pObject = param;
     Py_INCREF(param);
     info.ValueType = SQL_C_BINARY;
     info.ParameterType = SQL_SS_TABLE;
-    info.ColumnSize = nrows;
+    info.ColumnSize = (SQLULEN)nrows;
     info.DecimalDigits = 0;
     info.ParameterValuePtr = &info;
     info.BufferLength = 0;
@@ -1213,7 +1223,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
                 SQLHDESC desc;
                 PyObject *tvpname = PyCodec_Encode(cell0, "UTF-16LE", 0);
                 SQLGetStmtAttr(cur->hstmt, SQL_ATTR_IMP_PARAM_DESC, &desc, 0, 0);
-                SQLSetDescFieldW(desc, index + 1, SQL_CA_SS_TYPE_NAME, (SQLPOINTER)PyBytes_AsString(tvpname), PyBytes_Size(tvpname));
+                SQLSetDescFieldW(desc, (SQLSMALLINT)(index + 1), SQL_CA_SS_TYPE_NAME, (SQLPOINTER)PyBytes_AsString(tvpname), (SQLINTEGER)PyBytes_Size(tvpname));
                 Py_XDECREF(tvpname);
 
                 if (nrows > 1)
@@ -1223,7 +1233,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
                     if (PyBytes_Check(cell1) || PyUnicode_Check(cell1))
                     {
                         PyObject *tvpschema = PyCodec_Encode(cell1, "UTF-16LE", 0);
-                        SQLSetDescFieldW(desc, index + 1, SQL_CA_SS_SCHEMA_NAME, (SQLPOINTER)PyBytes_AsString(tvpschema), PyBytes_Size(tvpschema));
+                        SQLSetDescFieldW(desc, (SQLSMALLINT)(index + 1), SQL_CA_SS_SCHEMA_NAME, (SQLPOINTER)PyBytes_AsString(tvpschema), (SQLINTEGER)PyBytes_Size(tvpschema));
                         Py_XDECREF(tvpschema);
                     }
                 }
@@ -1232,7 +1242,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 
         SQLHDESC desc;
         SQLGetStmtAttr(cur->hstmt, SQL_ATTR_APP_PARAM_DESC, &desc, 0, 0);
-        SQLSetDescField(desc, index + 1, SQL_DESC_DATA_PTR, (SQLPOINTER)info.ParameterValuePtr, 0);
+        SQLSetDescField(desc, (SQLSMALLINT)(index + 1), SQL_DESC_DATA_PTR, (SQLPOINTER)info.ParameterValuePtr, 0);
 
         int err = 0;
         ret = SQLSetStmtAttr(cur->hstmt, SQL_SOPT_SS_PARAM_FOCUS, (SQLPOINTER)(index + 1), SQL_IS_INTEGER);
@@ -1242,7 +1252,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
             return false;
         }
 
-        Py_ssize_t i = PySequence_Size(info.pObject) - info.ColumnSize;
+        Py_ssize_t i = (Py_ssize_t)(PySequence_Size(info.pObject) - info.ColumnSize);
         Py_ssize_t ncols = 0;
         while (i >= 0 && i < PySequence_Size(info.pObject))
         {
@@ -1271,7 +1281,7 @@ bool BindParameter(Cursor* cur, Py_ssize_t index, ParamInfo& info)
         }
         else
         {
-            PyObject *row = PySequence_GetItem(info.pObject, PySequence_Size(info.pObject) - info.ColumnSize);
+            PyObject *row = PySequence_GetItem(info.pObject, (Py_ssize_t)(PySequence_Size(info.pObject) - info.ColumnSize));
             Py_XDECREF(row);
 
             info.nested = (ParamInfo*)PyMem_Malloc(ncols * sizeof(ParamInfo));
@@ -1406,6 +1416,11 @@ bool Prepare(Cursor* cur, PyObject* pSql)
             return false;
         }
 
+        // ODBC sometimes indexes into the parameter list with a 1-based SQLSMALLINT.
+        if (cParamsT >= SHRT_MAX) {
+            PyErr_Format(PyExc_ValueError, "%d parameters found; maximum is %d", cParamsT, SHRT_MAX - 1);
+            return false;
+        }
         cur->paramcount = (int)cParamsT;
 
         cur->pPreparedSQL = pSql;
@@ -1493,7 +1508,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
     for (Py_ssize_t i = 0; i < cur->paramcount; i++)
     {
         SQLSMALLINT nullable;
-        if (!SQL_SUCCEEDED(SQLDescribeParam(cur->hstmt, i + 1, &(cur->paramInfos[i].ParameterType),
+        if (!SQL_SUCCEEDED(SQLDescribeParam(cur->hstmt, (SQLUSMALLINT)(i + 1), &(cur->paramInfos[i].ParameterType),
             &cur->paramInfos[i].ColumnSize, &cur->paramInfos[i].DecimalDigits,
             &nullable)))
         {
@@ -1550,6 +1565,20 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
 
         // REVIEW: We need a better description of what is going on here.  Why is it OK to pass
         // a fake bindptr to SQLBindParameter.
+        // 2026-04-02: Here is that explanation. SQL_ATTR_PARAM_BIND_OFFSET_PTR is a Core-conformance
+        // feature of ODBC 3.x (listed as such in the spec's statement attribute conformance table).
+        // The spec describes it as follows (SQLSetStmtAttr reference):
+        //   "If this field is non-null, the driver dereferences the pointer, adds the dereferenced
+        //   value to each of the deferred fields in the descriptor record (SQL_DESC_DATA_PTR,
+        //   SQL_DESC_INDICATOR_PTR, and SQL_DESC_OCTET_LENGTH_PTR), and uses the new pointer
+        //   values when binding."
+        // And from the Parameter Binding Offsets section:
+        //   "This means that either or both the offset and the address to which the offset is added
+        //   can be invalid, as long as their sum is a valid address."
+        // The pattern this enables is: bind parameters using placeholder pointer values during a setup
+        // pass, allocate the real data buffer, then set the offset so the driver computes the real
+        // address at execute time. This avoids having to call SQLBindParameter a second time after
+        // the buffer is allocated — which is exactly how this code uses it.
 
         // Start at a non-zero offset to prevent null pointer detection.
         char *bindptr = (char*)16;
@@ -1562,7 +1591,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                 goto ErrorRet3;
             }
 
-            if (!SQL_SUCCEEDED(SQLBindParameter(cur->hstmt, i + 1, SQL_PARAM_INPUT, cur->paramInfos[i].ValueType,
+            if (!SQL_SUCCEEDED(SQLBindParameter(cur->hstmt, (SQLUSMALLINT)(i + 1), SQL_PARAM_INPUT, cur->paramInfos[i].ValueType,
                 cur->paramInfos[i].ParameterType, cur->paramInfos[i].ColumnSize, cur->paramInfos[i].DecimalDigits,
                 bindptr, cur->paramInfos[i].BufferLength, (SQLLEN*)(bindptr + cur->paramInfos[i].BufferLength))))
             {
@@ -1575,10 +1604,10 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             {
                 SQLHDESC desc;
                 SQLGetStmtAttr(cur->hstmt, SQL_ATTR_APP_PARAM_DESC, &desc, 0, 0);
-                SQLSetDescField(desc, i + 1, SQL_DESC_TYPE, (SQLPOINTER)SQL_C_NUMERIC, 0);
-                SQLSetDescField(desc, i + 1, SQL_DESC_PRECISION, (SQLPOINTER)cur->paramInfos[i].ColumnSize, 0);
-                SQLSetDescField(desc, i + 1, SQL_DESC_SCALE, (SQLPOINTER)(uintptr_t)cur->paramInfos[i].DecimalDigits, 0);
-                SQLSetDescField(desc, i + 1, SQL_DESC_DATA_PTR, bindptr, 0);
+                SQLSetDescField(desc, (SQLSMALLINT)(i + 1), SQL_DESC_TYPE, (SQLPOINTER)SQL_C_NUMERIC, 0);
+                SQLSetDescField(desc, (SQLSMALLINT)(i + 1), SQL_DESC_PRECISION, (SQLPOINTER)cur->paramInfos[i].ColumnSize, 0);
+                SQLSetDescField(desc, (SQLSMALLINT)(i + 1), SQL_DESC_SCALE, (SQLPOINTER)(uintptr_t)cur->paramInfos[i].DecimalDigits, 0);
+                SQLSetDescField(desc, (SQLSMALLINT)(i + 1), SQL_DESC_DATA_PTR, bindptr, 0);
             }
             bindptr += cur->paramInfos[i].BufferLength + sizeof(SQLLEN);
         }
@@ -1587,7 +1616,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         // Assume parameters are homogeneous between rows in the common case, to avoid
         // another rescan for determining the array height.
         // Subtract number of rows processed as an upper bound.
-        if (!(cur->paramArray = (unsigned char*)PyMem_Malloc(rowlen * (rowcount - r))))
+        if (!(cur->paramArray = (unsigned char*)PyMem_Malloc((size_t)(rowlen * (rowcount - r)))))
         {
             PyErr_NoMemory();
             goto ErrorRet4;

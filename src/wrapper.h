@@ -66,7 +66,7 @@ public:
 
     operator PyVarObject*() { return (PyVarObject*)p; }
 
-    operator const bool() { return p != 0; }
+    operator bool() { return p != 0; }
 
     PyObject* Get()
     {

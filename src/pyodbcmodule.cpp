@@ -391,10 +391,8 @@ static keywordmap keywordmaps[] =
 };
 
 
-static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
+static PyObject* mod_connect(PyObject* /* self (unused) */, PyObject* args, PyObject* kwargs)
 {
-    UNUSED(self);
-
     Object pConnectString;
     int fAutoCommit = 0;
     int fReadOnly = 0;
@@ -525,10 +523,8 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
 }
 
 
-static PyObject* mod_drivers(PyObject* self)
+static PyObject* mod_drivers(PyObject* /* self (unused) */)
 {
-    UNUSED(self);
-
     if (henv == SQL_NULL_HANDLE && !AllocateEnv())
         return 0;
 
@@ -574,10 +570,8 @@ static PyObject* mod_drivers(PyObject* self)
 }
 
 
-static PyObject* mod_datasources(PyObject* self)
+static PyObject* mod_datasources(PyObject* /* self (unused) */)
 {
-    UNUSED(self);
-
     if (henv == SQL_NULL_HANDLE && !AllocateEnv())
         return 0;
 
@@ -611,8 +605,8 @@ static PyObject* mod_datasources(PyObject* self)
             break;
 
         int byteorder = BYTEORDER_NATIVE;
-        PyObject* key = PyUnicode_DecodeUTF16((char*)szDSN, cbDSN * sizeof(wchar_t), "strict", &byteorder);
-        PyObject* val = PyUnicode_DecodeUTF16((char*)szDesc, cbDesc * sizeof(wchar_t), "strict", &byteorder);
+        PyObject* key = PyUnicode_DecodeUTF16((char*)szDSN, (Py_ssize_t)(cbDSN * sizeof(wchar_t)), "strict", &byteorder);
+        PyObject* val = PyUnicode_DecodeUTF16((char*)szDesc, (Py_ssize_t)(cbDesc * sizeof(wchar_t)), "strict", &byteorder);
 #else
         // UTF-8
         ret = SQLDataSources(henv, nDirection, szDSN,  _countof(szDSN),  &cbDSN, szDesc, _countof(szDesc), &cbDesc);
@@ -640,10 +634,8 @@ static PyObject* mod_datasources(PyObject* self)
 }
 
 
-static PyObject* mod_timefromticks(PyObject* self, PyObject* args)
+static PyObject* mod_timefromticks(PyObject* /* self (unused) */, PyObject* args)
 {
-    UNUSED(self);
-
     PyObject* num;
     if (!PyArg_ParseTuple(args, "O", &num))
         return 0;
@@ -662,23 +654,19 @@ static PyObject* mod_timefromticks(PyObject* self, PyObject* args)
 }
 
 
-static PyObject* mod_datefromticks(PyObject* self, PyObject* args)
+static PyObject* mod_datefromticks(PyObject* /* self (unused) */, PyObject* args)
 {
-    UNUSED(self);
     return PyDate_FromTimestamp(args);
 }
 
 
-static PyObject* mod_timestampfromticks(PyObject* self, PyObject* args)
+static PyObject* mod_timestampfromticks(PyObject* /* self (unused) */, PyObject* args)
 {
-    UNUSED(self);
     return PyDateTime_FromTimestamp(args);
 }
 
-static PyObject* mod_setdecimalsep(PyObject* self, PyObject* args)
+static PyObject* mod_setdecimalsep(PyObject* /* self (unused) */, PyObject* args)
 {
-    UNUSED(self);
-
     const char* type = "U";
 
     PyObject* p;
@@ -689,9 +677,8 @@ static PyObject* mod_setdecimalsep(PyObject* self, PyObject* args)
     Py_RETURN_NONE;
 }
 
-static PyObject* mod_getdecimalsep(PyObject* self)
+static PyObject* mod_getdecimalsep(PyObject* /* self (unused) */)
 {
-    UNUSED(self);
     return GetDecimalPoint();
 }
 
@@ -1242,9 +1229,8 @@ PyMODINIT_FUNC PyInit_pyodbc()
 
 
 #ifdef WINVER
-BOOL WINAPI DllMain(HINSTANCE hMod, DWORD fdwReason, LPVOID lpvReserved)
+BOOL WINAPI DllMain(HINSTANCE /* hMod (unused) */, DWORD /* fdwReason (unused) */, LPVOID /* lpvReserved (unused) */)
 {
-    UNUSED(hMod, fdwReason, lpvReserved);
     return TRUE;
 }
 #endif
@@ -1272,7 +1258,7 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
     if (existing) {
         assert(PyUnicode_Check(existing));
         length = PyUnicode_GET_LENGTH(existing) + 1; // + 1 to add a trailing semicolon
-        int kind = PyUnicode_KIND(existing);
+        int kind = (int)PyUnicode_KIND(existing);
         if (result_kind < kind)
             result_kind = kind;
     }
@@ -1282,10 +1268,10 @@ static PyObject* MakeConnectionString(PyObject* existing, PyObject* parts)
         // key=value;
         length += PyUnicode_GET_LENGTH(key) + 1;
         length += PyUnicode_GET_LENGTH(value) + 1;
-        int kind = PyUnicode_KIND(key);
+        int kind = (int)PyUnicode_KIND(key);
         if (result_kind < kind)
             result_kind = kind;
-        kind = PyUnicode_KIND(value);
+        kind = (int)PyUnicode_KIND(value);
         if (result_kind < kind)
             result_kind = kind;
     }

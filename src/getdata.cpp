@@ -779,14 +779,14 @@ PyObject *GetData_SqlVariant(Cursor *cur, Py_ssize_t iCol) {
     // the ODBC driver read the sql_variant header which contains the underlying data type
     pBuff = 0;
     indicator = 0;
-    retcode = SQLGetData(cur->hstmt, static_cast<SQLSMALLINT>(iCol + 1), SQL_C_BINARY,
+    retcode = SQLGetData(cur->hstmt, static_cast<SQLUSMALLINT>(iCol + 1), SQL_C_BINARY,
                                     &pBuff, 0, &indicator);
     if (!SQL_SUCCEEDED(retcode))
         return RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
 
     // Get the SQL_CA_SS_VARIANT_TYPE field for the column which will contain the underlying data type
     variantType = 0;
-    retcode = SQLColAttribute(cur->hstmt, iCol + 1, SQL_CA_SS_VARIANT_TYPE, NULL, 0, NULL, &variantType);
+    retcode = SQLColAttribute(cur->hstmt, static_cast<SQLUSMALLINT>(iCol + 1), SQL_CA_SS_VARIANT_TYPE, NULL, 0, NULL, &variantType);
     if (!SQL_SUCCEEDED(retcode))
         return RaiseErrorFromHandle(cur->cnxn, "SQLColAttribute", cur->cnxn->hdbc, cur->hstmt);
 

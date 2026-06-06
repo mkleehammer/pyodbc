@@ -125,10 +125,8 @@ static PyObject* new_check(PyObject* args)
     return (PyObject*)Row_InternalNew(desc, map, cols, apValues);
 }
 
-static PyObject* Row_new(PyTypeObject* type, PyObject* args, PyObject* kwargs)
+static PyObject* Row_new(PyTypeObject* type, PyObject* args, PyObject* /* kwargs (unused) */)
 {
-    UNUSED(kwargs);
-
     PyObject* row = new_check(args);
     if (row == 0)
         PyErr_SetString(PyExc_TypeError, "cannot create 'pyodbc.Row' instances");

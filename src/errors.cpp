@@ -269,7 +269,7 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
         // For now, default to UTF-16 if this is not in the context of a connection.
         // Note that this will not work if the DM is using a different wide encoding (e.g. UTF-32).
         const char *unicode_enc = conn ? conn->metadata_enc.name : ENCSTR_UTF16NE;
-        Object msgStr(PyUnicode_Decode((char*)szMsg, cchMsg * sizeof(uint16_t), unicode_enc, "strict"));
+        Object msgStr(PyUnicode_Decode((char*)szMsg, (Py_ssize_t)(cchMsg * sizeof(uint16_t)), unicode_enc, "strict"));
 
         if (cchMsg != 0 && msgStr.Get())
         {
