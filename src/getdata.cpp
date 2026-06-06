@@ -725,6 +725,7 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
     case SQL_BINARY:
     case SQL_VARBINARY:
     case SQL_LONGVARBINARY:
+    case SQL_INFX_UDT_BLOB:
         return GetBinary(cur, iCol);
 
     case SQL_DECIMAL:
@@ -741,6 +742,7 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
         return GetDataLong(cur, iCol);
 
     case SQL_BIGINT:
+    case SQL_INFX_BIGINT:
         return GetDataLongLong(cur, iCol);
 
     case SQL_REAL:

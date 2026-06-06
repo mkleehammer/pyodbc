@@ -16,6 +16,9 @@
 #define SQL_DB2_DECFLOAT -360   // IBM DB/2 DECFLOAT type
 #define SQL_DB2_XML -370        // IBM DB/2 XML type
 #define SQL_SS_TIME2 -154       // SQL Server 2008 time type
+#define SQL_INFX_BIGINT -114    // IBM Informix BIGINT type
+#define SQL_INFX_UDT_BLOB -102  // IBM Informix BLOB type
+#define SQL_INFX_UDT_CLOB -103  // IBM Informix CLOB type
 
 struct SQL_SS_TIME2_STRUCT
 {
