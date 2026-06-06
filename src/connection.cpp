@@ -1004,6 +1004,9 @@ static int Connection_settimeout(PyObject* self, PyObject* value, void* closure)
         return -1;
     }
 
+    // this same value is used for the cursor timeout
+    cnxn->timeout = timeout;
+
     SQLRETURN ret;
     Py_BEGIN_ALLOW_THREADS
     ret = SQLSetConnectAttr(cnxn->hdbc, SQL_ATTR_CONNECTION_TIMEOUT, (SQLPOINTER)(uintptr_t)timeout, SQL_IS_UINTEGER);
@@ -1013,8 +1016,6 @@ static int Connection_settimeout(PyObject* self, PyObject* value, void* closure)
         RaiseErrorFromHandle(cnxn, "SQLSetConnectAttr", cnxn->hdbc, SQL_NULL_HANDLE);
         return -1;
     }
-
-    cnxn->timeout = timeout;
 
     return 0;
 }
