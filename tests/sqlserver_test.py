@@ -346,6 +346,22 @@ def test_nextset_with_raiserror(cursor: pyodbc.Cursor):
         cursor.nextset()
 
 
+def test_sqlstate(cursor: pyodbc.Cursor):
+    """Validate new exception property and order of args tuple."""
+    cursor.execute("create table t1 (id int primary key)")
+    cursor.execute("insert into t1 values (1)")
+    try:
+        cursor.execute("insert into t1 values (1)")
+    except pyodbc.IntegrityError as e:
+        assert e.sqlstate == "23000"
+        assert e.args[0] == "23000"
+    try:
+        cursor.execute("insert into t1 values (?)", (1, "bogus"))
+    except pyodbc.ProgrammingError as e:
+        assert e.sqlstate == "HY000"
+        assert e.args[0] == "HY000"
+
+
 def test_fixed_unicode(cursor: pyodbc.Cursor):
     value = "t\xebsting"
     cursor.execute("create table t1(s nchar(7))")

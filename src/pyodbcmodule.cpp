@@ -311,7 +311,7 @@ static bool AllocateEnv()
         }
     }
     Py_DECREF(odbcversion);
-    
+
     if (!SQL_SUCCEEDED(SQLSetEnvAttr(henv, SQL_ATTR_ODBC_VERSION, defaultVersion, sizeof(int))))
     {
         PyErr_SetString(PyExc_RuntimeError, "Unable to set SQL_ATTR_ODBC_VERSION attribute.");
@@ -1121,17 +1121,17 @@ static bool CreateExceptions()
         if (!classdict)
             return false;
 
-        PyObject* doc = PyUnicode_FromString(info.szDoc);
-        if (!doc)
+        if (!strcmp(info.szFullName, "pyodbc.Error") || !strcmp(info.szFullName, "pyodbc.Warning"))
         {
-            Py_DECREF(classdict);
-            return false;
+            Py_INCREF(Py_None);
+            if (PyDict_SetItemString(classdict, "sqlstate", Py_None) < 0) {
+                Py_DECREF(Py_None);
+                Py_DECREF(classdict);
+                return false;
+            }
         }
 
-        PyDict_SetItemString(classdict, "__doc__", doc);
-        Py_DECREF(doc);
-
-        *info.ppexc = PyErr_NewException((char*)info.szFullName, *info.ppexcParent, classdict);
+        *info.ppexc = PyErr_NewExceptionWithDoc((char*)info.szFullName, info.szDoc, *info.ppexcParent, classdict);
         if (*info.ppexc == 0)
         {
             Py_DECREF(classdict);

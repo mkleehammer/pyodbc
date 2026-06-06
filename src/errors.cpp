@@ -57,71 +57,6 @@ static PyObject* ExceptionFromSqlState(const char* sqlstate)
 }
 
 
-PyObject* RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* format, ...)
-{
-    PyObject *pAttrs = 0, *pError = 0;
-
-    if (!sqlstate || !*sqlstate)
-        sqlstate = "HY000";
-
-    if (!exc_class)
-        exc_class = ExceptionFromSqlState(sqlstate);
-
-    // Note: Don't use any native strprintf routines.  With Py_ssize_t, we need "%zd", but VC .NET doesn't support it.
-    // PyUnicode_FromFormatV already takes this into account.
-
-    va_list marker;
-    va_start(marker, format);
-    PyObject* pMsg = PyUnicode_FromFormatV(format, marker);
-    va_end(marker);
-    if (!pMsg)
-    {
-        PyErr_NoMemory();
-        return 0;
-    }
-
-    // Create an exception with a 'sqlstate' attribute (set to None if we don't have one) whose 'args' attribute is a
-    // tuple containing the message and sqlstate value.  The 'sqlstate' attribute ensures it is easy to access in
-    // Python (and more understandable to the reader than ex.args[1]), but putting it in the args ensures it shows up
-    // in logs because of the default repr/str.
-
-    pAttrs = Py_BuildValue("(Os)", pMsg, sqlstate);
-    if (pAttrs)
-    {
-        pError = PyObject_CallObject(exc_class, pAttrs);
-        if (pError)
-            RaiseErrorFromException(pError);
-    }
-
-    Py_DECREF(pMsg);
-    Py_XDECREF(pAttrs);
-    Py_XDECREF(pError);
-
-    return 0;
-}
-
-
-bool HasSqlState(PyObject* ex, const char* szSqlState)
-{
-  // Returns true if `ex` is an exception and has the given SQLSTATE.  It is safe to pass 0 for
-  // `ex`.
-
-  if (!ex)
-    return false;
-
-  Object args(PyObject_GetAttrString(ex, "args"));
-  if (!args)
-    return false;
-
-  Object sqlstate(PySequence_GetItem(args, 1));
-  if (!sqlstate || !PyBytes_Check(sqlstate))
-    return false;
-
-  const char* sz = PyBytes_AsString(sqlstate);
-  return (sz && _strcmpi(sz, szSqlState) == 0);
-}
-
-
 static PyObject* GetError(const char* sqlstate, PyObject* exc_class, PyObject* pMsg)
 {
     // pMsg
@@ -155,10 +90,45 @@ static PyObject* GetError(const char* sqlstate, PyObject* exc_class, PyObject* p
     PyTuple_SetItem(pAttrs, 0, pSqlState); // pAttrs now owns the pSqlState reference
 
     pError = PyObject_CallObject(exc_class, pAttrs); // pError will incref pAttrs
+    if (pError)
+        PyObject_SetAttrString(pError, "sqlstate", pSqlState);
 
     Py_XDECREF(pAttrs);
 
     return pError;
+}
+
+
+PyObject* RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* format, ...)
+{
+    if (!sqlstate || !*sqlstate)
+        sqlstate = "HY000";
+
+    if (!exc_class)
+        exc_class = ExceptionFromSqlState(sqlstate);
+
+    // Note: Don't use any native strprintf routines.  With Py_ssize_t, we need "%zd", but VC .NET doesn't support it.
+    // PyUnicode_FromFormatV already takes this into account.
+
+    va_list marker;
+    va_start(marker, format);
+    PyObject* pMsg = PyUnicode_FromFormatV(format, marker);
+    va_end(marker);
+    if (!pMsg)
+    {
+        PyErr_NoMemory();
+        return 0;
+    }
+
+    // GetError() takes ownership of pMsg, so no Py_DECREF on pMsg after this.
+    PyObject* pError = GetError(sqlstate, exc_class, pMsg);
+    if (pError)
+    {
+        RaiseErrorFromException(pError);
+        Py_DECREF(pError);
+    }
+
+    return 0;
 }
 
 
@@ -325,25 +295,4 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
     }
 
     return GetError(sqlstate, 0, msg.Detach());
-}
-
-
-static bool GetSqlState(HSTMT hstmt, char* szSqlState)
-{
-    SQLSMALLINT cchMsg;
-    SQLRETURN ret;
-
-    Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetDiagField(SQL_HANDLE_STMT, hstmt, 1, SQL_DIAG_SQLSTATE, (SQLCHAR*)szSqlState, 5, &cchMsg);
-    Py_END_ALLOW_THREADS
-    return SQL_SUCCEEDED(ret);
-}
-
-
-bool HasSqlState(HSTMT hstmt, const char* szSqlState)
-{
-    char szActual[6];
-    if (!GetSqlState(hstmt, szActual))
-        return false;
-    return memcmp(szActual, szSqlState, 5) == 0;
 }

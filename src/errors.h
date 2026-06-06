@@ -29,9 +29,9 @@ PyObject* RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* for
 
 // Constructs an exception and returns it.
 //
-// This function is like RaiseErrorFromHandle, but gives you the ability to examine the error first (in particular,
-// used to examine the SQLSTATE using HasSqlState).  If you want to use the error, call PyErr_SetObject(ex->ob_type,
-// ex).  Otherwise, dispose of the error using Py_DECREF(ex).
+// This function is like RaiseErrorFromHandle, but gives you the ability to examine the error first.
+// If you want to use the error, call PyErr_SetObject(ex->ob_type, ex).  Otherwise, dispose of the
+// error using Py_DECREF(ex).
 //
 // conn
 //   The connection object, from which it will use the Unicode encoding. May be null if not available.
@@ -41,19 +41,6 @@ PyObject* RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* for
 //   C++ code we failed.
 //
 PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc, HSTMT hstmt);
-
-
-// Returns true if `ex` is a database exception with SQLSTATE `szSqlState`.  Returns false otherwise.
-// 
-// It is safe to call with ex set to zero.  The SQLSTATE comparison is case-insensitive.
-//
-bool HasSqlState(PyObject* ex, const char* szSqlState);
-
-
-// Returns true if the HSTMT has a diagnostic record with the given SQLSTATE.  This is used after SQLGetData call that
-// returned SQL_SUCCESS_WITH_INFO to see if it also has SQLSTATE 01004, indicating there is more data.
-//
-bool HasSqlState(HSTMT hstmt, const char* szSqlState);
 
 inline PyObject* RaiseErrorFromException(PyObject* pError)
 {

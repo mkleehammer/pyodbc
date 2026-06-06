@@ -726,3 +726,19 @@ def test_pickling(cnxn: pyodbc.Connection):
     pickled_rows = pickle.dumps(original_rows)
     unpickled_rows = pickle.loads(pickled_rows)
     assert unpickled_rows == original_rows
+
+
+def test_sqlstate(cursor: pyodbc.Cursor):
+    """Validate new exception property and order of args tuple."""
+    cursor.execute("create table t1 (id int primary key)")
+    cursor.execute("insert into t1 values (1)")
+    try:
+        cursor.execute("insert into t1 values (1)")
+    except pyodbc.Error as e:
+        assert e.sqlstate == "HY000"
+        assert e.args[0] == "HY000"
+    try:
+        cursor.execute("insert into t1 values (?)", (1, "bogus"))
+    except pyodbc.ProgrammingError as e:
+        assert e.sqlstate == "HY000"
+        assert e.args[0] == "HY000"
