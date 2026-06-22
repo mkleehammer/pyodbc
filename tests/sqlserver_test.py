@@ -925,6 +925,45 @@ def test_executemany_failure(cursor: pyodbc.Cursor):
         cursor.executemany("insert into t1(a, b) value (?, ?)", params)
 
 
+def test_fast_executemany(cursor: pyodbc.Cursor):
+    """
+    Verify that we get the same results from the fast path as with other paths.
+    """
+    cursor.execute(
+        "create table t1("
+        "  a varchar(100),"
+        "  b datetime2,"
+        "  c date,"
+        "  d smallint,"
+        "  e bit,"
+        "  f nvarchar(100)"
+        ")"
+    )
+    parameters = (
+        ("A", datetime(2001, 2, 3, 4, 5, 6), date(2007, 8, 9), 3, True, None),
+        ("B", date(2002, 3, 4), None, 3, False, "Schlüssel"),
+        ("C", None, date(2004, 5, 6), 3, True, "chicken"),
+        ("D", datetime(2005, 6, 7), date(2003, 2, 1), 3, None, "ABC"),
+        ("E", None, None, None, None, None),
+    )
+    insert = "insert into t1(a, b, c, d, e, f) values (?, ?, ?, ?, ?, ?)"
+    cursor.fast_executemany = False
+    cursor.executemany(insert, parameters)
+    slow_values = cursor.execute("select * from t1 order by 1").fetchall()
+    assert len(slow_values) == len(parameters)
+    assert len(slow_values[0]) == len(parameters[0])
+    cursor.execute("delete from t1")
+    cursor.fast_executemany = True
+    cursor.executemany(insert, parameters)
+    fast_values = cursor.execute("select * from t1 order by 1").fetchall()
+    assert fast_values == slow_values
+    cursor.execute("delete from t1")
+    for row in parameters:
+        cursor.execute(insert, row)
+    inserted_separately = cursor.execute("select * from t1 order by 1").fetchall()
+    assert fast_values == inserted_separately
+
+
 def test_row_slicing(cursor: pyodbc.Cursor):
     cursor.execute("create table t1(a int, b int, c int, d int)")
     cursor.execute("insert into t1 values(1,2,3,4)")
