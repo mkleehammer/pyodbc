@@ -1,8 +1,8 @@
 # ignore line spacing (E303), mixed case names (N802/N803)
 # ruff: noqa: E303, N802, N803
 from __future__ import annotations
-from collections.abc import Generator, Iterable, Iterator, Sequence
-from typing import Any, Callable, Final, Union
+from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
+from typing import Any, Final, Union
 import ctypes
 
 # SQLSetConnectAttr attributes
