@@ -29,7 +29,7 @@ python setup.py build_ext --inplace -D PYODBC_TRACE
 pytest tests/sqlite_test.py -vxs -k test_text
 ```
 
-Full multi-version test matrix uses tox (`pipx install tox`), covering py310–py314:
+Full multi-version test matrix uses tox (`pipx install tox`), covering py310–py315:
 
 ```sh
 tox                 # all interpreters + all databases
