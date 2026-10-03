@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4.3.0
+      - uses: actions/checkout@v7.0.1
 
       - name: Install Python dependencies
         run: python -m pip install --upgrade pip build
@@ -23,7 +23,7 @@ jobs:
         run: python -m build --sdist
 
       - name: Upload sdist
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: sdist__${{ github.sha }}
           path: ./dist/*.gz
@@ -33,17 +33,17 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      - uses: actions/checkout@v4.3.0
+      - uses: actions/checkout@v7.0.1
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2.1
+        uses: pypa/cibuildwheel@v4.2.1
         env:
           CIBW_ARCHS_WINDOWS: "AMD64 x86"
           # AMD64 and Intel32 wheels
           CIBW_BUILD: "cp*-win_amd64 cp*-win32"
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: wheels_windows_x86_64__${{ github.sha }}
           path: ./wheelhouse/*.whl
@@ -53,16 +53,16 @@ jobs:
     runs-on: windows-11-arm
 
     steps:
-      - uses: actions/checkout@v4.3.0
+      - uses: actions/checkout@v7.0.1
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2.1
+        uses: pypa/cibuildwheel@v4.2.1
         env:
           CIBW_ARCHS_WINDOWS: "ARM64"
           CIBW_BUILD: "cp*-win_arm64"
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: wheels_windows_arm64__${{ github.sha }}
           path: ./wheelhouse/*.whl
@@ -72,14 +72,14 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4.3.0
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up QEMU
         # QEMU is needed for Linux aarch64 wheels
-        uses: docker/setup-qemu-action@v3.6.0
+        uses: docker/setup-qemu-action@v4.4.0
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2.1
+        uses: pypa/cibuildwheel@v4.2.1
         env:
           # https://github.com/pypa/manylinux#docker-images
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
@@ -96,7 +96,7 @@ jobs:
               {wheel}
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: wheels_ubuntu_manylinux__${{ github.sha }}
           path: ./wheelhouse/*.whl
@@ -106,14 +106,14 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4.3.0
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up QEMU
         # QEMU is needed for Linux aarch64 wheels
-        uses: docker/setup-qemu-action@v3.6.0
+        uses: docker/setup-qemu-action@v4.4.0
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2.1
+        uses: pypa/cibuildwheel@v4.2.1
         env:
           # https://github.com/pypa/manylinux#docker-images
           CIBW_MUSLLINUX_X86_64_IMAGE: musllinux_1_2
@@ -130,7 +130,7 @@ jobs:
               {wheel}
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: wheels_ubuntu_musllinux__${{ github.sha }}
           path: ./wheelhouse/*.whl
@@ -140,10 +140,10 @@ jobs:
     runs-on: macos-15-intel
 
     steps:
-      - uses: actions/checkout@v4.3.0
+      - uses: actions/checkout@v7.0.1
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2.1
+        uses: pypa/cibuildwheel@v4.2.1
         # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
         env:
           CIBW_ARCHS_MACOS: x86_64
@@ -152,7 +152,7 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: wheels_macos_x86__${{ github.sha }}
           path: ./wheelhouse/*.whl
@@ -162,7 +162,7 @@ jobs:
     runs-on: macos-14
 
     steps:
-      - uses: actions/checkout@v4.3.0
+      - uses: actions/checkout@v7.0.1
 
       - name: Install unixODBC
         # unixODBC is necessary for the SQL C header files, e.g. sql.h, but doesn't appear
@@ -170,7 +170,7 @@ jobs:
         run: brew install unixodbc
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2.1
+        uses: pypa/cibuildwheel@v4.2.1
         # https://cibuildwheel.readthedocs.io/en/stable/options/#options-summary
         env:
           CIBW_ARCHS_MACOS: arm64
@@ -179,7 +179,7 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: wheels_macos_arm64__${{ github.sha }}
           path: ./wheelhouse/*.whl
