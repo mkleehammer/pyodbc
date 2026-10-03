@@ -180,7 +180,7 @@ CheckAndInstallMsiFromUrl `
     -msifile_path "$cache_dir\msodbcsql_13_E25B96_x64.msi" `
     -msiexec_paras @("IACCEPTMSODBCSQLLICENSETERMS=YES", "ADDLOCAL=ALL");
 
-# As of 2026-02-14, https://learn.microsoft.com/en-us/sql/connect/odbc/windows/release-notes-odbc-sql-server-windows:
+# As of 2026-10-03, https://learn.microsoft.com/en-us/sql/connect/odbc/windows/release-notes-odbc-sql-server-windows:
 # 17.0     : https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/17.0.1.1/x64/msodbcsql.msi (2018-02)
 # 17.1     : https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/17.1.0.1/x64/msodbcsql.msi
 # 17.2     : https://download.microsoft.com/download/E/6/B/E6BFDC7A-5BCD-4C51-9912-635646DA801E/en-US/17.2.0.1/x64/msodbcsql.msi
@@ -200,14 +200,15 @@ CheckAndInstallMsiFromUrl `
 # 17.10.4.1: https://download.microsoft.com/download/6/f/f/6ffefc73-39ab-4cc0-bb7c-4093d64c2669/en-US/17.10.4.1/x64/msodbcsql.msi (2023-06-15)
 # 17.10.5  : https://download.microsoft.com/download/6/f/f/6ffefc73-39ab-4cc0-bb7c-4093d64c2669/en-US/17.10.5.1/x64/msodbcsql.msi (2023-10-23)
 # 17.10.6  : https://download.microsoft.com/download/6/f/f/6ffefc73-39ab-4cc0-bb7c-4093d64c2669/en-US/17.10.6.1/x64/msodbcsql.msi (2024-04-09)
+# 17.11    : https://download.microsoft.com/download/d99fcd4f-548f-46e6-83d5-b9eb62b373d5/amd64/1033/msodbcsql.msi (2024-04-30)
 CheckAndInstallMsiFromUrl `
     -driver_name "ODBC Driver 17 for SQL Server" `
     -driver_bitness "64-bit" `
-    -driver_url "https://download.microsoft.com/download/6/f/f/6ffefc73-39ab-4cc0-bb7c-4093d64c2669/en-US/17.10.6.1/x64/msodbcsql.msi" `
-    -msifile_path "$cache_dir\msodbcsql_17.10.6.1_x64.msi" `
+    -driver_url "https://download.microsoft.com/download/d99fcd4f-548f-46e6-83d5-b9eb62b373d5/amd64/1033/msodbcsql.msi" `
+    -msifile_path "$cache_dir\msodbcsql_17.11.1.1_x64.msi" `
     -msiexec_paras @("IACCEPTMSODBCSQLLICENSETERMS=YES", "ADDLOCAL=ALL");
 
-# As of 2026-02-14, https://learn.microsoft.com/en-us/sql/connect/odbc/windows/release-notes-odbc-sql-server-windows:
+# As of 2026-10-03, https://learn.microsoft.com/en-us/sql/connect/odbc/windows/release-notes-odbc-sql-server-windows:
 # 18.0     : https://download.microsoft.com/download/1/a/4/1a4a49b8-9fe6-4237-be0d-a6b8f2d559b5/en-US/18.0.1.1/x64/msodbcsql.msi (2022-02-15)
 # 18.1     : https://download.microsoft.com/download/9/1/f/91fc3f67-34bd-44c7-9431-be5919dc8377/en-US/18.1.1.1/x64/msodbcsql.msi (2022-08-08)
 # 18.1.2   : https://download.microsoft.com/download/9/1/f/91fc3f67-34bd-44c7-9431-be5919dc8377/en-US/18.1.2.1/x64/msodbcsql.msi (2022-11-03)
@@ -219,14 +220,15 @@ CheckAndInstallMsiFromUrl `
 # 18.4     : https://download.microsoft.com/download/1/7/4/17423b83-b75d-42e1-b5b9-eaa266561c5e/Windows/amd64/1033/msodbcsql.msi (2024-07-31)
 # 18.5     : https://download.microsoft.com/download/26bc9eb1-ba24-4b62-8274-bff0f935bb75/amd64/1033/msodbcsql.msi (2025-03-17)
 # 18.5.2   : https://download.microsoft.com/download/48a8e0c3-556b-4012-ba65-fcea935447f2/amd64/1033/msodbcsql.msi (2025-09-26)
-# 18.6     : https://download.microsoft.com/download/8d6e3acc-bf5b-41fe-ad51-a9ad406a780f/amd64/1033/msodbcsql.msi (2025-12-17)
+# 18.6.1   : https://download.microsoft.com/download/8d6e3acc-bf5b-41fe-ad51-a9ad406a780f/amd64/1033/msodbcsql.msi (2025-12-17)
 # 18.6.2   : https://download.microsoft.com/download/7bf9fad4-0f21-486d-a750-fc990ded5624/amd64/1033/msodbcsql.msi (2026-03-31)
+# 18.7     : https://download.microsoft.com/download/d624e1c6-293b-4d6f-91b8-6e515a5d6a77/amd64/1033/msodbcsql.msi (2026-09-07)
 # NOTE: 18.6.1.1 caused an access violation in the MS SQL _test_tvp() unit test (#1459); fixed in 18.6.2.1
 CheckAndInstallMsiFromUrl `
     -driver_name "ODBC Driver 18 for SQL Server" `
     -driver_bitness "64-bit" `
-    -driver_url "https://download.microsoft.com/download/7bf9fad4-0f21-486d-a750-fc990ded5624/amd64/1033/msodbcsql.msi" `
-    -msifile_path "$cache_dir\msodbcsql_18.6.2.1_x64.msi" `
+    -driver_url "https://download.microsoft.com/download/d624e1c6-293b-4d6f-91b8-6e515a5d6a77/amd64/1033/msodbcsql.msi" `
+    -msifile_path "$cache_dir\msodbcsql_18.7.1.1_x64.msi" `
     -msiexec_paras @("IACCEPTMSODBCSQLLICENSETERMS=YES", "ADDLOCAL=ALL");
 
 # some drivers must be installed in alignment with Python's bitness
