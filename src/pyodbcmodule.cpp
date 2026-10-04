@@ -608,14 +608,16 @@ static PyObject* mod_drivers(PyObject* self)
 
         if (PyList_Append(result, name.Get()) != 0)
             return 0;
-        name.Detach();
+        // PyList_Append keeps its own reference, so let `name`'s destructor
+        // release ours. Detaching here would leak the string.
 
         nDirection = SQL_FETCH_NEXT;
     }
 
     if (ret != SQL_NO_DATA)
     {
-        Py_DECREF(result);
+        // `result` is an Object; its destructor releases the list. A manual
+        // Py_DECREF here would double-decref it on the way out.
         return RaiseErrorFromHandle(0, "SQLDrivers", SQL_NULL_HANDLE, SQL_NULL_HANDLE);
     }
 
