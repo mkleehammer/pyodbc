@@ -8,7 +8,7 @@ import re
 import uuid
 from collections.abc import Iterator
 from decimal import Decimal
-from datetime import date, time, datetime
+from datetime import date, time, datetime, timedelta, timezone
 from functools import lru_cache
 
 import pyodbc
@@ -71,6 +71,27 @@ def cursor() -> Iterator[pyodbc.Cursor]:
     cur.execute("drop table if exists t2")
     cur.execute("drop table if exists t3")
     cnxn.commit()
+
+    yield cur
+
+    if not cnxn.closed:
+        cur.close()
+        cnxn.close()
+
+
+# Enabling the SQL Server bulk copy (BCP) API requires the connection to be
+# opened with the SQL_COPT_SS_BCP attribute set, so BCP tests use their own
+# connection rather than the shared one above.
+SQL_COPT_SS_BCP = 1219
+SQL_BCP_ON = 1
+
+
+@pytest.fixture
+def bcp_cursor() -> Iterator[pyodbc.Cursor]:
+    cnxn = connect(autocommit=True, attrs_before={SQL_COPT_SS_BCP: SQL_BCP_ON})
+    cur = cnxn.cursor()
+
+    cur.execute("drop table if exists t1")
 
     yield cur
 
@@ -1557,6 +1578,136 @@ def test_emoticons_as_literal(cursor: pyodbc.Cursor):
     result = cursor.execute("select s from t1").fetchone()[0]
 
     assert result == v
+
+
+# A fixed timezone for the datetimeoffset column in the BCP type-coverage test.
+_BCP_TZ = timezone(timedelta(hours=5, minutes=30))
+
+# Reason used to skip the BCP tests when the driver is not the Microsoft one.
+_BCP_SKIP = 'BCP requires the Microsoft ODBC Driver for SQL Server'
+
+
+def _bcp_row(i: int) -> tuple:
+    """Build one row covering every Python type the BCP fast path supports."""
+    return (
+        i,                                                  # c_int       INT
+        5_000_000_000 + i,                                  # c_bigint    BIGINT (> 32 bits)
+        bool(i % 2),                                        # c_bit       BIT
+        i + 0.5,                                            # c_float     FLOAT
+        "x" * (i % 400),                            # c_varchar   VARCHAR (varying length)
+        Decimal(f"{i}.{i % 10000:04d}"),            # c_decimal   DECIMAL(18,4)
+        Decimal(10 ** 20 + i),                      # c_numeric   NUMERIC(38,0) (> 64 bits)
+        time(i % 24, i % 60, (i * 7) % 60, (i * 101) % 1000000),  # c_time   TIME(7)
+        date(2020, (i % 12) + 1, (i % 28) + 1),     # c_date      DATE
+        datetime(2021, (i % 12) + 1, (i % 28) + 1,
+                 i % 24, i % 60, (i * 7) % 60, (i * 101) % 1000000),  # c_datetime2
+        datetime(2022, (i % 12) + 1, (i % 28) + 1,
+                 i % 24, i % 60, (i * 7) % 60, (i * 101) % 1000000,
+                 tzinfo=_BCP_TZ),                   # c_dto       DATETIMEOFFSET(7)
+    )
+
+
+@pytest.mark.skipif(not IS_MSODBCSQL, reason=_BCP_SKIP)
+def test_bcp_fast_executemany(bcp_cursor: pyodbc.Cursor):
+    # The BCP fast path (cursor.use_bcp_fast) routes fast_executemany through the
+    # SQL Server bulk-copy API.  Verify it inserts correctly across every
+    # supported Python type, including NULLs, variable-length growth (varchar
+    # past the initial buffer), values that exceed 32/64 bits, and manual
+    # batching.
+    cur = bcp_cursor
+    cur.execute(
+        """
+        create table t1(
+            c_int       int,
+            c_bigint    bigint,
+            c_bit       bit,
+            c_float     float,
+            c_varchar   varchar(1000),
+            c_decimal   decimal(18, 4),
+            c_numeric   numeric(38, 0),
+            c_time      time(7),
+            c_date      date,
+            c_datetime2 datetime2(7),
+            c_dto       datetimeoffset(7))
+        """)
+
+    n = 500
+    null_row = 7
+    rows = [_bcp_row(i) for i in range(n)]
+    rows[null_row] = (null_row,) + (None,) * 10   # NULL every column except the key
+
+    cur.fast_executemany = True
+    cur.use_bcp_fast = True
+    cur.bcp_batch_rows = 100                          # exercise batching
+    # No explicit column list: BCP binds by ordinal, and only a plain VALUES
+    # insert takes the BCP path (see parse_insert_table); the row tuples are in
+    # table-column order.
+    cur.executemany(
+        "insert into t1 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+
+    assert cur.execute("select count(*) from t1").fetchval() == n
+
+    # pyodbc cannot natively decode datetimeoffset (SQL type -155) on fetch, so
+    # the datetimeoffset column is read back as its wall-clock datetime2 plus the
+    # UTC offset in minutes; the other ten columns are compared directly.
+    fetch_cols = ("c_int, c_bigint, c_bit, c_float, c_varchar, c_decimal, c_numeric, "
+                  "c_time, c_date, c_datetime2, "
+                  "cast(c_dto as datetime2(7)), datepart(tzoffset, c_dto)")
+
+    # A fully-populated row round-trips exactly across every type.
+    expected = _bcp_row(123)
+    row = cur.execute(f"select {fetch_cols} from t1 where c_int = 123").fetchone()
+    assert tuple(row)[:10] == expected[:10]
+    assert row[10] == expected[10].replace(tzinfo=None)   # datetimeoffset wall time
+    assert row[11] == 330                                 # +05:30 offset in minutes
+    # Spot-check the type mapping on the trickier columns.
+    assert isinstance(row.c_decimal, Decimal)
+    assert isinstance(row.c_bit, bool)
+
+    # The all-NULL row round-trips as None in every nullable column.
+    row = cur.execute(f"select {fetch_cols} from t1 where c_int = {null_row}").fetchone()
+    assert row.c_int == null_row
+    assert all(v is None for v in tuple(row)[1:])
+
+    # NULLs are isolated to that single row.
+    assert cur.execute("select count(*) from t1 where c_dto is null").fetchval() == 1
+
+
+@pytest.mark.skipif(not IS_MSODBCSQL, reason=_BCP_SKIP)
+def test_bcp_fast_executemany_column_list(bcp_cursor: pyodbc.Cursor):
+    # BCP loads by table ordinal, so an explicit column list must be mapped to
+    # the destination's column positions.  This is the shape SQLAlchemy emits
+    # (INSERT INTO t (cols...) VALUES (...)), including lists that reorder or
+    # subset the table's columns.
+    cur = bcp_cursor
+    cur.execute("create table t1(a int, b varchar(20), c int, d float)")
+
+    cur.fast_executemany = True
+    cur.use_bcp_fast = True
+
+    # Column list in a different order than the table's physical columns; the
+    # row tuples follow the list order (c, a, b, d).
+    reordered = [(i * 10, i, f"b{i}", i + 0.5) for i in range(50)]
+    cur.executemany("insert into t1 (c, a, b, d) values (?, ?, ?, ?)", reordered)
+
+    row = cur.execute("select a, b, c, d from t1 where a = 7").fetchone()
+    assert row.a == 7
+    assert row.b == "b7"
+    assert row.c == 70
+    assert row.d == 7.5
+    assert cur.execute("select count(*) from t1").fetchval() == 50
+
+    # A column subset: the unlisted columns (c, d) must round-trip as NULL.
+    cur.execute("truncate table t1")
+    subset = [(i, f"name{i}") for i in range(20)]
+    cur.executemany("insert into t1 (a, b) values (?, ?)", subset)
+
+    row = cur.execute("select a, b, c, d from t1 where a = 3").fetchone()
+    assert row.a == 3
+    assert row.b == "name3"
+    assert row.c is None
+    assert row.d is None
+    assert cur.execute("select count(*) from t1").fetchval() == 20
 
 
 def _test_tvp(cursor: pyodbc.Cursor, diff_schema):
