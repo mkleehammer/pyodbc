@@ -157,6 +157,12 @@ def test_datasources():
     assert isinstance(p, dict)
 
 
+def test_failed_connect_raises():
+    # The error is read before any Connection object exists, which used to segfault.
+    with pytest.raises(pyodbc.InterfaceError):
+        pyodbc.connect('DSN=pyodbc-no-such-dsn')
+
+
 def test_getinfo_string():
     cnxn = connect()
     value = cnxn.getinfo(pyodbc.SQL_CATALOG_NAME_SEPARATOR)
