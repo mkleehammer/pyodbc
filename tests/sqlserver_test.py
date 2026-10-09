@@ -2,6 +2,7 @@
 # ruff: noqa: DTZ001, DTZ005, DTZ011
 
 import ctypes
+import decimal
 import gc
 import os
 import re
@@ -429,6 +430,45 @@ def test_decimal_e(cursor: pyodbc.Cursor):
     cursor.execute("insert into t1 values (?)", value)
     result = cursor.execute("select * from t1").fetchone()[0]
     assert result == value
+
+
+@pytest.mark.parametrize("prec", [10, 28, 38])
+def test_decimal_fast_executemany_ignores_context_precision(cursor: pyodbc.Cursor, prec):
+    """
+    fast_executemany must not round Decimal parameters to the calling thread's decimal
+    context precision (28 digits by default).
+    https://github.com/mkleehammer/pyodbc/issues/1507
+    """
+    cursor.execute("create table t1(v decimal(38, 10), w decimal(38, 0))")
+    cursor.fast_executemany = True
+
+    # 38 significant digits, more than the default context precision of 28.
+    value = Decimal("1234567890123456789012345678.1234567891")
+    # Rounds up to 1E+38 under a 28-digit context, which does not fit decimal(38, 0).
+    max_int = Decimal("9" * 38)
+
+    with decimal.localcontext() as ctx:
+        ctx.prec = prec
+        cursor.executemany("insert into t1(v, w) values (?, ?)", [(value, max_int)])
+
+    row = cursor.execute("select v, w from t1").fetchone()
+    assert row.v == value
+    assert row.w == max_int
+
+
+def test_decimal_fast_executemany_trailing_zeros(cursor: pyodbc.Cursor):
+    """Trailing zeros, zeros with any exponent, and negative values still bind correctly."""
+    cursor.execute("create table t1(id int, v decimal(20, 4))")
+    cursor.fast_executemany = True
+
+    values = [
+        Decimal("1.50"), Decimal("100"), Decimal("0"), Decimal("0.00"),
+        Decimal("0E-10"), Decimal("-12.3400"), Decimal((0, (1, 2, 3), 5)),
+    ]
+    cursor.executemany("insert into t1(id, v) values (?, ?)", list(enumerate(values)))
+
+    rows = cursor.execute("select id, v from t1 order by id").fetchall()
+    assert [r.v for r in rows] == values
 
 
 def test_subquery_params(cursor: pyodbc.Cursor):
