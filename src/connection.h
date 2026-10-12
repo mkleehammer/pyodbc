@@ -45,6 +45,9 @@ struct Connection
     // The column size of datetime columns, obtained from SQLGetInfo(), used to determine the datetime precision.
     int datetime_precision;
 
+    // Opt-in flag for preserving time zone offset with non-naïve datetime objects.
+    bool preserve_tzoffsets;
+
     // Initial buffer allocation size for ReadVarColumn
     // Any integer greater than 0 overrides the default value of 4096
     // < 1 means use columnSize * cbElement + cbNullTeminator from the column descriptor,

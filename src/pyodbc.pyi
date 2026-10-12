@@ -399,6 +399,15 @@ class Connection:
         ...
 
     @property
+    def preserve_tzoffsets(self) -> bool:
+        """Opt-in flag to avoid discarding time zone offset with datetime parameters."""
+        ...
+
+    @preserve_tzoffsets.setter
+    def preserve_tzoffsets(self, value: bool) -> None:
+        ...
+
+    @property
     def readvar_initsize(self) -> int:
         """The initial buffer size in bytes for reading values from variable-length columns."""
         ...

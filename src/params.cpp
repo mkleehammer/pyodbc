@@ -25,6 +25,7 @@
 #include "row.h"
 #include <datetime.h>
 
+#define TZAWARE_STRING_LENGTH 32  // "YYYY-MM-DD HH:MM:SS.999999+00:00"
 
 inline Connection* GetConnection(Cursor* cursor)
 {
@@ -37,8 +38,105 @@ struct DAEParam
     SQLLEN maxlen;
 };
 
+// Does this datetime object have time zone offset information?
+static bool _datetime_is_tzaware(PyObject* dt)
+{
+#if PY_VERSION_HEX >= 0x030A0000
+    // Fast path: direct struct access, available from Python 3.10.
+    PyObject* tzinfo = PyDateTime_DATE_GET_TZINFO(dt);  // borrowed ref
+    if (tzinfo == Py_None)
+        return false;
+    PyObject* offset = PyObject_CallMethod(tzinfo, "utcoffset", "O", dt);
+#else
+    // Pre-3.10: fetch tzinfo via attribute lookup.
+    PyObject* tzinfo = PyObject_GetAttrString(dt, "tzinfo");  // new ref
+    if (tzinfo == nullptr || tzinfo == Py_None)
+    {
+        Py_XDECREF(tzinfo);
+        return false;
+    }
+    PyObject* offset = PyObject_CallMethod(tzinfo, "utcoffset", "O", dt);
+    Py_DECREF(tzinfo);
+#endif
+    if (offset == nullptr)
+    {
+        PyErr_Clear();
+        return false;
+    }
+    bool aware = (offset != Py_None);
+    Py_DECREF(offset);
+    return aware;
+}
 
-static int DetectCType(PyObject *cell, ParamInfo *pi)
+// Custom string (not all back ends accept the output of dt.isoformat()).
+static char* _make_tzaware_string(PyObject* dt)
+{
+    int year       = PyDateTime_GET_YEAR(dt);
+    int month      = PyDateTime_GET_MONTH(dt);
+    int day        = PyDateTime_GET_DAY(dt);
+    int hour       = PyDateTime_DATE_GET_HOUR(dt);
+    int minute     = PyDateTime_DATE_GET_MINUTE(dt);
+    int second     = PyDateTime_DATE_GET_SECOND(dt);
+    int us         = PyDateTime_DATE_GET_MICROSECOND(dt);
+    int tz_hours   = 0;
+    int tz_minutes = 0;
+    char sign      = '+';
+
+    PyObject* tzinfo = PyObject_GetAttrString(dt, "tzinfo");
+    if (tzinfo == nullptr)
+        return nullptr;
+
+    if (tzinfo != Py_None)
+    {
+        PyObject* offset = PyObject_CallMethod(tzinfo, "utcoffset", "O", dt);
+        Py_DECREF(tzinfo);
+        if (offset == nullptr)
+            return nullptr;
+
+        if (offset != Py_None)
+        {
+            PyObject* total_seconds_obj = PyObject_CallMethod(offset, "total_seconds", nullptr);
+            Py_DECREF(offset);
+            if (total_seconds_obj == nullptr)
+                return nullptr;
+
+            double total_seconds = PyFloat_AsDouble(total_seconds_obj);
+            Py_DECREF(total_seconds_obj);
+            if (total_seconds == -1.0 && PyErr_Occurred())
+                return nullptr;
+
+            sign         = (total_seconds < 0) ? '-' : '+';
+            int abs_secs = (int)fabs(total_seconds);
+            tz_hours     = abs_secs / 3600;
+            tz_minutes   = (abs_secs % 3600) / 60;
+
+            if (tz_hours > 23 || tz_minutes > 59) {
+                PyErr_SetString(PyExc_ValueError,
+                                "datetime tzinfo.utcoffset() returned an invalid value");
+                return nullptr;
+            }
+        }
+        else
+            Py_DECREF(offset);
+    }
+    else
+        Py_DECREF(tzinfo);
+
+    char buf[TZAWARE_STRING_LENGTH + 1];
+    PyOS_snprintf(buf, sizeof buf, "%04d-%02d-%02d %02d:%02d:%02d.%06d%c%02d:%02d",
+                  year, month, day,
+                  hour, minute, second, us,
+                  sign, tz_hours, tz_minutes);
+    char* p = (char*)PyMem_Malloc(TZAWARE_STRING_LENGTH);
+    if (p == nullptr) {
+        PyErr_NoMemory();
+        return nullptr;
+    }
+    memcpy(p, buf, TZAWARE_STRING_LENGTH);
+    return p;
+}
+
+static int DetectCType(PyObject *cell, ParamInfo *pi, bool preserve_tzoffsets)
 {
     // Detects and sets the appropriate C type to use for binding the specified Python object.
     // Also sets the buffer length to use.  Returns false if unsuccessful.
@@ -96,6 +194,15 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
     Type_DateTime:
         pi->ValueType = SQL_C_TYPE_TIMESTAMP;
         pi->BufferLength = sizeof(SQL_TIMESTAMP_STRUCT);
+        if (preserve_tzoffsets)
+        {
+            if ((cell != Py_None && _datetime_is_tzaware(cell)) || pi->ParameterType == SQL_SS_TIMESTAMPOFFSET)
+            {
+                pi->ParameterType = SQL_VARCHAR;
+                pi->ValueType = SQL_C_CHAR;
+                pi->BufferLength = TZAWARE_STRING_LENGTH;
+            }
+        }
     }
     else if (PyDate_Check(cell))
     {
@@ -163,6 +270,7 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
         case SQL_TYPE_TIME:
             goto Type_Time;
         case SQL_TYPE_TIMESTAMP:
+        case SQL_SS_TIMESTAMPOFFSET:
             goto Type_DateTime;
         case SQL_GUID:
             goto Type_UUID;
@@ -336,24 +444,37 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
     }
     else if (PyDateTime_Check(cell))
     {
-        if (pi->ValueType != SQL_C_TYPE_TIMESTAMP)
+        if (pi->ValueType == SQL_C_TYPE_TIMESTAMP)
+        {
+            SQL_TIMESTAMP_STRUCT *pts = (SQL_TIMESTAMP_STRUCT*)*outbuf;
+            pts->year = PyDateTime_GET_YEAR(cell);
+            pts->month = PyDateTime_GET_MONTH(cell);
+            pts->day = PyDateTime_GET_DAY(cell);
+            pts->hour = PyDateTime_DATE_GET_HOUR(cell);
+            pts->minute = PyDateTime_DATE_GET_MINUTE(cell);
+            pts->second = PyDateTime_DATE_GET_SECOND(cell);
+
+            // Truncate the fraction according to precision
+            size_t digits = min(9, pi->DecimalDigits);
+            long fast_pow10[] = {1,10,100,1000,10000,100000,1000000,10000000,100000000,1000000000};
+            SQLUINTEGER milliseconds = PyDateTime_DATE_GET_MICROSECOND(cell) * 1000;
+            pts->fraction = milliseconds - (milliseconds % fast_pow10[9 - digits]);
+
+            *outbuf += sizeof(SQL_TIMESTAMP_STRUCT);
+            ind = sizeof(SQL_TIMESTAMP_STRUCT);
+        }
+        else if (pi->ValueType == SQL_C_CHAR && pi->BufferLength == TZAWARE_STRING_LENGTH)
+        {
+            char* p = _make_tzaware_string(cell);
+            if (!p)
+                return false;
+            memcpy(*outbuf, p, TZAWARE_STRING_LENGTH);
+            PyMem_Free(p);
+            *outbuf += TZAWARE_STRING_LENGTH;
+            ind = TZAWARE_STRING_LENGTH;
+        }
+        else
             return false;
-        SQL_TIMESTAMP_STRUCT *pts = (SQL_TIMESTAMP_STRUCT*)*outbuf;
-        pts->year = PyDateTime_GET_YEAR(cell);
-        pts->month = PyDateTime_GET_MONTH(cell);
-        pts->day = PyDateTime_GET_DAY(cell);
-        pts->hour = PyDateTime_DATE_GET_HOUR(cell);
-        pts->minute = PyDateTime_DATE_GET_MINUTE(cell);
-        pts->second = PyDateTime_DATE_GET_SECOND(cell);
-
-        // Truncate the fraction according to precision
-        size_t digits = min(9, pi->DecimalDigits);
-        long fast_pow10[] = {1,10,100,1000,10000,100000,1000000,10000000,100000000,1000000000};
-        SQLUINTEGER milliseconds = PyDateTime_DATE_GET_MICROSECOND(cell) * 1000;
-        pts->fraction = milliseconds - (milliseconds % fast_pow10[9 - digits]);
-
-        *outbuf += sizeof(SQL_TIMESTAMP_STRUCT);
-        ind = sizeof(SQL_TIMESTAMP_STRUCT);
     }
     else if (PyDate_Check(cell))
     {
@@ -664,6 +785,25 @@ static bool GetBooleanInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
 
 static bool GetDateTimeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info)
 {
+    // If the value is not naïve, pass it as a string to preserve the timezone offset.
+    // See https://github.com/mkleehammer/pyodbc/issues/810.
+    if (cur->cnxn->preserve_tzoffsets && _datetime_is_tzaware(param))
+    {
+        char* buf = _make_tzaware_string(param);
+        if (!buf)
+            return false;
+        info.ValueType         = SQL_C_CHAR;
+        info.ParameterType     = SQL_VARCHAR;
+        info.ColumnSize        = (SQLULEN)TZAWARE_STRING_LENGTH;
+        info.DecimalDigits     = 0;
+        info.ParameterValuePtr = buf;
+        info.BufferLength      = (SQLLEN)TZAWARE_STRING_LENGTH;
+        info.StrLen_or_Ind     = (SQLLEN)TZAWARE_STRING_LENGTH;
+        info.allocated         = true;
+        return true;
+    }
+
+    // Value is naïve, so proceed as before.
     info.Data.timestamp.year   = (SQLSMALLINT) PyDateTime_GET_YEAR(param);
     info.Data.timestamp.month  = (SQLUSMALLINT)PyDateTime_GET_MONTH(param);
     info.Data.timestamp.day    = (SQLUSMALLINT)PyDateTime_GET_DAY(param);
@@ -1707,7 +1847,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         Py_ssize_t i = 0;
         for (; i < cur->paramcount; i++)
         {
-            if (!DetectCType(cells[i], &cur->paramInfos[i]))
+            if (!DetectCType(cells[i], &cur->paramInfos[i], cur->cnxn->preserve_tzoffsets))
             {
                 goto ErrorRet3;
             }
