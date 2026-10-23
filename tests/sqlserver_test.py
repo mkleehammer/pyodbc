@@ -4,11 +4,12 @@
 import ctypes
 import gc
 import os
+import random
 import re
 import uuid
 from collections.abc import Iterator
-from decimal import Decimal
-from datetime import date, time, datetime
+from decimal import Decimal, localcontext
+from datetime import date, time, datetime, timedelta, timezone
 from functools import lru_cache
 
 import pyodbc
@@ -37,6 +38,7 @@ DRIVER = connect().getinfo(pyodbc.SQL_DRIVER_NAME)
 DRIVER_VERSION = tuple(int(n) for n in connect().getinfo(pyodbc.SQL_DRIVER_VER).split("."))
 IS_FREETDS   = bool(re.search(r'(tsodbc|tdsodbc)', DRIVER, flags=re.IGNORECASE))
 IS_MSODBCSQL = bool(re.search(r'(msodbcsql|sqlncli|sqlsrv32\.dll)', DRIVER, re.IGNORECASE))
+IS_BCP_DRIVER = bool(re.search(r'msodbcsql', DRIVER, re.I)) and DRIVER_VERSION[0] >= 13
 
 
 def _get_sqlserver_year():
@@ -71,6 +73,33 @@ def cursor() -> Iterator[pyodbc.Cursor]:
     cur.execute("drop table if exists t2")
     cur.execute("drop table if exists t3")
     cnxn.commit()
+
+    yield cur
+
+    if not cnxn.closed:
+        cur.close()
+        cnxn.close()
+
+
+# The bulk copy (BCP) API needs a connection opened with SQL_COPT_SS_BCP.  The connection pool
+# matches on the connection string, so BCP connections get their own APP name; otherwise a
+# pooled connection opened without the attribute could be handed back.
+BCP_CNXNSTR = CNXNSTR + ';APP=pyodbc-bcp-tests'
+
+
+def bcp_connect(autocommit=True):
+    return pyodbc.connect(BCP_CNXNSTR, autocommit=autocommit,
+                          attrs_before={pyodbc.SQL_COPT_SS_BCP: pyodbc.SQL_BCP_ON})
+
+
+@pytest.fixture
+def bcp_cursor() -> Iterator[pyodbc.Cursor]:
+    cnxn = bcp_connect()
+    cur = cnxn.cursor()
+
+    cur.execute("set lock_timeout 30000")
+    cur.execute("drop table if exists t1")
+    cur.execute("drop table if exists t2")
 
     yield cur
 
@@ -1557,6 +1586,1310 @@ def test_emoticons_as_literal(cursor: pyodbc.Cursor):
     result = cursor.execute("select s from t1").fetchone()[0]
 
     assert result == v
+
+
+_BCP_SKIP = 'BCP requires the Microsoft ODBC Driver 13 or later for SQL Server'
+_BCP_TZ = timezone(timedelta(hours=5, minutes=30))
+
+
+def _executemany(cur: pyodbc.Cursor, sql: str, rows: list, bcp: bool = True) -> int:
+    """
+    Runs executemany with fast_executemany, with or without the BCP fast path, and returns
+    cursor.rowcount: the number of rows a BCP load copied, or -1 for the plain path, which is
+    also what a BCP call that declined and fell back to it reports.
+    """
+    cur.fast_executemany = True
+    cur.use_bcp_fast = bcp
+    cur.executemany(sql, rows)
+    return cur.rowcount
+
+
+def _fetch(cur: pyodbc.Cursor, table: str, column_type: str) -> list:
+    """The v column of a test table by id; datetimeoffset as text, which pyodbc can't fetch."""
+    expr = "convert(nvarchar(40), v, 121)" if column_type.startswith("datetimeoffset") else "v"
+    return [row[0] for row in cur.execute(f"select {expr} from {table} order by id")]
+
+
+def _load_both(cur: pyodbc.Cursor, column_type: str, values: list,
+               expect_bcp: bool = True, sizes: list | None = None) -> tuple:
+    """
+    Loads (id, value) rows into t1 with the BCP fast path and into t2 with the plain path,
+    both under the setinputsizes entries `sizes` if given, checks whether BCP carried out the
+    load, and returns the values each table stored.
+    """
+    for table in ("t1", "t2"):
+        cur.execute(f"create table {table}(id int, v {column_type})")
+    rows = list(enumerate(values))
+    cur.setinputsizes(sizes)
+    try:
+        copied = _executemany(cur, "insert into t1 values (?, ?)", rows)
+        _executemany(cur, "insert into t2 values (?, ?)", rows, bcp=False)
+    finally:
+        cur.setinputsizes(None)
+    assert copied == (len(rows) if expect_bcp else -1)
+    return _fetch(cur, "t1", column_type), _fetch(cur, "t2", column_type)
+
+
+_BCP_PARITY_CASES = [
+    ("int", [0, -5, 2**31 - 1, True, False]),
+    ("bigint", [2**40, -(2**63)]),
+    ("smallint", [4.7, -2.5]),
+    ("tinyint", [255]),
+    ("int", [Decimal("5"), Decimal("-0"), 7]),
+    ("bit", [True, False, 0, 1]),
+    ("float", [0.1, 1e300, -2.5, 3, 2**60 + 1]),
+    ("real", [0.1, 16777217]),
+    ("decimal(10,2)", [Decimal("1.50"), Decimal("-0.01"), Decimal("1E+2"), 7]),
+    ("decimal(10,2)", [1.235, 2.675, 0.1]),
+    ("numeric(38,0)", [Decimal(10**37), 5]),
+    ("numeric(38,10)", [Decimal("1" * 28 + ".5"), Decimal("-" + "1" * 27 + ".25"),
+                        Decimal("1" * 20 + "." + "1" * 10)]),
+    ("numeric(38,0)", [Decimal("1" * 28 + ".4")]),
+    ("money", [Decimal("1.2345"), 3]),
+    ("smallmoney", [Decimal("-1.5")]),
+    ("varchar(50)", ["Zürich", "", "a\x00b"]),
+    ("varchar(50) collate SQL_Latin1_General_CP1_CI_AS", ["façade ½ £", "東京"]),
+    ("nvarchar(50)", ["東京 \U0001D518", 42, ""]),
+    ("nvarchar(50)", [5, -7]),
+    ("nvarchar(50)", [0.1, 1e20, -0.0]),
+    ("nvarchar(50)", [True, False]),
+    ("varchar(3)", [42, -7]),
+    ("varchar(2)", ["ab", "é"]),
+    ("char(5)", ["ab", ""]),
+    ("nchar(3)", ["é", ""]),
+    ("varbinary(20)", [b"\x00\xff", b"", bytearray(b"ab")]),
+    ("binary(4)", [b"\x01", b""]),
+    ("varchar(max)", ["", "x" * 9000]),
+    ("varchar(max)", [42, -1]),
+    ("nvarchar(max)", [0.5]),
+    ("nvarchar(max)", [True]),
+    ("nvarchar(max)", ["é" * 5000, ""]),
+    ("varbinary(max)", [b"", b"\x07" * 9000]),
+    ("xml", ["<a>é</a>", ""]),
+    ("date", [date(2024, 2, 29), date(1, 1, 1)]),
+    ("date", [datetime(2024, 2, 29), datetime(2024, 3, 1, 0, 0, 0, 999999),
+              datetime(2024, 3, 2, tzinfo=_BCP_TZ), date(2024, 3, 3)]),
+    ("time(0)", [time(3, 4, 5), datetime(2024, 1, 2, 3, 4, 5, 999999)]),
+    ("time(0)", ["13:14:15", time(3, 4, 5)]),
+    ("time(3)", [time(3, 4, 5, 500000), datetime(2024, 1, 2, 3, 4, 5, 123456)]),
+    ("time(3)", ["13:14:15.123", "13:14:15.5"]),
+    ("time(7)", [time(23, 59, 59, 999999), time(1, 2, 3, tzinfo=_BCP_TZ)]),
+    ("time(7)", ["13:14:15", "23:59:59.999999", "00:00:00.1234567", time(1, 2, 3)]),
+    ("datetime2(0)", [datetime(2024, 1, 2, 3, 4, 5, 999999), date(2024, 1, 2)]),
+    ("datetime2(3)", [datetime(2024, 12, 31, 23, 59, 59, 999999)]),
+    ("datetime2(7)", [datetime(2024, 1, 2, 3, 4, 5, 123456, tzinfo=_BCP_TZ)]),
+    ("datetime", [datetime(2024, 1, 2, 3, 4, 5, ms * 1000) for ms in (1, 2, 5, 499, 998)]),
+    ("datetime", [datetime(2024, 1, 2, 3, 4, 5, 999000),
+                  datetime(2024, 12, 31, 23, 59, 59, 999999), date(2024, 1, 2)]),
+    ("datetime", [datetime(9999, 12, 31, 23, 59, 59, 999999)]),
+    ("smalldatetime", [datetime(2024, 1, 2, 3, 4, 29, 999999), datetime(2024, 1, 2, 3, 4, 30),
+                       datetime(2024, 12, 31, 23, 59, 59), date(2024, 1, 2)]),
+    ("uniqueidentifier", [uuid.UUID("6F9619FF-8B86-D011-B42D-00C04FC964FF"),
+                          uuid.UUID(int=7)]),
+    ("uniqueidentifier", ["6F9619FF-8B86-D011-B42D-00C04FC964FF",
+                          "6f9619ff-8b86-d011-b42d-00c04fc964fe", uuid.UUID(int=7)]),
+]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+@pytest.mark.parametrize("column_type,values", _BCP_PARITY_CASES,
+                         ids=[f"{i}-{t}" for i, (t, _) in enumerate(_BCP_PARITY_CASES)])
+def test_bcp_matches_plain_path(bcp_cursor: pyodbc.Cursor, column_type: str, values: list):
+    """
+    For every pairing of Python value and column type the BCP fast path carries out itself, it
+    stores exactly what the plain fast_executemany path stores.  This pins the driver's
+    conversions and the rounding the path reproduces for dates and times.
+    """
+    bcp, plain = _load_both(bcp_cursor, column_type, values + [None])
+    assert bcp == plain
+
+
+_BCP_BOTH_FAIL_CASES = [
+    ("decimal(10,2)", Decimal("1.234"), True),
+    ("numeric(38,0)", Decimal("1" * 27 + ".25"), True),
+    ("int", Decimal("2.5"), True),
+    ("tinyint", 300, True),
+    ("bit", 5, True),
+    ("int", 2.0 ** 40, True),
+    ("time(3)", time(3, 4, 5, 123456), True),
+    ("time(3)", "13:14:15.123456", False),
+    ("time(7)", "24:00:00", False),
+    ("time(7)", "1:2:3", False),
+    ("date", datetime(2024, 1, 2, 3, 4, 5), False),
+    ("varchar(3)", "toolong", False),
+    ("varchar(2)", "ab ", False),
+    ("nvarchar(2)", "a  ", False),
+    ("char(2)", "ab ", False),
+    ("varchar(3)", "\U0001D518\U0001D518", False),
+    ("varbinary(2)", b"\x01\x02\x00", False),
+    ("uniqueidentifier", "{6F9619FF-8B86-D011-B42D-00C04FC964FF}", False),
+    ("uniqueidentifier", "6F9619FF8B86D011B42D00C04FC964FF", False),
+    ("uniqueidentifier", " 6F9619FF-8B86-D011-B42D-00C04FC964FF", False),
+    ("uniqueidentifier", "6F9619FF-8B86-D011-B42D-00C04FC964FG", False),
+    ("uniqueidentifier", 5, False),
+]
+
+
+def _raised_by_bcp(exc: pyodbc.Error) -> bool:
+    """
+    Whether an error came from a BCP load rather than the plain path: the driver names the bcp_
+    function that failed, and the path's own conversion errors carry their SQLSTATE last.
+    """
+    return "(bcp_" in str(exc) or exc.args[1:] in (("22003",), ("22018",))
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+@pytest.mark.parametrize("column_type,value,runs", _BCP_BOTH_FAIL_CASES,
+                         ids=[t for t, _, _ in _BCP_BOTH_FAIL_CASES])
+def test_bcp_fails_where_plain_path_fails(bcp_cursor: pyodbc.Cursor, column_type: str, value,
+                                          runs: bool):
+    """
+    A value the plain path rejects raises with BCP enabled too: either BCP carries out the load
+    and stores nothing, or it declines and the plain path stores what it always does.  `runs`
+    says which, as the error shows (see _raised_by_bcp).
+    """
+    cur = bcp_cursor
+    stored = {}
+    for bcp in (False, True):
+        cur.execute("drop table if exists t1")
+        cur.execute(f"create table t1(id int, v {column_type})")
+        with pytest.raises(pyodbc.Error) as raised:
+            _executemany(cur, "insert into t1 values (?, ?)", [(1, None), (2, value)], bcp=bcp)
+        assert _raised_by_bcp(raised.value) == (bcp and runs)
+        stored[bcp] = [tuple(r) for r in cur.execute("select id, v from t1")]
+    assert stored[True] in ([], stored[False])
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_loads_text_ntext_and_image(bcp_cursor: pyodbc.Cursor):
+    """
+    BCP loads the deprecated text, ntext and image types.  The plain path sizes their buffers
+    from the 2 GB column size, so it fails on a large load, and on 32-bit Python on any load,
+    which is why these aren't compared with it.
+    """
+    cur = bcp_cursor
+    cur.execute("create table t1(id int, t text, n ntext, i image)")
+    rows = [(0, "abc", "é", b"\x01\x02"), (1, "", "", b""), (2, None, None, None)]
+    assert _executemany(cur, "insert into t1 values (?, ?, ?, ?)", rows) == len(rows)
+    assert [tuple(r) for r in cur.execute("select id, t, n, i from t1 order by id")] == rows
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_datetimeoffset(bcp_cursor: pyodbc.Cursor):
+    """
+    datetimeoffset stores what a user would expect, not what the plain path stores (the driver
+    gives it the client machine's local offset): an aware datetime keeps its own offset, a
+    naive one or a date is stored at +00:00, and the fraction is truncated to the column's
+    scale.  An offset SQL Server cannot hold, or a utcoffset() that returns no timedelta,
+    raises and stores nothing.
+    """
+    cur = bcp_cursor
+    cur.execute("create table t1(id int, v datetimeoffset(3))")
+    newfoundland = timezone(-timedelta(hours=3, minutes=30))
+    rows = [
+        (0, datetime(2024, 4, 2, 3, 4, 5, 123456, tzinfo=_BCP_TZ)),
+        (1, datetime(2024, 1, 2, 3, 4, 5, tzinfo=newfoundland)),
+        (2, datetime(2024, 4, 2, 3, 4, 5, 999999)),
+        (3, date(2024, 1, 2)),
+        (4, None),
+    ]
+    assert _executemany(cur, "insert into t1 values (?, ?)", rows) == len(rows)
+    assert _fetch(cur, "t1", "datetimeoffset") == [
+        "2024-04-02 03:04:05.123 +05:30",
+        "2024-01-02 03:04:05.000 -03:30",
+        "2024-04-02 03:04:05.999 +00:00",
+        "2024-01-02 00:00:00.000 +00:00",
+        None,
+    ]
+
+    for offset in (timedelta(hours=15), timedelta(seconds=90)):
+        with pytest.raises(ValueError):
+            _executemany(cur, "insert into t1 values (?, ?)",
+                         [(5, None), (6, datetime(2024, 1, 2, tzinfo=timezone(offset)))])
+
+    class OddOffset(datetime):
+        def utcoffset(self) -> int:
+            return 5
+
+    with pytest.raises(TypeError):
+        _executemany(cur, "insert into t1 values (?, ?)",
+                     [(7, OddOffset(2024, 1, 2, tzinfo=_BCP_TZ))])
+    assert cur.execute("select count(*) from t1").fetchval() == len(rows)
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_decimals_follow_the_context_precision(bcp_cursor: pyodbc.Cursor):
+    """
+    Like the plain path, BCP rounds a Decimal to the thread's decimal context precision, so a
+    context with more than the default 28 digits keeps every digit.
+    """
+    value = Decimal("1" * 20 + "." + "1" * 10)
+    with localcontext() as context:
+        context.prec = 40
+        bcp, plain = _load_both(bcp_cursor, "numeric(38,10)", [value])
+    assert bcp == plain == [value]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_rejects_non_finite_decimal(bcp_cursor: pyodbc.Cursor):
+    """A NaN or infinite Decimal raises an error through BCP and stores nothing."""
+    cur = bcp_cursor
+    cur.execute("create table t1(id int, v decimal(10, 2))")
+    for value in (Decimal("NaN"), Decimal("-Infinity")):
+        with pytest.raises(pyodbc.Error):
+            rows = [(1, Decimal("1.5")), (2, value)]
+            _executemany(cur, "insert into t1 values (?, ?)", rows)
+    assert cur.execute("select count(*) from t1").fetchval() == 0
+
+
+_BCP_FALLBACK_CASES = [
+    ("datetime2(3)", ["2024-01-02 03:04:05"]),
+    ("time(7)", [" 13:14:15", "13:14:15."]),
+    ("money", [1.5]),
+    ("decimal(38,0)", [2 ** 70]),
+    ("uniqueidentifier", [uuid.UUID(int=7).bytes_le]),
+    ("nvarchar(36)", [uuid.UUID(int=7)]),
+    ("varchar(36)", [uuid.UUID(int=7)]),
+    ("nvarchar(20)", ["a", 1.5]),
+    ("varchar(1)", [42]),
+    ("varchar(3)", [12345.678]),
+    ("varchar(5)", ["ab", 123456]),
+    ("varchar(12) collate Japanese_CI_AS", ["東京東京東京東"]),
+    ("char(4) collate Latin1_General_100_CI_AS_SC_UTF8", ["ééé"]),
+]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+@pytest.mark.parametrize("column_type,values", _BCP_FALLBACK_CASES,
+                         ids=[t for t, _ in _BCP_FALLBACK_CASES])
+def test_bcp_declines_values_it_cannot_reproduce(bcp_cursor: pyodbc.Cursor, column_type: str,
+                                                 values: list):
+    """Pairings BCP cannot store as the plain path does are left to that path."""
+    bcp, plain = _load_both(bcp_cursor, column_type, values, expect_bcp=False)
+    assert bcp == plain
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+@pytest.mark.parametrize("column_type,scanned,swapped,entry", [
+    ("date", date(2024, 1, 2), time(1, 2, 3), None),
+    ("date", date(2024, 1, 2), 5, None),
+    ("date", date(2024, 1, 2), datetime(2024, 1, 2, 3, 4, 5), None),
+    ("time(3)", "13:14:15", date(2024, 1, 2), None),
+    ("time(3)", "13:14:15", "13:14:15.123456", None),
+    ("nvarchar(3)", "abc", "abcd", None),
+    ("varbinary(2)", b"ab", b"abc", None),
+    ("datetime2(3)", datetime(2024, 1, 2), Decimal(20240102),
+     (pyodbc.SQL_TYPE_TIMESTAMP, 27, 7)),
+    ("nvarchar(10)", "abc", "abcdefgh", (pyodbc.SQL_WVARCHAR, 5, 0)),
+    ("varchar(20)", "abc", "thin space", (pyodbc.SQL_WVARCHAR, 20, 0)),
+    ("int", None, 2.5, (pyodbc.SQL_DOUBLE, 15, 0)),
+    ("varchar(5)", 12345, 1234567, None),
+    ("varchar(30)", 1.5, 7, None),
+])
+def test_bcp_rejects_a_value_changed_while_sending(bcp_cursor: pyodbc.Cursor, column_type: str,
+                                                   scanned, swapped, entry):
+    """
+    A value swapped into a row after the scan, by Python code run while the row is sent, raises
+    and the call stores nothing, unless it suits the column, and its entry, as the scan would
+    have required.
+    """
+    row = [1, None, scanned]
+
+    class SwappingDecimal(Decimal):
+        def normalize(self, context=None) -> Decimal:
+            row[2] = swapped
+            return super().normalize(context)
+
+    row[1] = SwappingDecimal("1.5")
+    bcp_cursor.execute(f"create table t1(id int, d decimal(10, 2), v {column_type})")
+    bcp_cursor.setinputsizes([None, None, entry] if entry else None)
+    try:
+        with pytest.raises(TypeError):
+            _executemany(bcp_cursor, "insert into t1 values (?, ?, ?)", [row])
+    finally:
+        bcp_cursor.setinputsizes(None)
+    assert bcp_cursor.execute("select count(*) from t1").fetchval() == 0
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+@pytest.mark.parametrize("entry", [None, (pyodbc.SQL_NUMERIC, 6, 2)])
+def test_bcp_requires_normalize_to_return_a_decimal(bcp_cursor: pyodbc.Cursor, entry):
+    """
+    A Decimal subclass whose normalize() returns something else raises, as the plain path does
+    when it reads the digits of what came back, and the call stores nothing.
+    """
+
+    class OddDecimal(Decimal):
+        def normalize(self, context=None) -> int:
+            return 5
+
+    cur = bcp_cursor
+    for bcp in (False, True):
+        cur.execute("drop table if exists t1")
+        cur.execute("create table t1(id int, v decimal(10, 2))")
+        cur.setinputsizes([None, entry])
+        try:
+            with pytest.raises((AttributeError, TypeError)):
+                _executemany(cur, "insert into t1 values (?, ?)", [(1, OddDecimal("1.5"))],
+                             bcp=bcp)
+        finally:
+            cur.setinputsizes(None)
+        assert cur.execute("select count(*) from t1").fetchval() == 0
+
+
+_BCP_DECLINED_STATEMENTS = [
+    ("insert into t1 values (?, ?); delete from t2", [(1, 2)]),
+    ("insert into t1 values (?, ? * 2)", [(1, 2)]),
+    ("insert into t1 values (?, 5)", [(1,)]),
+    ("insert into t1 (id, v) values (?, ?), (?, ?)", [(1, 2, 3, 4)]),
+    ("insert top (1) into t1 values (?, ?)", [(1, 2)]),
+    ("insert into t1 with (tablock) values (?, ?)", [(1, 2)]),
+    ("insert into t1 select ?, ?", [(1, 2)]),
+    ("insert into t1 values (?, ?)", [(1, 2, 3)]),
+    ('insert into "t1" values (?, ?)', [(1, 2)]),
+    ("insert into t1 (id, key) values (?, ?)", [(1, 2)]),
+]
+
+
+def _statement_outcome(cur: pyodbc.Cursor, sql: str, rows: list, bcp: bool) -> tuple:
+    """
+    Runs sql against fresh t1(id, v) and t2(id) tables and returns the rowcount (or the error
+    class raised) with what both tables then hold.
+    """
+    for table in ("t1", "t2"):
+        cur.execute(f"drop table if exists {table}")
+    cur.execute("create table t1(id int, v int)")
+    cur.execute("create table t2(id int)")
+    cur.execute("insert into t2 values (0)")
+    try:
+        outcome = _executemany(cur, sql, rows, bcp=bcp)
+    except pyodbc.Error as ex:
+        outcome = type(ex)
+    t1 = [tuple(r) for r in cur.execute("select id, v from t1 order by id")]
+    t2 = [r[0] for r in cur.execute("select id from t2")]
+    return outcome, t1, t2
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+@pytest.mark.parametrize("sql,rows", _BCP_DECLINED_STATEMENTS,
+                         ids=[s for s, _ in _BCP_DECLINED_STATEMENTS])
+def test_bcp_declines_statements_it_cannot_carry_out(bcp_cursor: pyodbc.Cursor, sql: str,
+                                                     rows: list):
+    """
+    Only `INSERT INTO t [(cols)] VALUES (?, ...)` with one value per marker goes through BCP:
+    anything else in the statement (more statements, expressions, literals, several rows, TOP,
+    table hints, other sources, extra values, quoted or reserved identifiers) would not do as
+    written under a bulk copy, so BCP declines and the outcome is exactly the plain path's.
+    """
+    with_bcp = _statement_outcome(bcp_cursor, sql, rows, bcp=True)
+    assert with_bcp == _statement_outcome(bcp_cursor, sql, rows, bcp=False)
+
+
+def _bcp_row(i: int) -> tuple:
+    """One row of the type-coverage test: every Python type the BCP fast path sends."""
+    month, day = (i % 12) + 1, (i % 28) + 1
+    hms = (i % 24, i % 60, (i * 7) % 60)
+    return (
+        i,
+        5_000_000_000 + i,
+        bool(i % 2),
+        i + 0.5,
+        "x" * (i % 400),
+        "é東\U0001D518" * (i % 50),
+        Decimal(f"{i}.{i % 10000:04d}"),
+        Decimal(10 ** 20 + i),
+        time(i % 24, i % 60, (i * 7) % 60, (i * 101) % 1000000),
+        date(2020, month, day),
+        datetime(2021, month, day, *hms, (i * 101) % 1000000),
+        datetime(2022, month, day, *hms, (i * 101) % 1000000),
+        datetime(2023, month, day, *hms, (i * 1009) % 1000000, tzinfo=_BCP_TZ),
+        bytes([i % 256]) * (i % 30),
+    )
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_fast_executemany(bcp_cursor: pyodbc.Cursor):
+    """
+    A load across every supported type, with a row of NULLs, buffers that grow, values beyond
+    32 and 64 bits and manual batching, stores the same rows as the plain fast path.
+    """
+    cur = bcp_cursor
+    columns = """
+        id int, c_bigint bigint, c_bit bit, c_float float, c_varchar varchar(1000),
+        c_nvarchar nvarchar(200), c_decimal decimal(18, 4), c_numeric numeric(38, 0),
+        c_time time(7), c_date date, c_datetime2 datetime2(7), c_datetime datetime,
+        c_smalldatetime smalldatetime, c_varbinary varbinary(50)
+    """
+    cur.execute(f"create table t1({columns})")
+    cur.execute(f"create table t2({columns})")
+
+    n = 500
+    rows = [_bcp_row(i) for i in range(n)]
+    rows[7] = (7,) + (None,) * 13
+    sql = "insert into {} values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    cur.bcp_batch_rows = 100
+    assert _executemany(cur, sql.format("t1"), rows) == n
+    _executemany(cur, sql.format("t2"), rows, bcp=False)
+
+    fetch = ("select id, c_bigint, c_bit, c_float, c_varchar, c_nvarchar, c_decimal, "
+             "c_numeric, c_time, c_date, c_datetime2, c_datetime, c_smalldatetime, "
+             "c_varbinary from {} order by id")
+    loaded = [tuple(r) for r in cur.execute(fetch.format("t1"))]
+    expected = [tuple(r) for r in cur.execute(fetch.format("t2"))]
+    assert loaded == expected
+    assert all(v is None for v in loaded[7][1:])
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_fast_executemany_nvarchar(bcp_cursor: pyodbc.Cursor):
+    """
+    str values reach nvarchar columns intact whatever the client's code page: Latin accents,
+    CJK, a character outside the BMP, an empty string distinct from NULL, values long enough to
+    grow the column buffers (one encoded by the codec, a longer one widened from Latin-1), a
+    short value after them, and a first row whose value is None, which must not decide the
+    column type.
+    """
+    values = [
+        None,
+        "Zürich, Ångström, façade, naïve",
+        "東京 北京 서울",
+        "\U0001D518 lies outside the BMP",
+        "",
+        None,
+        "東京\U0001D518" * 500,
+        "é" * 3000,
+        "short again",
+    ]
+    cur = bcp_cursor
+    cur.execute("create table t1(id int, s nvarchar(4000), m nvarchar(max))")
+    rows = [(i, v, v) for i, v in enumerate(values)]
+    assert _executemany(cur, "insert into t1 values (?, ?, ?)", rows) == len(rows)
+
+    stored = cur.execute("select s, m from t1 order by id").fetchall()
+    assert [row.s for row in stored] == values
+    assert [row.m for row in stored] == values
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_fast_executemany_varchar_latin1(bcp_cursor: pyodbc.Cursor):
+    """
+    str values whose characters all fit code page 1252 reach a varchar column in the default
+    Latin1 collation as that code page's single bytes, not as UTF-8 read as ANSI text.
+    """
+    values = ["Zürich", "façade, crème brûlée", "Ångström ½ £ ©", "plain ascii"]
+    cur = bcp_cursor
+    cur.execute("create table t1(id int, s varchar(50) collate SQL_Latin1_General_CP1_CI_AS)")
+    rows = list(enumerate(values))
+    assert _executemany(cur, "insert into t1 values (?, ?)", rows) == len(values)
+
+    stored = cur.execute("select s, cast(s as varbinary(50)) as raw from t1 order by id")
+    stored = stored.fetchall()
+    assert [row.s for row in stored] == values
+    assert [row.raw for row in stored] == [v.encode("cp1252") for v in values]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_fast_executemany_none_first_row(bcp_cursor: pyodbc.Cursor):
+    """
+    A NULL in the first row does not decide a column's type: nullable int, float, bit and
+    nvarchar columns with a NULL first value load, and so does a column NULL throughout.
+    """
+    rows = [
+        (0, None, None, None, None, None),
+        (1, 5, 1.5, True, "Zürich", None),
+        (2, None, None, None, None, None),
+        (3, -7, 2.5, False, "", None),
+    ]
+    cur = bcp_cursor
+    cur.execute("create table t1(id int, n int, f float, b bit, s nvarchar(20), z int)")
+    assert _executemany(cur, "insert into t1 values (?, ?, ?, ?, ?, ?)", rows) == len(rows)
+    assert [tuple(r) for r in cur.execute("select * from t1 order by id")] == rows
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_fast_executemany_column_list(bcp_cursor: pyodbc.Cursor):
+    """
+    A column list is mapped to table ordinals, in any order and as a subset (the SQLAlchemy
+    shape): the unlisted columns are left to the server, which fills in identity values,
+    defaults and NULLs exactly as for the INSERT.
+    """
+    cur = bcp_cursor
+    cur.execute("""
+        create table t1(id int identity, a int, b varchar(20), c int, d float default 9.5)
+    """)
+
+    reordered = [(i * 10, i, f"b{i}", i + 0.5) for i in range(50)]
+    sql = "insert into t1 (c, a, b, d) values (?, ?, ?, ?)"
+    assert _executemany(cur, sql, reordered) == 50
+    row = cur.execute("select a, b, c, d from t1 where a = 7").fetchone()
+    assert tuple(row) == (7, "b7", 70, 7.5)
+
+    cur.execute("truncate table t1")
+    subset = [(i, f"name{i}") for i in range(20)]
+    assert _executemany(cur, "insert into t1 (a, b) values (?, ?)", subset) == 20
+    rows = cur.execute("select id, a, b, c, d from t1 order by id").fetchall()
+    assert [tuple(r) for r in rows] == [(i + 1, i, f"name{i}", None, 9.5) for i in range(20)]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_positional_insert_skips_identity_and_computed(bcp_cursor: pyodbc.Cursor):
+    """Without a column list the values go to the columns T-SQL fills, skipping identity and
+    computed ones."""
+    cur = bcp_cursor
+    cur.execute("create table t1(id int identity, a int, c as a * 2, b nvarchar(10))")
+    assert _executemany(cur, "insert into t1 values (?, ?)", [(5, "x"), (6, "y")]) == 2
+    stored = [tuple(r) for r in cur.execute("select id, a, c, b from t1 order by id")]
+    assert stored == [(1, 5, 10, "x"), (2, 6, 12, "y")]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_table_names(bcp_cursor: pyodbc.Cursor):
+    """
+    Temporary tables, names outside ASCII and three-part names go through BCP, the last using
+    the named database's columns even where the current database has a table of the same name
+    with its columns in another order.
+    """
+    cur = bcp_cursor
+    cur.execute("create table #bcp_temp(a int, b nvarchar(5))")
+    assert _executemany(cur, "insert into #bcp_temp values (?, ?)", [(1, "é")]) == 1
+    assert tuple(cur.execute("select a, b from #bcp_temp").fetchone()) == (1, "é")
+
+    cur.execute("drop table if exists [bcp_ü]")
+    cur.execute("create table [bcp_ü](a int)")
+    try:
+        assert _executemany(cur, "insert into [bcp_ü] values (?)", [(1,), (2,)]) == 2
+        assert cur.execute("select count(*) from [bcp_ü]").fetchval() == 2
+    finally:
+        cur.execute("drop table [bcp_ü]")
+
+    cur.execute("drop table if exists tempdb.dbo.bcp_three_part")
+    cur.execute("create table tempdb.dbo.bcp_three_part(a int, b int)")
+    cur.execute("create table t1(b int, a int)")
+    try:
+        sql = "insert into tempdb.dbo.bcp_three_part (a, b) values (?, ?)"
+        assert _executemany(cur, sql, [(1, 2)]) == 1
+        row = cur.execute("select a, b from tempdb.dbo.bcp_three_part").fetchone()
+        assert tuple(row) == (1, 2)
+    finally:
+        cur.execute("drop table tempdb.dbo.bcp_three_part")
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_keeps_insert_semantics(bcp_cursor: pyodbc.Cursor):
+    """
+    BCP checks CHECK and foreign key constraints and stores an explicit None as NULL rather
+    than the column default, as the INSERT it replaces does.
+    """
+    cur = bcp_cursor
+    cur.execute("create table t2(id int primary key)")
+    cur.execute("insert into t2 values (1), (2), (3)")
+    cur.execute("create table t1(id int check (id >= 0) references t2(id), d int default 42)")
+
+    assert _executemany(cur, "insert into t1 values (?, ?)", [(1, None), (2, 5)]) == 2
+    stored = [tuple(r) for r in cur.execute("select id, d from t1 order by id")]
+    assert stored == [(1, None), (2, 5)]
+
+    for bad in (-1, 9):
+        with pytest.raises(pyodbc.IntegrityError):
+            _executemany(cur, "insert into t1 values (?, ?)", [(3, 1), (bad, 1)])
+    assert cur.execute("select count(*) from t1").fetchval() == 2
+    untrusted = cur.execute("select count(*) from sys.check_constraints "
+                            "where is_not_trusted = 1 and parent_object_id = object_id('t1')")
+    untrusted = untrusted.fetchval()
+    assert untrusted == 0
+    cur.execute("drop table t1")
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_trigger_tables_use_plain_path(bcp_cursor: pyodbc.Cursor):
+    """
+    A table with an enabled INSERT trigger is left to the plain path: a trigger that rolls back
+    a bulk copy run in a transaction leaves the driver unable to use the connection again.  The
+    trigger fires, and after one rolls back a load the connection still works.
+    """
+    cur = bcp_cursor
+    cur.execute("create table t1(id int)")
+    cur.execute("create table t2(id int)")
+    cur.execute("create trigger t1_audit on t1 after insert as "
+                "insert into t2 select id from inserted; "
+                "if exists (select 1 from inserted where id < 0) rollback transaction")
+
+    assert _executemany(cur, "insert into t1 values (?)", [(1,), (2,)]) == -1
+    assert [r[0] for r in cur.execute("select id from t2 order by id")] == [1, 2]
+    with pytest.raises(pyodbc.Error):
+        _executemany(cur, "insert into t1 values (?)", [(3,), (-4,)])
+    assert cur.execute("select count(*) from t1 where id < 0").fetchval() == 0
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_failure_rolls_back_the_call(bcp_cursor: pyodbc.Cursor):
+    """
+    A failure part way through a load raises and leaves nothing from the call; with batching
+    in autocommit mode, the batches completed before it stay committed and only the failing
+    one goes.
+    """
+    cur = bcp_cursor
+    cur.execute("create table t1(id int primary key)")
+    rows = [(1,), (2,), (3,), (3,), (5,)]
+    with pytest.raises(pyodbc.IntegrityError):
+        _executemany(cur, "insert into t1 values (?)", rows)
+    assert cur.execute("select count(*) from t1").fetchval() == 0
+
+    cur.bcp_batch_rows = 2
+    with pytest.raises(pyodbc.IntegrityError):
+        _executemany(cur, "insert into t1 values (?)", rows)
+    assert [r[0] for r in cur.execute("select id from t1 order by id")] == [1, 2]
+    assert cur.connection.autocommit
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_failure_in_manual_commit_mode(bcp_cursor: pyodbc.Cursor):
+    """
+    In manual-commit mode a failed load is undone but the caller's earlier work is kept, and
+    a load, batched or not, stays in the caller's transaction until it commits or rolls back.
+    """
+    bcp_cursor.execute("create table t1(id int primary key)")
+    bcp_cursor.execute("create table t2(id int)")
+    cnxn = bcp_connect(autocommit=False)
+    try:
+        cur = cnxn.cursor()
+        cur.execute("insert into t2 values (1)")
+        with pytest.raises(pyodbc.IntegrityError):
+            _executemany(cur, "insert into t1 values (?)", [(1,), (1,)])
+        assert cur.execute("select count(*) from t1").fetchval() == 0
+        cnxn.commit()
+        assert bcp_cursor.execute("select count(*) from t2").fetchval() == 1
+
+        cur.bcp_batch_rows = 2
+        assert _executemany(cur, "insert into t1 values (?)", [(1,), (2,), (3,)]) == 3
+        cnxn.rollback()
+        assert bcp_cursor.execute("select count(*) from t1").fetchval() == 0
+    finally:
+        cnxn.close()
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_falls_back_without_bcp_connection(cursor: pyodbc.Cursor):
+    """A connection opened without SQL_COPT_SS_BCP runs the plain path instead of failing."""
+    cursor.execute("create table t1(id int, s nvarchar(10))")
+    assert _executemany(cursor, "insert into t1 values (?, ?)", [(1, "é"), (2, None)]) == -1
+    stored = [tuple(r) for r in cursor.execute("select id, s from t1 order by id")]
+    assert stored == [(1, "é"), (2, None)]
+
+
+@pytest.mark.skipif(not IS_MSODBCSQL or IS_BCP_DRIVER,
+                    reason='Needs a SQL Server driver other than Microsoft ODBC Driver 13+')
+def test_bcp_falls_back_on_older_drivers(bcp_cursor: pyodbc.Cursor):
+    """
+    With SQL Server Native Client or Microsoft ODBC Driver 11, the fast path runs the plain
+    path and the low-level API raises NotImplementedError.
+    """
+    cur = bcp_cursor
+    cur.execute("create table t1(id int, s nvarchar(10))")
+    assert _executemany(cur, "insert into t1 values (?, ?)", [(1, "é"), (2, None)]) == -1
+    stored = [tuple(r) for r in cur.execute("select id, s from t1 order by id")]
+    assert stored == [(1, "é"), (2, None)]
+    with pytest.raises(NotImplementedError):
+        cur.connection.bcp_init("t1")
+
+
+def _entry_for(values: list) -> tuple:
+    """
+    The setinputsizes entry a loader that types each parameter from the values it carries
+    would pass: nvarchar as long as the longest str in UTF-16 units (max past 4,000), bit,
+    bigint, double, numeric just wide enough for every Decimal, datetime2(7) or date, and
+    nvarchar(1) for a column of NULLs, whatever its type.  None for anything else or a mix.
+    """
+    present = [v for v in values if v is not None]
+    kinds = {type(v) for v in present}
+    if not present:
+        return (pyodbc.SQL_WVARCHAR, 1, 0)
+    if kinds == {str}:
+        longest = max(len(v.encode("utf-16-le")) // 2 for v in present)
+        return (pyodbc.SQL_WVARCHAR, longest if longest <= 4000 else 0, 0)
+    if kinds == {bool}:
+        return (pyodbc.SQL_BIT, 1, 0)
+    if kinds == {int} and all(-(2**63) <= v < 2**63 for v in present):
+        return (pyodbc.SQL_BIGINT, 19, 0)
+    if kinds == {float}:
+        return (pyodbc.SQL_DOUBLE, 15, 0)
+    if kinds == {Decimal}:
+        places = max(max(-v.as_tuple().exponent, 0) for v in present)
+        whole = max(len(str(int(abs(v)))) if int(abs(v)) else 0 for v in present)
+        return (pyodbc.SQL_NUMERIC, max(whole + places, 1), places)
+    if kinds == {datetime} and all(v.tzinfo is None for v in present):
+        return (pyodbc.SQL_TYPE_TIMESTAMP, 27, 7)
+    if kinds == {date}:
+        return (pyodbc.SQL_TYPE_DATE, 10, 0)
+    return None
+
+
+_BCP_MAX_DATETIME = datetime(9999, 12, 31, 23, 59, 59, 999999)
+
+
+def _day_end(*micros: int) -> list:
+    """Datetimes in the last second of 2024 with the given microseconds."""
+    return [datetime(2024, 12, 31, 23, 59, 59, us) for us in micros]
+
+
+_BCP_ENTRY_CASES = [
+    ("nvarchar(20)", ["abc", "東京 \U0001D518", ""]),
+    ("nvarchar(max)", ["é" * 5000, ""]),
+    ("nvarchar(max)", ["short"]),
+    ("nchar(3)", ["é", ""]),
+    ("varchar(20)", ["Zürich", "™ – “q” €", ""]),
+    ("varchar(20) collate Polish_CI_AS", ["Łódź", "zażółć"]),
+    ("varchar(20) collate Japanese_CI_AS", ["東京", "abc", "ｶﾅ"]),
+    ("varchar(max)", ["x" * 9000, "a"]),
+    ("char(5)", ["ab", ""]),
+    ("text", ["abc", ""]),
+    ("ntext", ["é", ""]),
+    ("int", [0, -5, 2**31 - 1, -(2**31)]),
+    ("bigint", [2**62, -(2**63), 2**63 - 1]),
+    ("smallint", [-32768, 32767]),
+    ("tinyint", [0, 255]),
+    ("decimal(30,2)", [2**62 + 1, -7]),
+    ("money", [3, -(2**40)]),
+    ("smallmoney", [214748, -214748]),
+    ("float", [2**53 + 1, 2**63 - 1, -(2**63), 12345678901234567]),
+    ("real", [16777217, 2**62 + 1]),
+    ("bit", [0, 1, 2, -1, 2**62]),
+    ("bit", [True, False]),
+    ("float", [0.1, 1e300, -2.5, 5e-324, -0.0]),
+    ("real", [0.1, 16777217.0, 1e-40, 1e-46, 3.4028234663852886e38, -1.1754942e-38]),
+    ("decimal(10,2)", [2.675, 1.235, 0.1, 9.995, -0.004, 0.005]),
+    ("decimal(38,10)", [2 / 3 * 1e10, 123456789.123456789, 1e27, -86484.03774682874, 1e-11]),
+    ("decimal(38,30)", [0.1, 1 / 3, 5e-31, 1.5e-30, -5e-324]),
+    ("decimal(38,0)", [9.9e37, 0.5, -0.5, 2.5, 1.5]),
+    ("numeric(5,5)", [0.12345, -0.000005, 0.999994]),
+    ("int", [2.5, -2.5, 2.9999999, -0.5, 1e9]),
+    ("bigint", [-(2.0**63), 2.0**62 + 2048, 9.2e18]),
+    ("smallint", [-32768.9, 32767.9]),
+    ("tinyint", [-0.5, 255.9]),
+    ("bit", [0.0, 0.5, -2.5, 1e-300, -0.0]),
+    ("decimal(18,4)", [Decimal(x) for x in ("1.23456", "-1.00005", "9.99995", "0.00004",
+                                            "-0.00005")]),
+    ("decimal(10,0)", [Decimal("2.5"), Decimal("-2.5"), Decimal("0.4999")]),
+    ("numeric(38,10)", [Decimal("1" * 20 + "." + "15" * 6), Decimal("-0." + "9" * 12)]),
+    ("money", [Decimal("1.23456"), Decimal("-1.00005"), Decimal("922337203685477.58074")]),
+    ("smallmoney", [Decimal("-1.99999"), Decimal("214748.36474")]),
+    ("int", [Decimal("2.5"), Decimal("-2.5"), Decimal(7), Decimal("1E+3")]),
+    ("tinyint", [Decimal("0.5"), Decimal("-0.999"), Decimal("255.9")]),
+    ("smallint", [Decimal("-32768.9"), Decimal("32767.9")]),
+    ("bigint", [Decimal("9223372036854775807.9"), Decimal("-9223372036854775808.9")]),
+    ("float", [Decimal("0.1"), Decimal("4.35"), Decimal("-0"), Decimal(9007199254740993)]),
+    ("float", [Decimal("1.0000000000000001110223024625156540424")]),
+    ("bit", [Decimal(x) for x in ("0", "0.5", "-0.00001", "2", "0.000")]),
+    ("datetime", _day_end(998600, 998300, 1667, 1666) + [_BCP_MAX_DATETIME]),
+    ("datetime2(0)", [*_day_end(998600, 499999, 500000), _BCP_MAX_DATETIME,
+                      datetime(2024, 1, 2, 12, 0, 29, 999000)]),
+    ("datetime2(2)", [datetime(9999, 12, 31, 23, 59, 59, 994999),
+                      datetime(9999, 12, 31, 23, 59, 59, 995000)]),
+    ("datetime2(3)", [*_day_end(999600, 1500, 1499),
+                      _BCP_MAX_DATETIME.replace(microsecond=999600)]),
+    ("datetime2(7)", [datetime(2024, 1, 2, 3, 4, 5, 123456)]),
+    ("smalldatetime", [datetime(2024, 1, 2, 3, 4, 29, 999999), datetime(2024, 1, 2, 3, 4, 30),
+                       datetime(2024, 12, 31, 23, 59, 30)]),
+    ("date", _day_end(999999) + [datetime(2024, 1, 2)]),
+    ("datetimeoffset(0)", _day_end(500000) + [_BCP_MAX_DATETIME]),
+    ("datetimeoffset(3)", _day_end(1500, 999600)),
+    ("time(0)", _day_end(500000, 499999)),
+    ("time(3)", _day_end(999600, 1500)),
+    ("date", [date(2024, 2, 29), date(1, 1, 1)]),
+    ("datetime2(3)", [date(2024, 1, 2)]),
+    ("datetime", [date(2024, 1, 2)]),
+    ("smalldatetime", [date(2024, 1, 2)]),
+    ("datetimeoffset(2)", [date(2024, 1, 2)]),
+    ("int", []),
+    ("datetime2(3)", []),
+    ("decimal(10,2)", []),
+    ("uniqueidentifier", []),
+    ("xml", []),
+]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+@pytest.mark.parametrize("column_type,values", _BCP_ENTRY_CASES,
+                         ids=[f"{i}-{t}" for i, (t, _) in enumerate(_BCP_ENTRY_CASES)])
+def test_bcp_matches_plain_path_with_input_sizes(bcp_cursor: pyodbc.Cursor, column_type: str,
+                                                 values: list):
+    """
+    Under setinputsizes the plain path sends each value as its entry's type and the server
+    converts it to the column's, rounding where the plain path without entries truncates.  BCP
+    carries out every pairing of entry and column type it supports and stores exactly what the
+    plain path stores, including values that round past midnight, and the sign of a zero.  A
+    column of NULLs under an nvarchar entry, which says nothing about its values, makes BCP
+    decline only for a binary column, which the server rejects it for.
+    """
+    values = values + [None]
+    sizes = [_entry_for(list(range(len(values)))), _entry_for(values)]
+    bcp, plain = _load_both(bcp_cursor, column_type, values, sizes=sizes)
+    assert list(map(repr, bcp)) == list(map(repr, plain))
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+@pytest.mark.parametrize("values,ascii_only",
+                         [(["ééé", "Zürich €", "abc"], False), (["abc"], True)])
+@pytest.mark.parametrize("sized", [False, True])
+def test_bcp_text_into_a_utf8_collation(bcp_cursor: pyodbc.Cursor, values: list,
+                                        ascii_only: bool, sized: bool):
+    """
+    Text for a varchar column with a UTF-8 collation goes by BCP from Driver 17.4, the first to
+    convert it to UTF-8; older drivers send bytes the server rejects, so BCP takes only ASCII
+    text there.  Either way the column stores what the plain path stores, with or without an
+    entry.  (Without one the plain path passes text through the database's code page, so these
+    values stay within code page 1252.)
+    """
+    values = values + [None]
+    sizes = [None, _entry_for(values)] if sized else None
+    expect_bcp = ascii_only or DRIVER_VERSION[:2] >= (17, 4)
+    bcp, plain = _load_both(bcp_cursor, "varchar(20) collate Latin1_General_100_CI_AS_SC_UTF8",
+                            values, expect_bcp=expect_bcp, sizes=sizes)
+    assert bcp == plain
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_matches_plain_path_with_input_sizes_at_random():
+    """
+    BCP stores what the plain path stores for random numbers and datetimes under their
+    entries, across the conversions BCP reproduces itself: doubles into decimal and real,
+    Decimals into decimal, money, int and float, and datetimes into the date and time types.
+    """
+    rng = random.Random(1496)
+    floats = [rng.uniform(-1e6, 1e6) for _ in range(300)]
+    floats += [rng.uniform(-1, 1) * 10 ** rng.randint(-12, 12) for _ in range(300)]
+    decimals = [Decimal(f"{rng.uniform(-1e7, 1e7):.{rng.randint(0, 9)}f}") for _ in range(600)]
+    stamps = [datetime(2024, 1, 1) + timedelta(seconds=rng.randint(0, 86400 * 366),
+                                               microseconds=rng.randint(0, 999999))
+              for _ in range(600)]
+    stamps += _day_end(*range(999000, 1000000, 7))
+    cases = [("decimal(18,4)", floats), ("decimal(38,10)", floats), ("real", floats),
+             ("decimal(18,4)", decimals), ("money", decimals), ("int", decimals),
+             ("float", decimals), ("datetime", stamps), ("datetime2(0)", stamps),
+             ("datetime2(3)", stamps), ("smalldatetime", stamps), ("time(3)", stamps),
+             ("datetimeoffset(2)", stamps)]
+    cnxn = bcp_connect(autocommit=False)
+    cur = cnxn.cursor()
+    cur.execute("set lock_timeout 30000")
+    try:
+        for column_type, values in cases:
+            for table in ("t1", "t2"):
+                cur.execute(f"drop table if exists {table}")
+            bcp, plain = _load_both(cur, column_type, values,
+                                    sizes=[None, _entry_for(values)])
+            cnxn.commit()
+            assert list(map(repr, bcp)) == list(map(repr, plain)), column_type
+    finally:
+        cnxn.rollback()
+        for table in ("t1", "t2"):
+            cur.execute(f"drop table if exists {table}")
+        cnxn.commit()
+        cnxn.close()
+
+
+_TIMESTAMP = pyodbc.SQL_TYPE_TIMESTAMP
+_BCP_ENTRY_FALLBACK_CASES = [
+    ("nvarchar(30)", [0.1, 1e20], None),
+    ("int", ["5"], None),
+    ("datetime2(3)", ["2024-01-02 03:04:05"], None),
+    ("money", [1.23456], None),
+    ("real", [Decimal("0.1")], None),
+    ("nvarchar(10)", [5], None),
+    ("int", [True], None),
+    ("time(3)", [time(1, 2, 3, 456789)], (_TIMESTAMP, 27, 7)),
+    ("datetime2(7)", [datetime(2024, 1, 2, 3, 4, 5, 123456)], (_TIMESTAMP, 23, 3)),
+    ("datetime2(0)", [datetime(2024, 1, 2, 3, 4, 5, 600000)], [_TIMESTAMP, 27, 7]),
+    ("datetime2(0)", [datetime(2024, 1, 2, 3, 4, 5, 600000)], 27),
+    ("nvarchar(10)", ["abc"], (pyodbc.SQL_WCHAR, 5, 0)),
+    ("nvarchar(10)", ["é東"], (pyodbc.SQL_VARCHAR, 5, 0)),
+    ("float", [0.1], (pyodbc.SQL_REAL, 7, 0)),
+    ("varchar(3)", ["ab   "], None),
+    ("varchar(12) collate Japanese_CI_AS", ["é" * 7], None),
+    ("varchar(20)", ["thin space", "łódź ā"], None),
+    ("char(10) collate Polish_CI_AS", ["a b"], None),
+    ("text", [" "], None),
+    ("varchar(20) collate Japanese_CI_AS", ["é"], None),
+]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+@pytest.mark.parametrize("column_type,values,entry", _BCP_ENTRY_FALLBACK_CASES,
+                         ids=[t for t, _, _ in _BCP_ENTRY_FALLBACK_CASES])
+def test_bcp_declines_input_sizes_it_cannot_reproduce(bcp_cursor: pyodbc.Cursor,
+                                                      column_type: str, values: list, entry):
+    """
+    Entries and pairings whose conversion BCP does not reproduce are left to the plain path:
+    other entry forms and types, and values whose entry the server converts differently than
+    BCP would, such as text into a number column, a double into text, or text with characters
+    a varchar column's code page lacks, which the server and the driver substitute differently.
+    `entry` None stands for the entry _entry_for gives.
+    """
+    sizes = [None, entry if entry is not None else _entry_for(values)]
+    bcp, plain = _load_both(bcp_cursor, column_type, values, expect_bcp=False, sizes=sizes)
+    assert bcp == plain
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+@pytest.mark.parametrize("column_type,entry", [
+    ("varbinary(10)", (pyodbc.SQL_WVARCHAR, 1, 0)),
+    ("varbinary(max)", (pyodbc.SQL_WVARCHAR, 1, 0)),
+    ("binary(4)", (pyodbc.SQL_WVARCHAR, 1, 0)),
+    ("int", (pyodbc.SQL_TYPE_DATE, 10, 0)),
+    ("int", (_TIMESTAMP, 27, 7)),
+    ("date", (pyodbc.SQL_BIGINT, 19, 0)),
+    ("date", (pyodbc.SQL_BIT, 1, 0)),
+    ("time(3)", (pyodbc.SQL_DOUBLE, 15, 0)),
+    ("uniqueidentifier", (pyodbc.SQL_NUMERIC, 5, 2)),
+    ("xml", (pyodbc.SQL_BIGINT, 19, 0)),
+])
+def test_bcp_fails_where_plain_path_rejects_an_entry_for_nulls(bcp_cursor: pyodbc.Cursor,
+                                                               column_type: str, entry):
+    """
+    The server converts even NULLs from their entry's type, so the plain path rejects a column
+    of NULLs whose entry type has no implicit conversion to the column's, and BCP declines it.
+    """
+    cur = bcp_cursor
+    for bcp in (False, True):
+        cur.execute("drop table if exists t1")
+        cur.execute(f"create table t1(id int, v {column_type})")
+        cur.setinputsizes([None, entry])
+        try:
+            with pytest.raises(pyodbc.Error):
+                _executemany(cur, "insert into t1 values (?, ?)", [(1, None), (2, None)],
+                             bcp=bcp)
+        finally:
+            cur.setinputsizes(None)
+        assert cur.execute("select count(*) from t1").fetchval() == 0
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_input_sizes_follow_the_parameters(bcp_cursor: pyodbc.Cursor):
+    """
+    Entries belong to the statement's parameters, not the table's columns: with a column list
+    that reorders them, an identity column and a column left to its default, each entry still
+    applies to its own parameter, as on the plain path.
+    """
+    cur = bcp_cursor
+    columns = ("id int identity, t datetime2(0), n decimal(10,2), s varchar(10), "
+               "d int default 7")
+    rows = [(Decimal("1.005"), datetime(2024, 1, 2, 3, 4, 5, 600000), "abc"),
+            (Decimal("-2.345"), datetime(2024, 1, 2, 3, 4, 5, 400000), None)]
+    sizes = [(pyodbc.SQL_NUMERIC, 4, 3), (_TIMESTAMP, 27, 7), (pyodbc.SQL_WVARCHAR, 3, 0)]
+    stored = {}
+    for table, bcp in (("t1", True), ("t2", False)):
+        cur.execute(f"create table {table}({columns})")
+        cur.setinputsizes(sizes)
+        try:
+            copied = _executemany(cur, f"insert into {table}(n, t, s) values (?, ?, ?)", rows,
+                                  bcp=bcp)
+        finally:
+            cur.setinputsizes(None)
+        assert copied == (len(rows) if bcp else -1)
+        stored[bcp] = [tuple(r) for r in cur.execute(f"select * from {table} order by id")]
+    assert stored[True] == stored[False] == [
+        (1, datetime(2024, 1, 2, 3, 4, 6), Decimal("1.01"), "abc", 7),
+        (2, datetime(2024, 1, 2, 3, 4, 5), Decimal("-2.35"), None, 7),
+    ]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_without_an_entry_keeps_the_untyped_rules(bcp_cursor: pyodbc.Cursor):
+    """
+    A None entry, or a parameter past the end of the entries, leaves that column to the rules
+    without setinputsizes, under which datetime2 truncates its fraction as the plain path does.
+    """
+    value = datetime(2024, 1, 2, 3, 4, 5, 999999)
+    for sizes in ([None, None], [(pyodbc.SQL_BIGINT, 19, 0)]):
+        bcp_cursor.execute("drop table if exists t1")
+        bcp_cursor.execute("drop table if exists t2")
+        bcp, plain = _load_both(bcp_cursor, "datetime2(0)", [value], sizes=sizes)
+        assert bcp == plain == [datetime(2024, 1, 2, 3, 4, 5)]
+
+
+_BCP_ENTRY_BOTH_FAIL_CASES = [
+    ("decimal(5,4)", Decimal("9.99995"), None, True),
+    ("decimal(10,4)", Decimal("1.234"), (pyodbc.SQL_NUMERIC, 5, 2), None),
+    ("decimal(10,4)", Decimal("1234.5"), (pyodbc.SQL_NUMERIC, 4, 1), True),
+    ("tinyint", Decimal("-1.0"), None, True),
+    ("int", 2**31, None, True),
+    ("tinyint", 256, None, True),
+    ("decimal(5,2)", 1000, None, True),
+    ("bigint", 2.0**63, None, True),
+    ("int", 2.0**31, None, True),
+    ("tinyint", -1.5, None, True),
+    ("decimal(3,2)", 9.996, None, True),
+    ("decimal(38,10)", 1e300, None, True),
+    ("real", 1e39, None, True),
+    ("real", 3.4028235677973366e38, None, True),
+    ("bit", float("nan"), None, True),
+    ("float", float("inf"), None, True),
+    ("smalldatetime", datetime(2079, 6, 6, 23, 59, 30), None, True),
+    ("smalldatetime", datetime(1899, 12, 31, 23, 59, 29), None, True),
+    ("datetime", datetime(1752, 12, 31), None, True),
+    ("time(3)", date(2024, 1, 2), None, False),
+    ("nvarchar(3)", "abcd", None, False),
+    ("nvarchar(10)", "abcd", (pyodbc.SQL_WVARCHAR, 2, 0), False),
+    ("varchar(5) collate Latin1_General_100_CI_AS_SC_UTF8", "ééé", None, False),
+    ("char(4) collate Japanese_CI_AS", "東京東京", None, False),
+]
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+@pytest.mark.parametrize("column_type,value,entry,runs", _BCP_ENTRY_BOTH_FAIL_CASES,
+                         ids=[t for t, _, _, _ in _BCP_ENTRY_BOTH_FAIL_CASES])
+def test_bcp_fails_where_plain_path_fails_with_input_sizes(bcp_cursor: pyodbc.Cursor,
+                                                           column_type: str, value, entry,
+                                                           runs: bool | None):
+    """
+    A value the plain path rejects under its entry raises with BCP enabled too, and BCP stores
+    nothing: overflow after the server's rounding, a Decimal wider than its entry, a non-finite
+    double, a datetime out of its column's range, and text longer than its column or entry,
+    counted in bytes for a multi-byte collation.  `entry` None stands for the entry _entry_for
+    gives.  `runs` says whether BCP carries out the load or declines it, as the error shows
+    (see _raised_by_bcp), or is None where both paths raise the same error.
+    """
+    cur = bcp_cursor
+    sizes = [None, entry if entry is not None else _entry_for([value])]
+    stored = {}
+    for bcp in (False, True):
+        cur.execute("drop table if exists t1")
+        cur.execute(f"create table t1(id int, v {column_type})")
+        cur.setinputsizes(sizes)
+        try:
+            with pytest.raises(pyodbc.Error) as raised:
+                rows = [(1, None), (2, value)]
+                _executemany(cur, "insert into t1 values (?, ?)", rows, bcp=bcp)
+        finally:
+            cur.setinputsizes(None)
+        if runs is not None:
+            assert _raised_by_bcp(raised.value) == (bcp and runs)
+        stored[bcp] = [tuple(r) for r in cur.execute("select id, v from t1")]
+    assert stored[True] in ([], stored[False])
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_column_names_in_case_sensitive_database(bcp_cursor: pyodbc.Cursor):
+    """
+    Column-list names are matched as the database compares identifiers: ignoring case in the
+    usual case-insensitive collations, exactly in a case-sensitive one, where a name in the
+    wrong case is left to the plain path to reject.
+    """
+    cur = bcp_cursor
+    cur.execute("drop database if exists pyodbc_bcp_cs")
+    try:
+        cur.execute("create database pyodbc_bcp_cs collate Latin1_General_CS_AS")
+    except pyodbc.Error:
+        pytest.skip("cannot create a database")
+    try:
+        cur.execute("create table pyodbc_bcp_cs.dbo.t(id int, abc int)")
+        sql = "insert into pyodbc_bcp_cs.dbo.t ({}) values (?, ?)"
+        assert _executemany(cur, sql.format("id, abc"), [(1, 2)]) == 1
+        with pytest.raises(pyodbc.ProgrammingError):
+            _executemany(cur, sql.format("ID, abc"), [(3, 4)])
+        cur.execute("create table t1(id int, abc int)")
+        assert _executemany(cur, "insert into t1 (ID, ABC) values (?, ?)", [(5, 6)]) == 1
+    finally:
+        cur.execute("drop database pyodbc_bcp_cs")
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_low_level_api(bcp_cursor: pyodbc.Cursor):
+    """The Connection.bcp_* methods load every host type, with NULLs, and report row counts."""
+    cur = bcp_cursor
+    cur.execute("""
+        create table t1(i2 smallint, i4 int, i8 bigint, f4 real, f8 float, b bit,
+                        n nvarchar(max), c varchar(20), v varbinary(20), u uniqueidentifier)
+    """)
+    cnxn = cur.connection
+    types = [pyodbc.SQLINT2, pyodbc.SQLINT4, pyodbc.SQLINT8, pyodbc.SQLFLT4, pyodbc.SQLFLT8,
+             pyodbc.SQLBIT, pyodbc.SQLNCHAR, pyodbc.SQLCHARACTER, pyodbc.SQLBINARY,
+             pyodbc.SQLUNIQUEID]
+    text = "Zürich 東京 \U0001D518"
+    rows = [
+        (1, 2, 2**40, 1.5, 0.1, True, text, "abc", b"\x00\xff", uuid.UUID(int=1)),
+        (None,) * 10,
+        (-1, -2, -3, -0.5, 1e300, False, "", b"xyz", bytearray(), uuid.UUID(int=2).bytes_le),
+    ]
+    cnxn.bcp_init("t1", keep_nulls=True)
+    ctx = cnxn.bcp_bind_columns(types)
+    for row in rows[:2]:
+        cnxn.bcp_setrow(ctx, row)
+        cnxn.bcp_sendrow()
+    assert cnxn.bcp_batch(ctx) == 2
+    with bcp_connect() as observer:
+        assert observer.execute("select count(*) from t1").fetchval() == 2
+    cnxn.bcp_setrow(ctx, list(rows[2]))
+    cnxn.bcp_sendrow()
+    assert cnxn.bcp_done() == 1
+
+    stored = [tuple(r) for r in cur.execute("select * from t1")]
+    assert stored[0] == (1, 2, 2**40, 1.5, 0.1, True, text, "abc", b"\x00\xff",
+                         "00000000-0000-0000-0000-000000000001")
+    assert stored[1] == (None,) * 10
+    assert stored[2] == (-1, -2, -3, -0.5, 1e300, False, "", "xyz", b"",
+                         "00000000-0000-0000-0000-000000000002")
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_low_level_api_manual_commit(bcp_cursor: pyodbc.Cursor):
+    """In manual-commit mode a low-level session's rows join the open transaction."""
+    bcp_cursor.execute("create table t1(id int)")
+    cnxn = bcp_connect(autocommit=False)
+    try:
+        cnxn.bcp_init("t1")
+        ctx = cnxn.bcp_bind_columns([pyodbc.SQLINT4])
+        for i in (1, 2):
+            cnxn.bcp_setrow(ctx, (i,))
+            cnxn.bcp_sendrow()
+        assert cnxn.bcp_done() == 2
+        assert cnxn.execute("select count(*) from t1").fetchval() == 2
+        cnxn.rollback()
+        assert bcp_cursor.execute("select count(*) from t1").fetchval() == 0
+    finally:
+        cnxn.close()
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_low_level_api_misuse(bcp_cursor: pyodbc.Cursor):
+    """Misuse of the Connection.bcp_* methods raises instead of corrupting data or memory."""
+    cur = bcp_cursor
+    cur.execute("create table t1(c varchar(10), b bit)")
+    cnxn = cur.connection
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_sendrow()
+    with pytest.raises(ValueError):
+        cnxn.bcp_init("t1", direction=2)
+
+    cnxn.bcp_init("t1")
+    with pytest.raises(ValueError):
+        cnxn.bcp_bind_columns([12345])
+    ctx = cnxn.bcp_bind_columns([pyodbc.SQLCHARACTER, pyodbc.SQLBIT])
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_bind_columns([pyodbc.SQLCHARACTER, pyodbc.SQLBIT])
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_sendrow()
+    cnxn.bcp_setrow(ctx, ("z", False))
+    with pytest.raises(ValueError):
+        cnxn.bcp_setrow(ctx, ("é", True))
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_sendrow()
+    with pytest.raises(ValueError):
+        cnxn.bcp_setrow(ctx, ("a", 5))
+    with pytest.raises(TypeError):
+        cnxn.bcp_setrow(ctx, ("a",))
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.autocommit = False
+    cnxn.bcp_setrow(ctx, ("a", True))
+    del ctx
+    gc.collect()
+    cnxn.bcp_sendrow()
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_sendrow()
+    assert cnxn.bcp_done() == 1
+    with pytest.raises(pyodbc.ProgrammingError):
+        cnxn.bcp_done()
+
+    other = bcp_connect()
+    other.bcp_init("t1")
+    stale = other.bcp_bind_columns([pyodbc.SQLCHARACTER, pyodbc.SQLBIT])
+    cnxn.bcp_init("t1")
+    with pytest.raises(ValueError):
+        cnxn.bcp_setrow(stale, ("x", True))
+    cnxn.bcp_done()
+    other.bcp_setrow(stale, ("b", False))
+    other.bcp_sendrow()
+    other.close()
+    with pytest.raises(pyodbc.ProgrammingError):
+        other.bcp_setrow(stale, ("c", True))
+    cur.execute("set lock_timeout 5000")
+    assert cur.execute("select count(*) from t1").fetchval() == 1
+
+
+class _ClosesConnection:
+    """A value whose conversion closes a connection, as a hostile __float__ might."""
+
+    def __init__(self, cnxn: pyodbc.Connection) -> None:
+        self.cnxn = cnxn
+
+    def __float__(self) -> float:
+        self.cnxn.close()
+        return 1.0
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_conversion_that_closes_the_connection(bcp_cursor: pyodbc.Cursor):
+    """
+    A value whose conversion closes the connection mid-row raises ProgrammingError, in both the
+    low-level API and the fast path, instead of using the connection's freed state.  So does
+    one that closes the cursor holding the only reference to the connection.
+    """
+    bcp_cursor.execute("create table t1(f float, s nvarchar(10))")
+    victim = bcp_connect()
+    victim.bcp_init("t1")
+    ctx = victim.bcp_bind_columns([pyodbc.SQLFLT8, pyodbc.SQLNCHAR])
+    victim.bcp_setrow(ctx, (None, "first"))
+    with pytest.raises(pyodbc.ProgrammingError):
+        victim.bcp_setrow(ctx, (_ClosesConnection(victim), "second"))
+    assert victim.closed
+
+    class ClosingDecimal(Decimal):
+        def normalize(self, context=None) -> Decimal:
+            victim2.close()
+            return super().normalize(context)
+
+    bcp_cursor.execute("drop table t1")
+    bcp_cursor.execute("create table t1(id int, d decimal(10, 2))")
+    victim2 = bcp_connect()
+    cur = victim2.cursor()
+    with pytest.raises(pyodbc.ProgrammingError):
+        _executemany(cur, "insert into t1 values (?, ?)", [(1, ClosingDecimal("1.5"))])
+    assert victim2.closed
+    assert bcp_cursor.execute("select count(*) from t1").fetchval() == 0
+
+    class ClosingUUID(uuid.UUID):
+        @property
+        def bytes_le(self) -> bytes:
+            victim3.close()
+            return super().bytes_le
+
+    bcp_cursor.execute("drop table t1")
+    bcp_cursor.execute("create table t1(id int, g uniqueidentifier)")
+    victim3 = bcp_connect()
+    with pytest.raises(pyodbc.ProgrammingError):
+        _executemany(victim3.cursor(), "insert into t1 values (?, ?)",
+                     [(1, ClosingUUID(int=7))])
+    assert victim3.closed
+    assert bcp_cursor.execute("select count(*) from t1").fetchval() == 0
+
+    class ClosingCursorDecimal(Decimal):
+        def normalize(self, context=None) -> Decimal:
+            victim4.close()
+            gc.collect()
+            return super().normalize(context)
+
+    bcp_cursor.execute("drop table t1")
+    bcp_cursor.execute("create table t1(id int, d decimal(10, 2))")
+    victim4 = bcp_connect().cursor()
+    with pytest.raises(pyodbc.ProgrammingError, match="cursor was closed"):
+        _executemany(victim4, "insert into t1 values (?, ?)",
+                     [(1, ClosingCursorDecimal("1.5"))])
+    assert bcp_cursor.execute("select count(*) from t1").fetchval() == 0
+
+
+@pytest.mark.skipif(not IS_BCP_DRIVER, reason=_BCP_SKIP)
+def test_bcp_low_level_api_batch_rows(bcp_cursor: pyodbc.Cursor):
+    """bcp_init's batch_rows ends a batch every batch_rows rows, and a failing batch raises."""
+    cur = bcp_cursor
+    cur.execute("create table t1(id int primary key)")
+    cnxn = cur.connection
+    cnxn.bcp_init("t1", batch_rows=2)
+    ctx = cnxn.bcp_bind_columns([pyodbc.SQLINT4])
+    with pytest.raises(pyodbc.IntegrityError):
+        for i in (1, 2, 3, 3):
+            cnxn.bcp_setrow(ctx, (i,))
+            cnxn.bcp_sendrow()
+    cnxn.bcp_done()
+    assert [r[0] for r in cur.execute("select id from t1 order by id")] == [1, 2]
 
 
 def _test_tvp(cursor: pyodbc.Cursor, diff_schema):
