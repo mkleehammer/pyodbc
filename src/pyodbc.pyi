@@ -2,7 +2,7 @@
 # ruff: noqa: E303, N802, N803
 from __future__ import annotations
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
-from typing import Any, Final, Union
+from typing import Any, Final, Self
 import ctypes
 
 # SQLSetConnectAttr attributes
@@ -424,7 +424,7 @@ class Connection:
 
 
     # implemented dunder methods
-    def __enter__(self) -> Connection: ...
+    def __enter__(self) -> Self: ...
     def __exit__(self, exc_type, exc_value, traceback) -> None: ...
 
 
@@ -625,7 +625,7 @@ class Cursor:
         ...
 
     @property
-    def messages(self) -> list[tuple[str, Union[str, bytes]]] | None:
+    def messages(self) -> list[tuple[str, str | bytes]] | None:
         """Any descriptive messages returned by the last call to execute(), e.g. PRINT
         statements, or None."""
         ...
@@ -648,7 +648,7 @@ class Cursor:
 
 
     # implemented dunder methods
-    def __enter__(self) -> Cursor: ...
+    def __enter__(self) -> Self: ...
     def __exit__(self, exc_type, exc_value, traceback) -> None: ...
     def __iter__(self, /) -> Cursor: ...
     def __next__(self, /) -> Row: ...
@@ -690,7 +690,7 @@ class Cursor:
         """
         ...
 
-    def executemany(self, sql: str, params: Union[Sequence, Iterator, Generator], /) -> None:
+    def executemany(self, sql: str, params: Sequence | Iterator | Generator, /) -> None:
         """Run the SQL query against an iterable of parameters.  The behavior of this
         function depends heavily on the setting of the fast_executemany cursor property.
         See the Wiki for details.
@@ -1064,7 +1064,7 @@ def connect(connstring: str | None = None,
             encoding: str = 'utf-16le',
             readonly: bool = False,
             timeout: int = 0,
-            attrs_before: dict[int, Union[int, bytes, bytearray, str, Sequence[str]]] | None = None,
+            attrs_before: dict[int, int | bytes | bytearray | str | Sequence[str]] | None = None,
             **kwargs: Any) -> Connection:
     """Create a new ODBC connection to a database.  See the Wiki for details:
     https://github.com/mkleehammer/pyodbc/wiki/The-pyodbc-Module#connect
