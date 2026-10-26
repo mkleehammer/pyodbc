@@ -436,21 +436,30 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
     {
         if (pi->ValueType != SQL_C_NUMERIC)
             return false;
-        // Normalise, then get sign, exponent, and digits.
-        PyObject *normCell = PyObject_CallMethod(cell, "normalize", 0);
-        if (!normCell)
-            return false;
-        PyObject *cellParts = PyObject_CallMethod(normCell, "as_tuple", 0);
+        // Get sign, exponent, and digits.  Trailing zeros are stripped from the digit tuple
+        // by hand rather than by calling Decimal.normalize(): normalize() rounds the value to
+        // the calling thread's decimal context precision (28 digits by default), which
+        // silently corrupts values with more significant digits (up to 38 are valid).
+        PyObject *cellParts = PyObject_CallMethod(cell, "as_tuple", 0);
         if (!cellParts)
             return false;
-
-        Py_XDECREF(normCell);
 
         SQL_NUMERIC_STRUCT *pNum = (SQL_NUMERIC_STRUCT*)*outbuf;
         pNum->sign = !PyLong_AsLong(PyTuple_GET_ITEM(cellParts, 0));
         PyObject*  digits = PyTuple_GET_ITEM(cellParts, 1);
         long       exp    = PyLong_AsLong(PyTuple_GET_ITEM(cellParts, 2));
         Py_ssize_t numDigits = PyTuple_GET_SIZE(digits);
+
+        // Strip trailing zeros (e.g. 1.50 -> 1.5, 100 -> 1E+2) so the "loses precision" check
+        // below only fires for digits that are really significant.
+        while (numDigits > 1 && PyNumber_AsSsize_t(PyTuple_GET_ITEM(digits, numDigits - 1), 0) == 0)
+        {
+            numDigits--;
+            exp++;
+        }
+        // Any zero, whatever its exponent, is just 0.
+        if (numDigits == 1 && PyNumber_AsSsize_t(PyTuple_GET_ITEM(digits, 0), 0) == 0)
+            exp = 0;
 
         // PyDecimal is digits * 10**exp = digits / 10**-exp
         // SQL_NUMERIC_STRUCT is val / 10**scale
