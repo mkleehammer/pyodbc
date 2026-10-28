@@ -134,6 +134,13 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
     uint16_t *szName = NULL;
     SQLRETURN ret;
 
+    // The name buffer must hold nameLen characters of whatever width the metadata decoding
+    // reads below, which is 4 bytes for UTF-32 (see the iODBC + Teradata HACK).
+    const TextEnc& enc = cur->cnxn->metadata_enc;
+    size_t cbChar = sizeof(uint16_t);
+    if (enc.optenc == OPTENC_UTF32 || enc.optenc == OPTENC_UTF32LE || enc.optenc == OPTENC_UTF32BE)
+        cbChar = 4;
+
     assert(cur->hstmt != SQL_NULL_HANDLE && cur->colinfos != 0);
 
     // These are the values we expect after free_results.  If this function fails, we do not modify any members, so
@@ -149,7 +156,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
 
     desc   = PyTuple_New((Py_ssize_t)field_count);
     colmap = PyDict_New();
-    szName = (uint16_t*) PyMem_Malloc((nameLen + 1) * sizeof(uint16_t));
+    szName = (uint16_t*) PyMem_Malloc((nameLen + 1) * cbChar);
     if (!desc || !colmap || !szName)
         goto done;
 
@@ -182,14 +189,12 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
         // If needed, allocate a bigger column name message buffer and retry.
         if (cchName > nameLen - 1) {
             nameLen = cchName + 1;
-            if (!PyMem_Realloc((BYTE**) &szName, (nameLen + 1) * sizeof(uint16_t))) {
+            if (!PyMem_Realloc((BYTE**) &szName, (nameLen + 1) * cbChar)) {
                 PyErr_NoMemory();
                 goto done;
             }
             goto retry;
         }
-
-        const TextEnc& enc = cur->cnxn->metadata_enc;
 
         // HACK: I don't know the exact issue, but iODBC + Teradata results in either UCS4 data
         // or 4-byte SQLWCHAR.  I'm going to use UTF-32 as an indication that's what we have.
