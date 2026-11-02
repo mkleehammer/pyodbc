@@ -376,36 +376,26 @@ static PyObject* RaiseNotNumericStruct(Py_ssize_t iCol, SQLLEN cbFetched)
         "these columns as text.", iCol, (long)cbFetched);
 }
 
-static PyObject* GetDataDecimalWrittenAsText(Cursor* cur, Py_ssize_t iCol, const char* pch, Py_ssize_t cbBuffer,
-                                             SQLLEN cbFetched)
-{
-    // Called when SQLGetData with SQL_ARD_TYPE returned something other than a
-    // SQL_NUMERIC_STRUCT.  Some drivers (the IBM i Access ODBC driver, for one) ignore the ARD and
-    // convert to the default C type for DECIMAL and NUMERIC, SQL_C_CHAR, writing the value's text
-    // into the buffer.  Decoding those characters as precision, scale, sign, and digits gives a
-    // wrong value, so this parses the text instead and switches the column to the string path for
-    // the rest of the result set.
-    //
-    // The text must have fit in the buffer: drivers do not return a converted DECIMAL in pieces,
-    // so a truncated one cannot be completed with further SQLGetData calls.
-
-    if (cbFetched < 0 || cbFetched >= cbBuffer || !IsDecimalText(pch, (Py_ssize_t)cbFetched))
-        return RaiseNotNumericStruct(iCol, cbFetched);
-
-    cur->colinfos[iCol].use_decimal_binary = false;
-    return DecimalFromAsciiText(pch, (Py_ssize_t)cbFetched);
-}
-
 static PyObject* GetDataDecimalBinary(Cursor* cur, Py_ssize_t iCol)
 {
     // Reads a DECIMAL or NUMERIC value into a SQL_NUMERIC_STRUCT, using the precision and scale
     // set in the ARD by InitColumnInfo.
     //
-    // A struct is trusted only if the driver reports its exact size and a sign of 0 or 1.  A
-    // driver that wrote text instead reports the text's length, and a text long enough to report
-    // the struct's size has a character, never 0 or 1, where the sign goes.  The buffer is zeroed
-    // so that a short text leaves no uninitialized bytes behind it, and is large enough for the
-    // text of any DECIMAL; a conforming driver ignores the buffer length for SQL_C_NUMERIC.
+    // Some drivers (the IBM i Access ODBC driver, for one) ignore the ARD and convert to the
+    // default C type for DECIMAL and NUMERIC, SQL_C_CHAR, writing the value's text into the
+    // buffer and reporting its length.  Decoding those characters as precision, scale, sign, and
+    // digits gives a wrong value, so text is parsed as the string path parses it, and the column
+    // moves to the string path for the rest of the result set.
+    //
+    // Text is recognised by its content rather than by the reported length, which differs
+    // between drivers that do return a struct (19, but 0 from psqlODBC).  A struct cannot pass
+    // for text: its third byte is the sign, 0 or 1, where a text of three or more characters has
+    // a character.  A sign other than 0 or 1 is neither, and raises rather than giving a wrong
+    // value.
+    //
+    // The buffer is zeroed so that a short text leaves no uninitialized bytes behind it, and has
+    // room for the text of any DECIMAL, because drivers do not return a converted DECIMAL in
+    // pieces.  A conforming driver ignores the buffer length for SQL_C_NUMERIC.
 
     union
     {
@@ -427,10 +417,16 @@ static PyObject* GetDataDecimalBinary(Cursor* cur, Py_ssize_t iCol)
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
 
-    if (cbFetched == (SQLLEN)sizeof(buffer.num) && buffer.num.sign <= 1)
-        return DecimalFromNumericStruct(buffer.num);
+    if (cbFetched > 0 && cbFetched < (SQLLEN)sizeof(buffer) && IsDecimalText(buffer.text, (Py_ssize_t)cbFetched))
+    {
+        cur->colinfos[iCol].use_decimal_binary = false;
+        return DecimalFromAsciiText(buffer.text, (Py_ssize_t)cbFetched);
+    }
 
-    return GetDataDecimalWrittenAsText(cur, iCol, buffer.text, (Py_ssize_t)sizeof(buffer), cbFetched);
+    if (buffer.num.sign > 1)
+        return RaiseNotNumericStruct(iCol, cbFetched);
+
+    return DecimalFromNumericStruct(buffer.num);
 }
 
 static PyObject* GetDataDecimalString(Cursor* cur, Py_ssize_t iCol)
