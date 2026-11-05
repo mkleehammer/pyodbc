@@ -109,9 +109,9 @@ bool SetDecimalPoint(PyObject* pNew)
     return true;
 }
 
-PyObject* DecimalFromText(const TextEnc& enc, const byte* pb, Py_ssize_t cb)
+static PyObject* DecimalFromUnicode(PyObject* text)
 {
-    // Creates a Decimal object from a text buffer.
+    // Creates a Decimal object from a Unicode string.
 
     // The Decimal constructor requires the decimal point to be '.', so we need to convert the
     // locale's decimal to it.  We also need to remove non-decimal characters such as thousands
@@ -120,11 +120,7 @@ PyObject* DecimalFromText(const TextEnc& enc, const byte* pb, Py_ssize_t cb)
     // Remember that the thousands separate will often be '.', so have to do this carefully.
     // We'll create a regular expression with 0-9 and whatever the thousands separator is.
 
-    Object text(TextBufferToObject(enc, pb, cb));
-    if (!text)
-        return 0;
-
-    Object cleaned(PyObject_CallMethod(pRegExpRemove, "sub", "sO", "", text.Get()));
+    Object cleaned(PyObject_CallMethod(pRegExpRemove, "sub", "sO", "", text));
     if (!cleaned)
         return 0;
 
@@ -137,6 +133,29 @@ PyObject* DecimalFromText(const TextEnc& enc, const byte* pb, Py_ssize_t cb)
     }
 
     return PyObject_CallFunctionObjArgs(decimal, cleaned.Get(), 0);
+}
+
+PyObject* DecimalFromText(const TextEnc& enc, const byte* pb, Py_ssize_t cb)
+{
+    // Creates a Decimal object from a text buffer.
+
+    Object text(TextBufferToObject(enc, pb, cb));
+    if (!text)
+        return 0;
+
+    return DecimalFromUnicode(text.Get());
+}
+
+PyObject* DecimalFromAsciiText(const char* pch, Py_ssize_t cch)
+{
+    // Creates a Decimal object from text a driver wrote as SQL_C_CHAR, cleaned the same way as
+    // DecimalFromText.
+
+    Object text(PyUnicode_DecodeASCII(pch, cch, "strict"));
+    if (!text)
+        return 0;
+
+    return DecimalFromUnicode(text.Get());
 }
 
 PyObject* DecimalFromNumericStruct(const SQL_NUMERIC_STRUCT& num)

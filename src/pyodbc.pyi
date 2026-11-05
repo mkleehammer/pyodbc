@@ -365,7 +365,8 @@ class Connection:
     def fetch_decimal_as_string(self) -> bool:
         """If True, DECIMAL and NUMERIC values will be fetched as strings using the
         legacy local-aware path.  If False (the default), values are fetched using a
-        binary representation that is not affected by the locale."""
+        binary representation that is not affected by the locale.  A column whose
+        driver returns text in place of the binary representation is read as text."""
         ...
 
     @fetch_decimal_as_string.setter
