@@ -696,6 +696,11 @@ static PyObject* mod_datasources(PyObject* self, PyObject* args, PyObject* kwarg
         if(key && val)
             PyDict_SetItem(result, key, val);
 
+        // PyDict_SetItem does not steal references, so release ours. Py_XDECREF
+        // handles the case where either allocation above failed.
+        Py_XDECREF(key);
+        Py_XDECREF(val);
+
         nDirection = SQL_FETCH_NEXT;
     }
 
