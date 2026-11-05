@@ -234,8 +234,9 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 
     Object msg;
 
-    // See https://github.com/mkleehammer/pyodbc/issues/489
-    bool text_length_in_bytes = conn->compat_diagrec_byte_length;
+    // See https://github.com/mkleehammer/pyodbc/issues/489.  conn is null when there is no
+    // connection object yet, e.g. a failed SQLDriverConnect.
+    bool text_length_in_bytes = conn && conn->compat_diagrec_byte_length;
 
     for (;;)
     {

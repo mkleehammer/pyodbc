@@ -270,7 +270,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeou
         Py_BEGIN_ALLOW_THREADS
         SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
         Py_END_ALLOW_THREADS
-        Py_DECREF(preconn_keepalives);
+        Py_XDECREF(preconn_keepalives);
         return 0;
     }
 
