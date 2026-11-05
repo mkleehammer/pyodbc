@@ -306,6 +306,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeou
     cnxn->maxwrite     = 0;
     cnxn->timeout      = 0;
     cnxn->map_sqltype_to_converter = 0;
+    cnxn->preserve_tzoffsets = false;
     cnxn->readvar_initsize = 4096;
     cnxn->compat_diagrec_byte_length = false;
 
@@ -931,6 +932,37 @@ static int Connection_setautocommit(PyObject* self, PyObject* value, void* closu
     return 0;
 }
 
+PyObject* Connection_getpreservetzoffsets(PyObject* self, void* closure)
+{
+    UNUSED(closure);
+
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
+
+    PyObject* result = cnxn->preserve_tzoffsets ? Py_True : Py_False;
+    Py_INCREF(result);
+    return result;
+}
+
+static int Connection_setpreservetzoffsets(PyObject* self, PyObject* value, void* closure)
+{
+    UNUSED(closure);
+
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return -1;
+
+    if (value == 0)
+    {
+        PyErr_SetString(PyExc_TypeError, "Cannot delete the preserve_tzoffsets attribute.");
+        return -1;
+    }
+
+    cnxn->preserve_tzoffsets = PyObject_IsTrue(value) ? true : false;
+
+    return 0;
+}
 
 static PyObject* Connection_getclosed(PyObject* self, void* closure)
 {
@@ -1560,6 +1592,8 @@ static PyGetSetDef Connection_getseters[] = {
         "SQLGetInfo(SQL_SEARCH_PATTERN_ESCAPE).  These are driver specific.", 0 },
     { "autocommit", Connection_getautocommit, Connection_setautocommit,
       "Returns True if the connection is in autocommit mode; False otherwise.", 0 },
+    { "preserve_tzoffsets", Connection_getpreservetzoffsets, Connection_setpreservetzoffsets,
+      "Set to True to opt in for preserving time zone offset in parameters.", 0 },
     { "timeout", Connection_gettimeout, Connection_settimeout,
       "The timeout in seconds, zero means no timeout.", 0 },
     { "maxwrite", Connection_getmaxwrite, Connection_setmaxwrite, "The maximum bytes to write before using SQLPutData.", 0 },
