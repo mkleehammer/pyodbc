@@ -162,40 +162,47 @@ PyObject* DecimalFromNumericStruct(const SQL_NUMERIC_STRUCT& num)
 {
     // Avoid the problems introduced by locale-specific delimiters in numeric strings
     // by having the driver provide the value using a well-defined binary structure.
+    //
+    // The value is formatted as "<digits>E<-scale>" and passed to the Decimal constructor once,
+    // which is much cheaper than building a Python int, its str, and a tuple of digit objects.
+    // The result is identical, including the exponent: Decimal("365688E-2") is
+    // Decimal("3656.88").
 
-    // Convert the little-endian (1) unsigned (0) magnitude to a Python int.
-    PyObject* magnitude = _PyLong_FromByteArray(num.val, SQL_MAX_NUMERIC_LEN, 1, 0);
-    if (!magnitude)
-        return NULL;
+    // The magnitude is a 128-bit little-endian unsigned integer.  Divide it by 10 repeatedly,
+    // collecting the remainders, which are the decimal digits from least significant up.
+    unsigned char val[SQL_MAX_NUMERIC_LEN];
+    memcpy(val, num.val, sizeof(val));
+    int top = SQL_MAX_NUMERIC_LEN;
+    while (top > 0 && val[top - 1] == 0)
+        top--;
 
-    // Convert magnitude to a tuple of decimal digits via str().
-    Object magStr(PyObject_Str(magnitude));
-    Py_DECREF(magnitude);
-    if (!magStr)
-        return NULL;
-
-    Py_ssize_t nDigits = PyUnicode_GET_LENGTH(magStr.Get());
-    Object digitTuple(PyTuple_New(nDigits));
-    if (!digitTuple)
-        return NULL;
-
-    for (Py_ssize_t i = 0; i < nDigits; i++)
+    char digits[40];  // 2**128 has 39 digits
+    int cDigits = 0;
+    do
     {
-        Py_UCS4 ch = PyUnicode_READ_CHAR(magStr.Get(), i);
-        PyObject* digit = PyLong_FromLong((long)(ch - '0'));
-        if (!digit)
-            return NULL;
-        PyTuple_SET_ITEM(digitTuple.Get(), i, digit);
-    }
+        unsigned int rem = 0;
+        for (int i = top - 1; i >= 0; i--)
+        {
+            unsigned int cur = (rem << 8) | val[i];
+            val[i] = (unsigned char)(cur / 10);
+            rem = cur % 10;
+        }
+        digits[cDigits++] = (char)('0' + rem);
+        while (top > 0 && val[top - 1] == 0)
+            top--;
+    } while (top > 0);
 
-    // Decimal sign: 0 = positive, 1 = negative (opposite of ODBC convention).
-    int decimalSign = (num.sign == 1) ? 0 : 1;
-    long exponent = -(long)num.scale;
+    char text[64];
+    int cch = 0;
+    if (num.sign != 1)  // ODBC: 1 is positive, 0 is negative
+        text[cch++] = '-';
+    while (cDigits > 0)
+        text[cch++] = digits[--cDigits];
+    cch += snprintf(text + cch, sizeof(text) - cch, "E%d", -(int)num.scale);
 
-    // Decimal((sign, (d, d, ...), exponent))
-    Object args(Py_BuildValue("((iOl))", decimalSign, digitTuple.Get(), exponent));
-    if (!args)
+    Object str(PyUnicode_FromStringAndSize(text, cch));
+    if (!str)
         return NULL;
 
-    return PyObject_CallObject(decimal, args.Get());
+    return PyObject_CallFunctionObjArgs(decimal, str.Get(), NULL);
 }
