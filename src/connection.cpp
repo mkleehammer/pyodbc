@@ -165,10 +165,18 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
     }
     else if (PyUnicode_Check(value))
     {
-        Object po(PyUnicode_AsEncodedString(value, strencoding ? strencoding : "utf-16le", "strict"));
+        Object encoded(PyUnicode_AsEncodedString(value, strencoding ? strencoding : "utf-16le", "strict"));
+        if (!encoded)
+            return false;
+        // The value is passed with SQL_NTS, so it needs a NUL as wide as a character.  A bytes
+        // object only has one NUL byte, so copy it with 4 (enough for UTF-16 or UTF-32).
+        Py_ssize_t cb = PyBytes_GET_SIZE(encoded.Get());
+        Object po(PyBytes_FromStringAndSize(0, cb + 4));
         if (!po)
             return false;  // OOM
-        ivalue = (SQLPOINTER)PyBytes_AsString(po);
+        memcpy(PyBytes_AS_STRING(po.Get()), PyBytes_AS_STRING(encoded.Get()), (size_t)cb);
+        memset(PyBytes_AS_STRING(po.Get()) + cb, 0, 4);
+        ivalue = (SQLPOINTER)PyBytes_AS_STRING(po.Get());
         vallen = SQL_NTS;
         // PyList_Append increments the refcount, so the list owns the encoded buffer for as long
         // as the driver needs it; po releases our own reference when it goes out of scope.
@@ -179,9 +187,21 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
     {
         // To allow for possibility of setting multiple attributes more than once.
         Py_ssize_t len = PySequence_Size(value);
+        if (len < 0)
+            return false;
         for (Py_ssize_t i = 0; i < len; i++)
         {
             Object v(PySequence_GetItem(value, i));
+            if (!v)
+                return false;
+            // Only one level of nesting is allowed (CheckAttrsVal), but the sequence could
+            // return something else now than when it was checked.
+            if (!PyLong_Check(v) && !PyByteArray_Check(v) && !PyBytes_Check(v) && !PyUnicode_Check(v))
+            {
+                RaiseErrorV(0, PyExc_TypeError, "Unsupported attrs_before type: %s",
+                            Py_TYPE(v.Get())->tp_name);
+                return false;
+            }
             if (!ApplyPreconnAttrs(hdbc, ikey, v.Get(), strencoding, keepalives))
                 return false;
         }
@@ -246,16 +266,48 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeou
         PyObject* value = 0;
 
         Object encodingholder;
-        char *strencoding = (encoding != 0) ?
-            (PyUnicode_Check(encoding) ? PyBytes_AsString(encodingholder = PyCodec_Encode(encoding, "utf-8", "strict")) :
-             PyBytes_Check(encoding) ? PyBytes_AsString(encoding) : 0) : 0;
+        char *strencoding = 0;
+        if (encoding && PyUnicode_Check(encoding))
+        {
+            encodingholder = PyCodec_Encode(encoding, "utf-8", "strict");
+            if (!encodingholder)
+            {
+                Py_DECREF(preconn_keepalives);
+                Py_BEGIN_ALLOW_THREADS
+                SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
+                Py_END_ALLOW_THREADS
+                return 0;
+            }
+            strencoding = PyBytes_AS_STRING(encodingholder.Get());
+        }
+        else if (encoding && PyBytes_Check(encoding))
+        {
+            strencoding = PyBytes_AS_STRING(encoding);
+        }
 
         while (PyDict_Next(attrs_before, &pos, &key, &value))
         {
             SQLINTEGER ikey = 0;
 
             if (PyLong_Check(key))
-                ikey = (int)PyLong_AsLong(key);
+            {
+                // Attribute IDs are SQLINTEGERs.  long is 64 bits on most Unix platforms, so
+                // check the range rather than truncate to another attribute.
+                long lkey = PyLong_AsLong(key);
+                if (!PyErr_Occurred() && (lkey < INT_MIN || lkey > INT_MAX))
+                    PyErr_Format(PyExc_OverflowError,
+                        "attrs_before key %ld is outside the range of an ODBC attribute ID",
+                        lkey);
+                ikey = (SQLINTEGER)lkey;
+                if (PyErr_Occurred())
+                {
+                    Py_DECREF(preconn_keepalives);
+                    Py_BEGIN_ALLOW_THREADS
+                    SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
+                    Py_END_ALLOW_THREADS
+                    return 0;
+                }
+            }
             if (!ApplyPreconnAttrs(hdbc, ikey, value, strencoding, preconn_keepalives))
             {
                 Py_DECREF(preconn_keepalives);
@@ -419,7 +471,9 @@ static PyObject* Connection_set_attr(PyObject* self, PyObject* args)
     if (!PyArg_ParseTuple(args, "iO", &id, &value))
         return 0;
 
-    Connection* cnxn = (Connection*)self;
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
 
     SQLRETURN ret;
     SQLWChar sqlchar;  // declared here so buffer stays alive across the call
@@ -427,13 +481,21 @@ static PyObject* Connection_set_attr(PyObject* self, PyObject* args)
     if (PyLong_Check(value))
     {
         long ival = PyLong_AsLong(value);
+        if (ival == -1 && PyErr_Occurred())
+            return 0;
         Py_BEGIN_ALLOW_THREADS
         ret = SQLSetConnectAttrW(cnxn->hdbc, id, (SQLPOINTER)(intptr_t)ival, SQL_IS_INTEGER);
         Py_END_ALLOW_THREADS
     }
     else if (PyUnicode_Check(value))
     {
+        // SQLWChar clears encoding errors and leaves a NULL buffer, so check first to raise them.
+        Object check(PyUnicode_AsEncodedString(value, "utf-16le", "strict"));
+        if (!check)
+            return 0;
         sqlchar.set(value, "utf-16le");
+        if (!sqlchar.isValid())
+            return PyErr_NoMemory();
         Py_BEGIN_ALLOW_THREADS
         ret = SQLSetConnectAttrW(cnxn->hdbc, id, sqlchar.get(), SQL_NTS);
         Py_END_ALLOW_THREADS
@@ -798,7 +860,8 @@ static PyObject* Connection_getinfo(PyObject* self, PyObject* args)
         break;
 
     case GI_STRING:
-        result = PyUnicode_FromStringAndSize(szBuffer, (Py_ssize_t)cch);
+        // On truncation cch is the full length, not what fit in the buffer.
+        result = PyUnicode_FromStringAndSize(szBuffer, min((Py_ssize_t)cch, (Py_ssize_t)sizeof(szBuffer) - 1));
         break;
 
     case GI_UINTEGER:
@@ -973,7 +1036,9 @@ static PyObject* Connection_getsearchescape(PyObject* self, void* closure)
 {
     UNUSED(closure);
 
-    Connection* cnxn = (Connection*)self;
+    Connection* cnxn = Connection_Validate(self);
+    if (!cnxn)
+        return 0;
 
     if (!cnxn->searchescape)
     {
@@ -987,7 +1052,9 @@ static PyObject* Connection_getsearchescape(PyObject* self, void* closure)
         if (!SQL_SUCCEEDED(ret))
             return RaiseErrorFromHandle(cnxn, "SQLGetInfo", cnxn->hdbc, SQL_NULL_HANDLE);
 
-        cnxn->searchescape = PyUnicode_FromStringAndSize(sz, (Py_ssize_t)cch);
+        cnxn->searchescape = PyUnicode_FromStringAndSize(sz, min((Py_ssize_t)cch, (Py_ssize_t)sizeof(sz) - 1));
+        if (!cnxn->searchescape)
+            return 0;
     }
 
     Py_INCREF(cnxn->searchescape);

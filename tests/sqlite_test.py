@@ -23,7 +23,7 @@ import pickle
 import platform
 import re
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import datetime, time
 
 import pyodbc
 import pytest
@@ -121,6 +121,61 @@ def test_drivers():
 def test_datasources():
     p = pyodbc.dataSources()
     assert isinstance(p, dict)
+
+
+def test_connect_bad_encoding(connection_string: str):
+    "An encoding name that can't be encoded raises instead of crashing"
+    with pytest.raises(UnicodeEncodeError):
+        pyodbc.connect(connection_string, encoding="\udcff",
+                       attrs_before={pyodbc.SQL_ATTR_CURRENT_CATALOG: "x"})
+
+
+def test_attrs_before_sequence_error(connection_string: str):
+    "An error reading an attrs_before sequence value propagates"
+    class BadSequence:
+        def __len__(self):
+            return 1
+
+        def __getitem__(self, i):
+            raise ValueError("no items")
+
+    with pytest.raises(ValueError, match="no items"):
+        pyodbc.connect(connection_string,
+                       attrs_before={pyodbc.SQL_ATTR_CURRENT_CATALOG: BadSequence()})
+
+
+@pytest.mark.parametrize('key', [2**31, -2**31 - 1, 2**40 + 102, 2**64])
+def test_attrs_before_key_out_of_range(connection_string: str, key):
+    "attrs_before keys that don't fit a SQLINTEGER raise instead of being truncated"
+    # 2**40 + 102 was truncated to 102, SQL_ATTR_AUTOCOMMIT.
+    with pytest.raises(OverflowError):
+        pyodbc.connect(connection_string, attrs_before={key: 1})
+
+
+def test_set_attr_errors(cnxn: pyodbc.Connection):
+    "set_attr raises for values it can't pass and for a closed connection"
+    with pytest.raises(UnicodeEncodeError):
+        cnxn.set_attr(pyodbc.SQL_ATTR_CURRENT_CATALOG, "\ud800")
+    with pytest.raises(OverflowError):
+        cnxn.set_attr(pyodbc.SQL_ATTR_CURRENT_CATALOG, 2**100)
+    cnxn.close()
+    with pytest.raises(pyodbc.ProgrammingError, match="closed connection"):
+        cnxn.set_attr(pyodbc.SQL_ATTR_CURRENT_CATALOG, "x")
+
+
+def test_searchescape_closed(cnxn: pyodbc.Connection):
+    cnxn.close()
+    with pytest.raises(pyodbc.ProgrammingError, match="closed connection"):
+        cnxn.searchescape
+
+
+def test_timefromticks():
+    "TimeFromTicks accepts floats and rejects timestamps localtime() can't represent"
+    assert isinstance(pyodbc.TimeFromTicks(1.5), time)
+    with pytest.raises(OverflowError):
+        pyodbc.TimeFromTicks(2**62)
+    with pytest.raises(OverflowError):
+        pyodbc.TimeFromTicks(2**100)
 
 
 def test_getinfo_string(cnxn: pyodbc.Connection):
