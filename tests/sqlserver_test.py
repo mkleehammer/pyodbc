@@ -511,6 +511,21 @@ def test_decimal_fast_executemany_trailing_zeros(cursor: pyodbc.Cursor):
     assert [r.v for r in rows] == values
 
 
+@pytest.mark.parametrize("fast", [False, True])
+def test_setinputsizes_without_scale(cursor: pyodbc.Cursor, fast):
+    """
+    A (sqltype, size) input size with no scale must keep the existing scale, not use the
+    size as the scale.  Scale 18 with precision 18 made both values out of range.
+    """
+    cursor.execute("create table t1(id int, v decimal(18, 2))")
+    cursor.fast_executemany = fast
+    cursor.setinputsizes([None, (pyodbc.SQL_DECIMAL, 18)])
+    cursor.executemany("insert into t1(id, v) values (?, ?)", [(0, 123), (1, Decimal("4.5"))])
+
+    rows = cursor.execute("select v from t1 order by id").fetchall()
+    assert [r.v for r in rows] == [Decimal("123.00"), Decimal("4.50")]
+
+
 def test_subquery_params(cursor: pyodbc.Cursor):
     """Ensure parameter markers work in a subquery"""
     cursor.execute("create table t1(id integer, s varchar(20))")
