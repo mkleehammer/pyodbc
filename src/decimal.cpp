@@ -38,20 +38,35 @@ bool InitializeDecimal() {
     // This is called when the module is initialized and creates globals.
 
     Object d(PyImport_ImportModule("decimal"));
+    if (!d)
+        return false;
     decimal = PyObject_GetAttrString(d, "Decimal");
     if (!decimal)
-        return 0;
+        return false;
+
     Object re(PyImport_ImportModule("re"));
+    if (!re)
+        return false;
     re_sub     = PyObject_GetAttrString(re, "sub");
     re_escape  = PyObject_GetAttrString(re, "escape");
     re_compile = PyObject_GetAttrString(re, "compile");
+    if (!re_sub || !re_escape || !re_compile)
+        return false;
 
     Object module(PyImport_ImportModule("locale"));
-    Object ldict(PyObject_CallMethod(module, "localeconv", 0));
-    Object point(PyDict_GetItemString(ldict, "decimal_point"));
-
-    if (!point)
+    if (!module)
         return false;
+    Object ldict(PyObject_CallMethod(module, "localeconv", 0));
+    if (!ldict)
+        return false;
+
+    // A borrowed reference, so it is not wrapped in an Object.
+    PyObject* point = PyDict_GetItemString(ldict, "decimal_point");
+    if (!point)
+    {
+        PyErr_SetString(PyExc_RuntimeError, "locale.localeconv() has no decimal_point");
+        return false;
+    }
 
     pDecimalPoint = PyUnicode_FromString(".");
 
@@ -71,40 +86,35 @@ PyObject* GetDecimalPoint() {
 
 bool SetDecimalPoint(PyObject* pNew)
 {
-    if (PyObject_RichCompareBool(pNew, pDecimalPoint, Py_EQ) == 1)
-    {
-        // They are the same.
-        Py_XDECREF(pLocaleDecimal);
-        pLocaleDecimal = pDecimalPoint;
-        Py_INCREF(pLocaleDecimal);
+    // Everything is built before any global is replaced, so a failure leaves the previous
+    // separator in effect.
 
-        Py_XDECREF(pLocaleDecimalEscaped);
-        pLocaleDecimalEscaped = 0;
-    }
-    else
-    {
-        // They are different, so we'll need a regular expression to match it so it can be
-        // replaced in getdata GetDataDecimal.
+    bool isPoint = PyObject_RichCompareBool(pNew, pDecimalPoint, Py_EQ) == 1;
+    if (PyErr_Occurred())
+        return false;
 
-        Py_XDECREF(pLocaleDecimal);
-        pLocaleDecimal = pNew;
-        Py_INCREF(pLocaleDecimal);
+    // The separator is escaped for use in a regular expression, both to replace it and inside
+    // the character class of characters to keep ("]" or "-" would otherwise change the class).
+    Object escaped(PyObject_CallFunctionObjArgs(re_escape, pNew, 0));
+    if (!escaped)
+        return false;
 
-        Object e(PyObject_CallFunctionObjArgs(re_escape, pNew, 0));
-        if (!e)
-            return false;
-
-        Py_XDECREF(pLocaleDecimalEscaped);
-        pLocaleDecimalEscaped = e.Detach();
-    }
-
-    Object s(PyUnicode_FromFormat("[^0-9%U-]+", pLocaleDecimal));
+    Object s(PyUnicode_FromFormat("[^0-9%U-]+", escaped.Get()));
     if (!s)
         return false;
 
     Object r(PyObject_CallFunctionObjArgs(re_compile, s.Get(), 0));
     if (!r)
         return false;
+
+    Py_INCREF(pNew);
+    Py_XDECREF(pLocaleDecimal);
+    pLocaleDecimal = pNew;
+
+    // pLocaleDecimalEscaped is zero when the separator is ".", meaning no replacement is
+    // needed in DecimalFromUnicode.
+    Py_XDECREF(pLocaleDecimalEscaped);
+    pLocaleDecimalEscaped = isPoint ? 0 : escaped.Detach();
 
     Py_XDECREF(pRegExpRemove);
     pRegExpRemove = r.Detach();

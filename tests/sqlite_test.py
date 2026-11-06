@@ -1008,3 +1008,15 @@ def test_catalog_unencodable_name(cursor: pyodbc.Cursor, encoding):
     with pytest.raises(UnicodeEncodeError):
         cursor.columns(table="t\ud800")
 
+
+@pytest.mark.parametrize("sep", ["]", "z-a", "\\", "^"])
+def test_set_decimal_separator_regex_characters(sep):
+    # The separator was put into a regular expression character class unescaped, so "]" broke
+    # number cleaning and "z-a" raised after the separator had already been replaced.
+    saved = pyodbc.getDecimalSeparator()
+    try:
+        pyodbc.setDecimalSeparator(sep)
+        assert pyodbc.getDecimalSeparator() == sep
+    finally:
+        pyodbc.setDecimalSeparator(saved)
+    assert pyodbc.getDecimalSeparator() == saved
