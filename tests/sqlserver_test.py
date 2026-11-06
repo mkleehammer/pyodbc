@@ -2213,6 +2213,18 @@ def test_readvar_initsize_tiny(cursor: pyodbc.Cursor, initsize):
     assert [tuple(row) for row in rows] == values
 
 
+@pytest.mark.parametrize("length", [1022, 1023, 1024, 2000])
+def test_long_diagnostic_messages(cursor: pyodbc.Cursor, length):
+    # Messages longer than the initial 1023-character buffer are read again with a larger one.
+    text = "x" * (length - 1) + "z"
+    with pytest.raises(pyodbc.ProgrammingError) as info:
+        cursor.execute(f"raiserror('{text}', 16, 1)")
+    assert text in str(info.value)
+
+    cursor.execute(f"print '{text}'")
+    assert any(m[1].endswith(text) for m in cursor.messages)
+
+
 def _decimal_samples(precision: int, scale: int) -> list[str]:
     "Random values that fit decimal(precision, scale), plus zero and the extremes"
     rnd = random.Random(precision * 100 + scale)

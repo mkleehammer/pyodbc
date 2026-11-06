@@ -644,10 +644,12 @@ int GetDiagRecs(Cursor* cur)
     PyObject* msg_list;  // the "messages" as a Python list of diagnostic records
 
     SQLSMALLINT iRecNumber = 1;  // the index of the diagnostic records (1-based)
-    uint16_t    cSQLState[6];  // five-character SQLSTATE code (plus terminating NULL)
+    // The data is UTF-16, but the buffers have room for a 4-byte SQLWCHAR so that a driver
+    // manager using one cannot write past them.
+    uint16_t    cSQLState[12];  // five-character SQLSTATE code (plus terminating NULL)
     SQLINTEGER  iNativeError;
     SQLSMALLINT iMessageLen = 1023;
-    uint16_t    *cMessageText = (uint16_t*) PyMem_Malloc((iMessageLen + 1) * sizeof(uint16_t));
+    uint16_t    *cMessageText = (uint16_t*) PyMem_Malloc((iMessageLen + 1) * sizeof(uint32_t));
     SQLSMALLINT iTextLength;
 
     SQLRETURN ret;
@@ -685,10 +687,11 @@ int GetDiagRecs(Cursor* cur)
         if (text_length_in_bytes)
             iTextLength /= sizeof(uint16_t);
 
-        // If needed, allocate a bigger error message buffer and retry.
-        if (iTextLength > iMessageLen - 1) {
-            iMessageLen = iTextLength + 1;
-            if (!PyMem_Realloc((BYTE**) &cMessageText, (iMessageLen + 1) * sizeof(uint16_t))) {
+        // If needed, allocate a bigger error message buffer and retry.  The length is a
+        // SQLSMALLINT, so the longest message that can be read is SHRT_MAX - 1 characters.
+        if (iTextLength > iMessageLen - 1 && iMessageLen < SHRT_MAX) {
+            iMessageLen = iTextLength < SHRT_MAX ? (SQLSMALLINT)(iTextLength + 1) : (SQLSMALLINT)SHRT_MAX;
+            if (!PyMem_Realloc((BYTE**) &cMessageText, (iMessageLen + 1) * sizeof(uint32_t))) {
                 PyMem_Free(cMessageText);
                 PyErr_NoMemory();
                 return 0;
@@ -705,6 +708,12 @@ int GetDiagRecs(Cursor* cur)
                 iTextLength /= sizeof(uint16_t);
         }
 
+        // Don't trust the length beyond the buffer offered: the message is read using it.
+        if (iTextLength < 0)
+            iTextLength = 0;
+        if (iTextLength > iMessageLen - 1)
+            iTextLength = iMessageLen - 1;
+
         cSQLState[5] = 0;  // Not always NULL terminated (MS Access)
         CopySqlState(cSQLState, sqlstate_ascii);
         PyObject* msg_class = PyUnicode_FromFormat("[%s] (%ld)", sqlstate_ascii, (long)iNativeError);
@@ -717,7 +726,7 @@ int GetDiagRecs(Cursor* cur)
         if (!msg_value)
         {
             // If the char cannot be decoded, return something rather than nothing.
-            Py_XDECREF(msg_value);
+            PyErr_Clear();
             msg_value = PyBytes_FromStringAndSize((char*)cMessageText, iTextLength * sizeof(uint16_t));
         }
 
