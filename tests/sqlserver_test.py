@@ -2025,3 +2025,66 @@ def test_set_string_attr(cursor: pyodbc.Cursor):
     cursor.connection.set_attr(pyodbc.SQL_ATTR_CURRENT_CATALOG, "master")
     new_db = cursor.execute("SELECT db_name()").fetchval()
     assert new_db == "master"
+
+
+@pytest.fixture
+def tvp_binary_proc(cursor: pyodbc.Cursor) -> Iterator[str]:
+    """A procedure taking a one-varbinary-column TVP and returning its rows."""
+    cursor.execute("drop procedure if exists tvp_binary_p")
+    cursor.execute("drop type if exists tvp_binary_t")
+    cursor.execute("create type tvp_binary_t as table (id int, b varbinary(100))")
+    cursor.execute("create procedure tvp_binary_p @t tvp_binary_t readonly"
+                   " as select id, b from @t order by id")
+    cursor.commit()
+    yield "{call tvp_binary_p(?)}"
+    cursor.execute("drop procedure if exists tvp_binary_p")
+    cursor.execute("drop type if exists tvp_binary_t")
+    cursor.commit()
+
+
+class _FreshValuesRow:
+    "A TVP row that builds new value objects every time one is read"
+    def __init__(self, n):
+        self.n = n
+
+    def __len__(self):
+        return 2
+
+    def __getitem__(self, i):
+        if i == 0:
+            return self.n + 1000000
+        if i == 1:
+            return b"value-%d-" % self.n + b"x" * 50
+        raise IndexError(i)
+
+
+@pytest.mark.skipif(SQLSERVER_YEAR < 2008, reason="TVP not supported until 2008")
+@pytest.mark.skipif(IS_FREETDS, reason="FreeTDS does not support TVP")
+def test_tvp_rows_with_fresh_values(cursor: pyodbc.Cursor, tvp_binary_proc: str):
+    "Values are kept alive until the driver has read them"
+    rows = [_FreshValuesRow(n) for n in range(5)]
+    result = cursor.execute(tvp_binary_proc, (rows,)).fetchall()
+    assert [tuple(r) for r in result] == [(row[0], row[1]) for row in rows]
+
+
+class _ShapeShiftingRow:
+    "A TVP row that reports two columns when bound and four when executed"
+    def __init__(self):
+        self.len_calls = 0
+
+    def __len__(self):
+        self.len_calls += 1
+        return 2 if self.len_calls == 1 else 4
+
+    def __getitem__(self, i):
+        if i >= 4:
+            raise IndexError(i)
+        return 1 if i == 0 else b"x"
+
+
+@pytest.mark.skipif(SQLSERVER_YEAR < 2008, reason="TVP not supported until 2008")
+@pytest.mark.skipif(IS_FREETDS, reason="FreeTDS does not support TVP")
+def test_tvp_row_changes_size(cursor: pyodbc.Cursor, tvp_binary_proc: str):
+    "A row whose length changes after binding raises instead of overrunning the bindings"
+    with pytest.raises(pyodbc.ProgrammingError, match="same size"):
+        cursor.execute(tvp_binary_proc, ([_ShapeShiftingRow()],))

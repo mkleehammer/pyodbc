@@ -151,7 +151,7 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
     if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
     {
         RaiseErrorV(0, ProgrammingError, "The cursor's connection was closed.");
-        return false;
+        goto done;
     }
 
     desc   = PyTuple_New((Py_ssize_t)field_count);
@@ -307,6 +307,14 @@ static bool create_name_map(Cursor* cur, SQLSMALLINT field_count, bool lower)
     Py_XDECREF(index);
     Py_XDECREF(colinfo);
     PyMem_Free(szName);
+
+    if (!success)
+    {
+        // Without a description and map the results can't be read, so drop the column info
+        // too.  Otherwise fetch would see colinfos and assume both are set.
+        PyMem_Free(cur->colinfos);
+        cur->colinfos = 0;
+    }
 
     return success;
 }
@@ -741,6 +749,17 @@ int GetDiagRecs(Cursor* cur)
 }
 
 
+static PyObject* CancelDataAtExec(Cursor* cur, PyObject* result)
+{
+    // Called when an error interrupts sending data-at-execution parameters.  The statement is
+    // still waiting for data, so cancel it or every later call on the cursor (including
+    // freeing the parameters) fails with a function sequence error.  Returns `result`.
+    Py_BEGIN_ALLOW_THREADS
+    SQLCancel(cur->hstmt);
+    Py_END_ALLOW_THREADS
+    return result;
+}
+
 static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool skip_first)
 {
     // Internal function to execute SQL, called by .execute and .executemany.
@@ -893,7 +912,7 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                     ret = SQLPutData(cur->hstmt, (SQLPOINTER)&p[offset], remaining);
                     Py_END_ALLOW_THREADS
                     if (!SQL_SUCCEEDED(ret))
-                        return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                        return CancelDataAtExec(cur, RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt));
                     offset += remaining;
                 }
                 while (offset < cb);
@@ -903,20 +922,50 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                 // TVP
                 // Need to convert its columns into the bound row buffers
                 int hasTvpRows = 0;
-                if (pInfo->curTvpRow < PySequence_Length(pInfo->pObject))
+                Py_ssize_t tvpRowCount = PySequence_Length(pInfo->pObject);
+                if (tvpRowCount < 0)
                 {
-                    PyObject *tvpRow = PySequence_GetItem(pInfo->pObject, pInfo->curTvpRow);
-                    Py_XDECREF(tvpRow);
-                    for (Py_ssize_t i = 0; i < PySequence_Size(tvpRow); i++)
+                    CancelDataAtExec(cur, 0);
+                    FreeParameterData(cur);
+                    return NULL;
+                }
+                if (pInfo->curTvpRow < tvpRowCount)
+                {
+                    Object tvpRow(PySequence_GetItem(pInfo->pObject, pInfo->curTvpRow));
+                    if (!tvpRow)
+                    {
+                        CancelDataAtExec(cur, 0);
+                        FreeParameterData(cur);
+                        return NULL;
+                    }
+
+                    // `nested` was sized from the rows when the TVP was bound, so the sequence
+                    // must not have changed shape since.
+                    if (PySequence_Size(tvpRow) != pInfo->maxlength)
+                    {
+                        CancelDataAtExec(cur, 0);
+                        FreeParameterData(cur);
+                        if (PyErr_Occurred())
+                            return NULL;
+                        return RaiseErrorV(0, ProgrammingError, "A TVP's rows must all be the same size.");
+                    }
+
+                    for (Py_ssize_t i = 0; i < pInfo->maxlength; i++)
                     {
                         struct ParamInfo newParam;
                         struct ParamInfo *prevParam = pInfo->nested + i;
-                        PyObject *cell = PySequence_GetItem(tvpRow, i);
-                        Py_XDECREF(cell);
+                        Object cell(PySequence_GetItem(tvpRow, i));
+                        if (!cell)
+                        {
+                            CancelDataAtExec(cur, 0);
+                            FreeParameterData(cur);
+                            return NULL;
+                        }
                         memset(&newParam, 0, sizeof(newParam));
                         if (!GetParameterInfo(cur, i, cell, newParam, true))
                         {
                             // Error converting object
+                            CancelDataAtExec(cur, 0);
                             FreeParameterData(cur);
                             return NULL;
                         }
@@ -925,9 +974,19 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                            (newParam.ValueType != prevParam->ValueType ||
                             newParam.ParameterType != prevParam->ParameterType))
                         {
+                            Py_XDECREF(newParam.pObject);
+                            if (newParam.allocated)
+                                PyMem_Free(newParam.ParameterValuePtr);
+                            CancelDataAtExec(cur, 0);
                             FreeParameterData(cur);
                             return RaiseErrorV(0, ProgrammingError, "Type mismatch between TVP row values");
                         }
+
+                        // ParameterValuePtr can point into the cell's own buffer (bytes), which the
+                        // driver reads when it asks for this column, so keep the cell alive until
+                        // the next row replaces it.
+                        if (!newParam.pObject)
+                            newParam.pObject = cell.Detach();
 
                         if (prevParam->allocated)
                             PyMem_Free(prevParam->ParameterValuePtr);
@@ -947,7 +1006,7 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                 ret = SQLPutData(cur->hstmt, hasTvpRows ? (SQLPOINTER)1 : 0, hasTvpRows);
                 Py_END_ALLOW_THREADS
                 if (!SQL_SUCCEEDED(ret))
-                    return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                    return CancelDataAtExec(cur, RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt));
             }
             else
             {
@@ -956,7 +1015,7 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
                 ret = SQLPutData(cur->hstmt, pInfo->ParameterValuePtr, pInfo->BufferLength);
                 Py_END_ALLOW_THREADS
                 if (!SQL_SUCCEEDED(ret))
-                    return RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt);
+                    return CancelDataAtExec(cur, RaiseErrorFromHandle(cur->cnxn, "SQLPutData", cur->cnxn->hdbc, cur->hstmt));
             }
             ret = SQL_NEED_DATA;
         }
@@ -1221,12 +1280,12 @@ static PyObject* Cursor_setinputsizes(PyObject* self, PyObject* sizes)
     Py_RETURN_NONE;
 }
 
-static PyObject* Cursor_fetch(Cursor* cur)
+static PyObject* Cursor_fetch(Cursor* cur, bool allow_dict = true)
 {
     // Internal function to fetch a single row and construct a Row object from it.  Used by all of the fetching
     // functions.
     //
-    // Returns a Row object if successful.  If there are no more rows, zero is returned.  If an error occurs, an
+    // Returns a Row object if successful, or a dict if rows_as_dicts is set and `allow_dict` is true.  If there are no more rows, zero is returned.  If an error occurs, an
     // exception is set and zero is returned.  (To differentiate between the last two, use PyErr_Occurred.)
 
     SQLRETURN ret = 0;
@@ -1271,7 +1330,7 @@ static PyObject* Cursor_fetch(Cursor* cur)
 
     // Return a dict instead of a Row if so requested.
     // See https://github.com/mkleehammer/pyodbc/issues/171,
-    if (cur->rows_as_dicts)
+    if (cur->rows_as_dicts && allow_dict)
     {
         PyObject* dict = PyDict_New();
         if (!dict)
@@ -1372,7 +1431,8 @@ static PyObject* Cursor_fetchval(PyObject* self, PyObject* args)
     if (!cursor)
         return 0;
 
-    Object row(Cursor_fetch(cursor));
+    // Always fetch a Row, even when rows_as_dicts is set, so we can index the first column.
+    Object row(Cursor_fetch(cursor, false));
 
     if (!row)
     {
@@ -1469,7 +1529,9 @@ static PyObject* Cursor_tables(PyObject* self, PyObject* args, PyObject* kwargs)
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zzzz", Cursor_tables_kwnames, &szTableName, &szCatalog, &szSchema, &szTableType))
         return 0;
 
-    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
 
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
@@ -1553,7 +1615,9 @@ static PyObject* Cursor_tablePrivileges(PyObject* self, PyObject* args, PyObject
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|OOO", kwnames, &pTable, &pCatalog, &pSchema))
         return 0;
 
-    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
 
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
@@ -1683,7 +1747,9 @@ static PyObject* Cursor_columns(PyObject* self, PyObject* args, PyObject* kwargs
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|OOOO", Cursor_column_kwnames, &pTable, &pCatalog, &pSchema, &pColumn))
         return 0;
 
-    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
 
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
@@ -1768,7 +1834,7 @@ static PyObject* Cursor_statistics(PyObject* self, PyObject* args, PyObject* kwa
                                      &pUnique, &pQuick))
         return 0;
 
-    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
     if (!cur)
         return 0;
 
@@ -1910,7 +1976,9 @@ static PyObject* _specialColumns(PyObject* self, PyObject* args, PyObject* kwarg
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|zzO", Cursor_specialColumn_kwnames, &szTable, &szCatalog, &szSchema, &pNullable))
         return 0;
 
-    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
 
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
@@ -1981,7 +2049,9 @@ static PyObject* Cursor_primaryKeys(PyObject* self, PyObject* args, PyObject* kw
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s|zz", Cursor_primaryKeys_kwnames, &szTable, &szCatalog, &szSchema))
         return 0;
 
-    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
 
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
@@ -2052,7 +2122,9 @@ static PyObject* Cursor_foreignKeys(PyObject* self, PyObject* args, PyObject* kw
         &szForeignTable, &szForeignCatalog, &szForeignSchema))
         return 0;
 
-    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
 
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
@@ -2120,7 +2192,9 @@ static PyObject* Cursor_getTypeInfo(PyObject* self, PyObject* args, PyObject* kw
     if (!PyArg_ParseTuple(args, "|i", &nDataType))
         return 0;
 
-    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
 
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
@@ -2291,7 +2365,9 @@ static PyObject* Cursor_procedureColumns(PyObject* self, PyObject* args, PyObjec
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zzz", Cursor_procedureColumns_kwnames, &szProcedure, &szCatalog, &szSchema))
         return 0;
 
-    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
 
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
@@ -2350,7 +2426,9 @@ static PyObject* Cursor_procedures(PyObject* self, PyObject* args, PyObject* kwa
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|zzz", Cursor_procedures_kwnames, &szProcedure, &szCatalog, &szSchema))
         return 0;
 
-    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
+    if (!cur)
+        return 0;
 
     if (!free_results(cur, FREE_STATEMENT | FREE_PREPARED))
         return 0;
