@@ -38,6 +38,41 @@ struct DAEParam
 };
 
 
+// The largest precision a SQL_NUMERIC_STRUCT is used for (SQL Server's maximum).
+static const int MAX_NUMERIC_PRECISION = 38;
+
+static bool GetDecimalParts(PyObject* value, Object& parts, long& sign, PyObject*& digits, Py_ssize_t& exp);
+
+static void StripDecimalZeros(PyObject* digits, Py_ssize_t& numDigits, Py_ssize_t& exp)
+{
+    // Removes trailing zeros (1.50 -> 1.5, 100 -> 1E+2) by reducing numDigits and increasing
+    // exp, so only significant digits are counted.  Any zero becomes 0E0.  The digits have been
+    // checked by GetDecimalParts.
+    numDigits = PyTuple_GET_SIZE(digits);
+    while (numDigits > 1 && PyLong_AsLong(PyTuple_GET_ITEM(digits, numDigits - 1)) == 0)
+    {
+        numDigits--;
+        exp++;
+    }
+    if (numDigits == 1 && PyLong_AsLong(PyTuple_GET_ITEM(digits, 0)) == 0)
+        exp = 0;
+}
+
+static bool FitsGuessedNumeric(Py_ssize_t numDigits, Py_ssize_t exp, Py_ssize_t scale, Py_ssize_t precision)
+{
+    // Returns true if a Decimal with numDigits significant digits and exponent exp (from
+    // StripDecimalZeros) can be bound exactly as numeric(precision, scale).
+    if (scale < 0 || scale > precision || scale + exp < 0)
+        return false;
+    long long digits = (long long)numDigits + exp + scale;  // digits in the scaled integer
+    return digits <= precision;
+}
+
+static Py_ssize_t MinimumScale(Py_ssize_t exp)
+{
+    return exp < 0 ? -exp : 0;
+}
+
 static int DetectCType(PyObject *cell, ParamInfo *pi)
 {
     // Detects and sets the appropriate C type to use for binding the specified Python object.
@@ -48,6 +83,17 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
     // could be from a previous row or could have been initialized from SQLDescribeParam.
 
     PyObject* cls = 0;
+
+    if (pi->guessScale && cell != Py_None && cell != null_binary)
+    {
+        // Start from the described type so that a scale guessed for a Decimal in an earlier
+        // batch does not change how a str, for example, is bound.  None keeps the type of the
+        // previous batch.
+        pi->ParameterType = pi->describedType;
+        pi->ColumnSize = pi->describedSize;
+        pi->DecimalDigits = pi->describedDigits;
+    }
+
     if (PyBool_Check(cell))
     {
     Type_Bool:
@@ -62,6 +108,13 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
         {
             pi->ValueType = SQL_C_NUMERIC;
             pi->BufferLength = sizeof(SQL_NUMERIC_STRUCT);
+            if (pi->guessScale)
+            {
+                // An integer needs no scale.  A Decimal in a later row that needs one causes a
+                // rebind.
+                pi->ColumnSize = (SQLULEN)pi->guessPrecision;
+                pi->DecimalDigits = 0;
+            }
         }
         else
         {
@@ -182,6 +235,34 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
     Type_Decimal:
         pi->ValueType = SQL_C_NUMERIC;
         pi->BufferLength = sizeof(SQL_NUMERIC_STRUCT);
+
+        if (pi->guessScale && cell != Py_None && cell != null_binary)
+        {
+            // Bind with the full precision and the smallest scale this value needs, or the
+            // scale from the last batch if this value fits it too, so rows that alternate
+            // between scales do not each cause a rebind.  If no scale fits, PyToCType raises.
+            Object parts;
+            long sign;
+            PyObject* digits;
+            Py_ssize_t exp;
+            if (!GetDecimalParts(cell, parts, sign, digits, exp))
+                return false;
+            Py_ssize_t numDigits;
+            StripDecimalZeros(digits, numDigits, exp);
+
+            Py_ssize_t precision = pi->guessPrecision;
+            Py_ssize_t scale = MinimumScale(exp);
+            if (scale > precision)
+                scale = precision;
+            if (pi->guessedScale > scale && FitsGuessedNumeric(numDigits, exp, pi->guessedScale, precision))
+                scale = pi->guessedScale;
+
+            pi->guessedScale = (SQLSMALLINT)scale;
+            pi->DecimalDigits = (SQLSMALLINT)scale;
+            if (pi->ParameterType != SQL_DECIMAL)
+                pi->ParameterType = SQL_NUMERIC;
+            pi->ColumnSize = (SQLULEN)precision;
+        }
     }
     else
     {
@@ -236,6 +317,27 @@ static bool GetUUIDBytes(PyObject* value, Object& bytes)
     return true;
 }
 
+static PyObject* PowerOfTen(Py_ssize_t n)
+{
+    // Returns a borrowed reference to 10**n, for 0 <= n <= MAX_NUMERIC_PRECISION, or null with
+    // an exception set.
+    static PyObject* table[MAX_NUMERIC_PRECISION + 1];
+    if (n < 0 || n > MAX_NUMERIC_PRECISION)
+    {
+        PyErr_SetString(PyExc_ValueError, "power of ten out of range");
+        return 0;
+    }
+    if (!table[n])
+    {
+        Object ten(PyLong_FromLong(10));
+        Object exponent(PyLong_FromSsize_t(n));
+        if (!ten || !exponent)
+            return 0;
+        table[n] = PyNumber_Power(ten, exponent, Py_None);
+    }
+    return table[n];
+}
+
 #define WRITEOUT(type, ptr, val, indv) { *(type*)(*ptr) = (val); *ptr += sizeof(type); indv = sizeof(type); }
 // Convert Python object into C data for binding.
 // Output pointer is written to with data, indicator, and updated.
@@ -263,44 +365,63 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
             // Convert a PyLong into a SQL_NUMERIC_STRUCT, without losing precision
             // or taking an unnecessary trip through character strings.
             SQL_NUMERIC_STRUCT *pNum = (SQL_NUMERIC_STRUCT*)*outbuf;
-            PyObject *absVal = PyNumber_Absolute(cell);
-            if (pi->DecimalDigits)
+
+            if (pi->DecimalDigits < 0 || pi->DecimalDigits > MAX_NUMERIC_PRECISION)
             {
-                static PyObject *scaler_table[38];
-                static PyObject *tenObject;
-
-                // Need to scale by 10**pi->DecimalDigits
-                if (pi->DecimalDigits < 0 || pi->DecimalDigits > 38)
-                {
-                NumericOverflow:
-                    RaiseErrorV(0, ProgrammingError, "Numeric overflow");
-                    Py_XDECREF(absVal);
-                    return false;
-                }
-
-                if (!scaler_table[pi->DecimalDigits - 1])
-                {
-                    if (!tenObject)
-                        tenObject = PyLong_FromLong(10);
-                    PyObject *scaleObj = PyLong_FromLong(pi->DecimalDigits);
-                    scaler_table[pi->DecimalDigits - 1] = PyNumber_Power(tenObject, scaleObj, Py_None);
-                    Py_XDECREF(scaleObj);
-                }
-                PyObject *scaledVal = PyNumber_Multiply(absVal, scaler_table[pi->DecimalDigits - 1]);
-                Py_XDECREF(absVal);
-                absVal = scaledVal;
+                RaiseErrorV(0, ProgrammingError, "Numeric overflow");
+                return false;
             }
-            pNum->precision = (SQLCHAR)pi->ColumnSize;
+
+            // The struct's precision tells the driver how many digits to send, and some
+            // drivers drop the leading digits of a value with more, so check the digits
+            // against it, not just against the 16-byte val.
+            Py_ssize_t precision = MAX_NUMERIC_PRECISION;
+            if (pi->guessScale && pi->ColumnSize >= 1 && pi->ColumnSize < MAX_NUMERIC_PRECISION)
+                precision = (Py_ssize_t)pi->ColumnSize;
+
+            Object absVal(PyNumber_Absolute(cell));
+            if (!absVal)
+                return false;
+            PyObject* scaler = PowerOfTen(pi->DecimalDigits);
+            PyObject* limit = PowerOfTen(precision);
+            if (!scaler || !limit)
+                return false;
+            Object scaledVal(PyNumber_Multiply(absVal, scaler));
+            if (!scaledVal)
+                return false;
+            int tooBig = PyObject_RichCompareBool(scaledVal, limit, Py_GE);
+            if (tooBig < 0)
+                return false;
+            if (tooBig)
+            {
+                if (pi->guessScale && (pi->DecimalDigits > 0 || precision < pi->guessPrecision))
+                {
+                    // It fits with no scale.  Returning false without an exception executes
+                    // the rows so far and rebinds starting at this row.
+                    PyObject* guessLimit = PowerOfTen(pi->guessPrecision);
+                    if (!guessLimit)
+                        return false;
+                    int fits = PyObject_RichCompareBool(absVal, guessLimit, Py_LT);
+                    if (fits)
+                        return false;  // a rebind, or an error if fits < 0
+
+                }
+                RaiseErrorV(0, ProgrammingError, "Numeric overflow");
+                return false;
+            }
+
+            pNum->precision = (SQLCHAR)(pi->guessScale ? precision : pi->ColumnSize);
             pNum->scale = (SQLCHAR)pi->DecimalDigits;
             pNum->sign = _PyLong_Sign(cell) >= 0;
 #if PY_VERSION_HEX < 0x030D0000
-            if (_PyLong_AsByteArray((PyLongObject*)absVal, pNum->val, sizeof(pNum->val), 1, 0)) {
+            if (_PyLong_AsByteArray((PyLongObject*)scaledVal.Get(), pNum->val, sizeof(pNum->val), 1, 0)) {
 #else
-            if (_PyLong_AsByteArray((PyLongObject*)absVal, pNum->val, sizeof(pNum->val), 1, 0, 1)) {
+            if (_PyLong_AsByteArray((PyLongObject*)scaledVal.Get(), pNum->val, sizeof(pNum->val), 1, 0, 1)) {
 #endif
-                goto NumericOverflow;
+                PyErr_Clear();
+                RaiseErrorV(0, ProgrammingError, "Numeric overflow");
+                return false;
             }
-            Py_XDECREF(absVal);
             *outbuf += pi->BufferLength;
             ind = sizeof(SQL_NUMERIC_STRUCT);
         }
@@ -493,31 +614,45 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
 
         SQL_NUMERIC_STRUCT *pNum = (SQL_NUMERIC_STRUCT*)*outbuf;
         pNum->sign = !sign;
-        Py_ssize_t numDigits = PyTuple_GET_SIZE(digits);
 
-        // Strip trailing zeros (e.g. 1.50 -> 1.5, 100 -> 1E+2) so the "loses precision" check
-        // below only fires for digits that are really significant.
-        while (numDigits > 1 && PyNumber_AsSsize_t(PyTuple_GET_ITEM(digits, numDigits - 1), 0) == 0)
+        // Strip trailing zeros so the checks below count only significant digits.
+        Py_ssize_t numDigits;
+        StripDecimalZeros(digits, numDigits, exp);
+
+        // The struct's precision tells the driver how many digits to send, and some drivers
+        // (psqlODBC) silently drop the leading digits of a value with more, so the digits are
+        // checked against it.  When the parameter was described, the driver knows the real
+        // column, so allow up to 38 and let the database reject values too large for it.
+        Py_ssize_t precision = MAX_NUMERIC_PRECISION;
+        if (pi->guessScale && pi->ColumnSize >= 1 && pi->ColumnSize < MAX_NUMERIC_PRECISION)
+            precision = (Py_ssize_t)pi->ColumnSize;
+
+        if (pi->DecimalDigits < 0 || pi->DecimalDigits > MAX_NUMERIC_PRECISION)
         {
-            numDigits--;
-            exp++;
+            RaiseErrorV(0, ProgrammingError, "Numeric overflow");
+            return false;
         }
-        // Any zero, whatever its exponent, is just 0.
-        if (numDigits == 1 && PyNumber_AsSsize_t(PyTuple_GET_ITEM(digits, 0), 0) == 0)
-            exp = 0;
 
         // PyDecimal is digits * 10**exp = digits / 10**-exp
         // SQL_NUMERIC_STRUCT is val / 10**scale
         Py_ssize_t scaleDiff = pi->DecimalDigits + exp;
+
+        if (pi->guessScale && !FitsGuessedNumeric(numDigits, exp, pi->DecimalDigits, precision) &&
+            FitsGuessedNumeric(numDigits, exp, MinimumScale(exp), pi->guessPrecision))
+        {
+            // The scale was guessed from earlier rows and this value does not fit it, but it
+            // fits another.  Returning false without an exception executes the rows so far and
+            // rebinds starting at this row, where DetectCType picks a scale that fits.
+            return false;
+        }
         if (scaleDiff < 0)
         {
             RaiseErrorV(0, ProgrammingError, "Converting decimal loses precision");
             return false;
         }
 
-        // The 16-byte val holds at most 39 digits, so anything longer cannot fit.  Checking
-        // here also keeps a huge exponent from sizing the tuple below.
-        if (numDigits + scaleDiff > 39)
+        // Checking here also keeps a huge exponent from sizing the tuple below.
+        if ((long long)numDigits + scaleDiff > precision)
         {
             RaiseErrorV(0, ProgrammingError, "Numeric overflow");
             return false;
@@ -551,7 +686,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         if (!digitLong)
             return false;
 
-        pNum->precision = (SQLCHAR)pi->ColumnSize;
+        pNum->precision = (SQLCHAR)(pi->guessScale ? precision : pi->ColumnSize);
         pNum->scale = (SQLCHAR)pi->DecimalDigits;
 
 
@@ -1194,8 +1329,13 @@ static long getSequenceValue(PyObject *pSequence, Py_ssize_t nIndex, long nDefau
  *
  * sparhawk@gmx.at (Gerhard Gruber)
  */
-static bool UpdateParamInfo(Cursor* pCursor, Py_ssize_t nIndex, ParamInfo *pInfo)
+static bool UpdateParamInfo(Cursor* pCursor, Py_ssize_t nIndex, ParamInfo *pInfo, bool* pScaleSet = 0)
 {
+  // Returns true if anything was set.  If pScaleSet is not null, it is set to true if the
+  // scale was.
+  if (pScaleSet)
+    *pScaleSet = false;
+
   if (pCursor->inputsizes == NULL || nIndex >= PySequence_Length(pCursor->inputsizes))
     return false;
 
@@ -1223,7 +1363,12 @@ static bool UpdateParamInfo(Cursor* pCursor, Py_ssize_t nIndex, ParamInfo *pInfo
   {
     pInfo->ParameterType = (SQLSMALLINT)getSequenceValue(desc, 0, (long)pInfo->ParameterType, rc);
     pInfo->ColumnSize = (SQLUINTEGER)getSequenceValue(desc, 1, (long)pInfo->ColumnSize, rc);
-    pInfo->DecimalDigits = (SQLSMALLINT)getSequenceValue(desc, 2, (long)pInfo->DecimalDigits, rc);
+    bool scaleSet = false;
+    pInfo->DecimalDigits = (SQLSMALLINT)getSequenceValue(desc, 2, (long)pInfo->DecimalDigits, scaleSet);
+    if (scaleSet)
+      rc = true;
+    if (pScaleSet)
+      *pScaleSet = scaleSet;
   }
 
   Py_CLEAR(desc);
@@ -1752,9 +1897,10 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
     for (Py_ssize_t i = 0; i < cur->paramcount; i++)
     {
         SQLSMALLINT nullable;
-        if (!SQL_SUCCEEDED(SQLDescribeParam(cur->hstmt, i + 1, &(cur->paramInfos[i].ParameterType),
+        bool described = SQL_SUCCEEDED(SQLDescribeParam(cur->hstmt, i + 1, &(cur->paramInfos[i].ParameterType),
             &cur->paramInfos[i].ColumnSize, &cur->paramInfos[i].DecimalDigits,
-            &nullable)))
+            &nullable));
+        if (!described)
         {
             // Default to a medium-length varchar if describing the parameter didn't work
             cur->paramInfos[i].ParameterType = SQL_VARCHAR;
@@ -1762,11 +1908,26 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             cur->paramInfos[i].DecimalDigits = 0;
         }
 
-    // This supports overriding of input sizes via setinputsizes
-    // See issue 380
-    // The logic is duplicated from BindParameter
-    UpdateParamInfo(cur, i, &cur->paramInfos[i]);
-  }
+        // This supports overriding of input sizes via setinputsizes
+        // See issue 380
+        // The logic is duplicated from BindParameter
+        bool scaleSet = false;
+        bool overridden = UpdateParamInfo(cur, i, &cur->paramInfos[i], &scaleSet);
+
+        // A driver that reports SQL_DESCRIBE_PARAMETER "N" may still answer SQLDescribeParam, but
+        // not reliably: psqlODBC returns a generic numeric(28,6), or the precision and scale of
+        // whatever was last bound to the statement.  A size from setinputsizes limits the
+        // precision guessed; a scale stops the guessing.
+        ParamInfo& info = cur->paramInfos[i];
+        info.guessScale = !scaleSet && !(described && cur->cnxn->supports_describeparam);
+        info.describedType = info.ParameterType;
+        info.describedSize = info.ColumnSize;
+        info.describedDigits = info.DecimalDigits;
+        info.guessPrecision = MAX_NUMERIC_PRECISION;
+        if (overridden && info.ColumnSize >= 1 && info.ColumnSize < MAX_NUMERIC_PRECISION)
+            info.guessPrecision = (SQLSMALLINT)info.ColumnSize;
+        info.guessedScale = -1;
+    }
 
     PyObject *rowseq = PySequence_Fast(paramArrayObj, "Parameter array must be a sequence.");
     if (!rowseq)

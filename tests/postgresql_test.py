@@ -704,3 +704,112 @@ def test_handles(cursor: pyodbc.Cursor):
     conn.close()
     assert not isinstance(conn.hdbc, ctypes.c_void_p)
     assert conn.hdbc is None
+
+
+@pytest.mark.parametrize('first', ['execute', 'fast_executemany'])
+def test_fast_executemany_decimal_scale_after_reuse(cursor: pyodbc.Cursor, first):
+    # psqlODBC does not support SQLDescribeParam.  5.4.0 reuses the scale guessed from an
+    # earlier statement on the same cursor and raises "Converting decimal loses precision".
+    cursor.execute("create table t1(col numeric(10,2))")
+    sql = "insert into t1 values (?)"
+    if first == 'execute':
+        cursor.execute(sql, Decimal('3656'))
+    else:
+        cursor.fast_executemany = True
+        cursor.executemany(sql, [(Decimal('3656'),)])
+    cursor.fast_executemany = True
+    cursor.executemany(sql, [(Decimal('3656.88'),), (Decimal('-0.5'),)])
+    results = [row[0] for row in cursor.execute("select col::text from t1 order by col")]
+    assert results == ['-0.50', '3656.00', '3656.88']
+
+
+def test_fast_executemany_decimal_scale_from_values(cursor: pyodbc.Cursor):
+    # psqlODBC describes every numeric parameter as numeric(28,6), so 5.4.0 rejected any value
+    # with more than 6 decimal places.  The scale now comes from the values, growing as rows
+    # need it.
+    cursor.execute("create table t1(n int, col numeric(30,12))")
+    values = [None, '1', '0.1234567', '-2.5', '123456789012345678.123456789012', None, '7.1']
+    cursor.fast_executemany = True
+    cursor.executemany("insert into t1 values (?, ?)",
+                       [(i, None if v is None else Decimal(v)) for i, v in enumerate(values)])
+    results = [row[0] for row in cursor.execute("select col from t1 order by n")]
+    assert results == [None if v is None else Decimal(v) for v in values]
+
+
+def _fast_executemany_numeric(cursor: pyodbc.Cursor, values, column="numeric"):
+    "Inserts values with fast_executemany and returns them read back in order"
+    cursor.execute(f"create table t1(n int, v {column})")
+    cursor.fast_executemany = True
+    cursor.executemany("insert into t1 values (?, ?)", list(enumerate(values)))
+    return [row[0] for row in cursor.execute("select v from t1 order by n")]
+
+
+@pytest.mark.parametrize("values", [
+    pytest.param(['1E-30', '123456789'], id="int-digits-after-scale"),
+    pytest.param(['1E-38', '3'], id="whole-after-scale-38"),
+    pytest.param(['0.333333333333333333333333333333', '123456789012.5'], id="mixed"),
+    pytest.param(['0E-50', '12'], id="zero-with-exponent"),
+    pytest.param(['1.' + '0' * 40, '5.5'], id="trailing-zeros"),
+    pytest.param(['0.123456789012345678901234567890', '12345678901'], id="shrink"),
+    pytest.param([str(Decimal(1).scaleb(-(i % 39))) for i in range(80)], id="many-scales"),
+])
+def test_fast_executemany_guessed_scale_values(cursor: pyodbc.Cursor, values):
+    """
+    psqlODBC cannot describe parameters, so the scale comes from the values.  A row that does
+    not fit the scale chosen for earlier rows rebinds instead of losing digits (5.5.0 betas
+    stored 123456789 as 23456789) or failing.
+    """
+    values = [Decimal(v) for v in values]
+    assert _fast_executemany_numeric(cursor, values) == values
+
+
+def test_fast_executemany_guessed_scale_int_after_scale(cursor: pyodbc.Cursor):
+    "A Python int after a guessed scale rebinds instead of losing its leading digit"
+    values = [Decimal('1E-30'), 123456789, Decimal('2.5'), 10**37]
+    assert _fast_executemany_numeric(cursor, values) == [Decimal(v) for v in values]
+
+
+@pytest.mark.parametrize("before", [[], [Decimal('1E-30')]], ids=["alone", "after-scale"])
+@pytest.mark.parametrize("value", [
+    pytest.param(Decimal('12.1111111111111111111111111111111111111'), id="39-digits"),
+    pytest.param(Decimal('1' * 39), id="39-digit-decimal"),
+])
+def test_fast_executemany_too_many_digits(cursor: pyodbc.Cursor, before, value):
+    "A value with more than 38 digits raises instead of being stored with a digit missing"
+    cursor.execute("create table t1(v numeric)")
+    cursor.fast_executemany = True
+    with pytest.raises(pyodbc.ProgrammingError, match="Numeric overflow|loses precision"):
+        cursor.executemany("insert into t1 values (?)", [(v,) for v in before + [value]])
+
+
+def test_fast_executemany_too_many_digits_int(cursor: pyodbc.Cursor):
+    "A 39-digit int bound as a numeric raises instead of being stored with a digit missing"
+    cursor.execute("create table t1(v numeric)")
+    cursor.fast_executemany = True
+    with pytest.raises(pyodbc.ProgrammingError, match="Numeric overflow"):
+        cursor.executemany("insert into t1 values (?)", [(Decimal('1.5'),), (int('1' * 39),)])
+
+
+def test_fast_executemany_guessed_scale_too_small(cursor: pyodbc.Cursor):
+    "More than 38 decimal places cannot be bound"
+    with pytest.raises(pyodbc.ProgrammingError, match="loses precision"):
+        _fast_executemany_numeric(cursor, [Decimal('1E-40')])
+
+
+@pytest.mark.parametrize("sizes", [[(pyodbc.SQL_DECIMAL, 18)], [18]])
+def test_fast_executemany_setinputsizes_without_scale(cursor: pyodbc.Cursor, sizes):
+    "setinputsizes without a scale still takes the scale from the values"
+    cursor.execute("create table t1(v numeric(18, 9))")
+    cursor.fast_executemany = True
+    cursor.setinputsizes(sizes)
+    values = [Decimal('1.1234567'), Decimal('12345.123456789')]
+    cursor.executemany("insert into t1 values (?)", [(v,) for v in values])
+    assert [row[0] for row in cursor.execute("select v from t1 order by v")] == values
+
+
+def test_fast_executemany_decimal_and_str(cursor: pyodbc.Cursor):
+    "A guessed Decimal scale does not change how a str in the same column is bound"
+    values = ['x' * 60, Decimal('15'), 'y' * 60]
+    results = _fast_executemany_numeric(cursor, values, column="text")
+    assert results == ['x' * 60, '15', 'y' * 60]
+

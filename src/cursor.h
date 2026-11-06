@@ -71,6 +71,21 @@ struct ParamInfo
     // written to each SQLPutData call.  (It is not clear if they are limited
     // like SQLBindParameter or not.)
 
+    // fast_executemany only: true if the driver cannot describe this parameter (and
+    // setinputsizes did not give a scale), so a Decimal's precision and scale are taken from
+    // the values.  The batch is executed and rebound when a row does not fit the scale chosen
+    // so far.
+    bool guessScale;
+    // When guessScale is set: the type, size, and scale from SQLDescribeParam and
+    // setinputsizes, restored before each batch is bound so that guessing for a Decimal does
+    // not change how other types in the column are bound; the most digits to bind (38, or the
+    // setinputsizes size); and the scale guessed for the last batch, or -1.
+    SQLSMALLINT describedType;
+    SQLULEN     describedSize;
+    SQLSMALLINT describedDigits;
+    SQLSMALLINT guessPrecision;
+    SQLSMALLINT guessedScale;
+
     // For TVPs, the nested descriptors and current row.
     struct ParamInfo *nested;
     SQLLEN curTvpRow;
