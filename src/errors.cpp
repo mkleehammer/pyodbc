@@ -61,6 +61,10 @@ PyObject* RaiseErrorV(const char* sqlstate, PyObject* exc_class, const char* for
 {
     PyObject *pAttrs = 0, *pError = 0;
 
+    // This replaces any exception already set, as PyErr_SetString does.  Creating the new
+    // exception below calls Python code, which must not be called with an exception set.
+    PyErr_Clear();
+
     if (!sqlstate || !*sqlstate)
         sqlstate = "HY000";
 
