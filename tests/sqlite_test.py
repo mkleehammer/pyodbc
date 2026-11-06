@@ -663,6 +663,36 @@ def test_row_gtlt(cursor: pyodbc.Cursor):
     rows.sort()  # uses <
 
 
+def test_row_delete_column(cursor: pyodbc.Cursor):
+    "Deleting a Row column raises instead of crashing"
+    row = cursor.execute("select 1 as a").fetchone()
+    with pytest.raises(TypeError):
+        del row[0]
+    with pytest.raises(TypeError):
+        del row.a
+    assert row.a == 1
+
+
+def test_row_bad_name_map():
+    "A Row whose column map points outside the row raises instead of reading past it"
+    for index in (100000, -5):
+        row = pyodbc.Row(("x",), {"a": index}, 1)
+        with pytest.raises(IndexError):
+            row.a
+
+
+def test_row_compare_error():
+    "An exception from comparing two values propagates out of the Row comparison"
+    class Uncomparable:
+        def __eq__(self, other):
+            raise ValueError("no comparing")
+
+    row1 = pyodbc.Row(("a",), {"a": 0}, Uncomparable())
+    row2 = pyodbc.Row(("a",), {"a": 0}, Uncomparable())
+    with pytest.raises(ValueError, match="no comparing"):
+        row1 == row2  # noqa: B015
+
+
 def _test_context_manager(connection_string):
     # TODO: This is failing, but it may be due to the design of sqlite.  I've disabled it
     # for now until I can research it some more.
