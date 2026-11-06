@@ -774,7 +774,7 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
     // Internal function to execute SQL, called by .execute and .executemany.
     //
     // pSql
-    //   A PyString, PyUnicode, or derived object containing the SQL.
+    //   A str or derived object containing the SQL.
     //
     // params
     //   Pointer to an optional sequence of parameters, and possibly the SQL statement (see skip_first):

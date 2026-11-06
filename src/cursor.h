@@ -165,7 +165,7 @@ struct Cursor
     // The Cursor.rowcount attribute from the DB API specification.
     int rowcount;
 
-    // A dictionary that maps from column name (PyString) to index into the result columns (PyInteger).  This is
+    // A dictionary that maps from column name (str) to index into the result columns (int).  This is
     // constructed during an execute and shared with each row (reference counted) to implement accessing results by
     // column name.
     //

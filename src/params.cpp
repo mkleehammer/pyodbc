@@ -136,7 +136,6 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
     else if (PyBytes_Check(cell))
     {
     Type_Bytes:
-        // Assume the SQL type is also character (2.x) or binary (3.x).
         // If it is a max-type (ColumnSize == 0), use DAE.
         pi->ValueType = SQL_C_BINARY;
         pi->BufferLength = pi->ColumnSize ? pi->ColumnSize : sizeof(DAEParam);
@@ -851,7 +850,7 @@ static bool GetNullBinaryInfo(Cursor* cur, Py_ssize_t index, ParamInfo& info)
 
 static bool GetBytesInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
 {
-    // The Python 3 version that writes bytes as binary data.
+    // Binds bytes as binary data.
     Py_ssize_t cb = PyBytes_GET_SIZE(param);
 
     info.ValueType  = SQL_C_BINARY;

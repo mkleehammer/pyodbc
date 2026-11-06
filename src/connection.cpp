@@ -1575,7 +1575,6 @@ static PyObject* Connection_setencoding(PyObject* self, PyObject* args, PyObject
 {
     Connection* cnxn = (Connection*)self;
 
-    // In Python 3 we only support encodings for Unicode text.
     char* encoding = 0;
     int ctype = 0;
     static char *kwlist[] = { "encoding", "ctype", 0 };

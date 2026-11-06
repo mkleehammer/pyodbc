@@ -57,7 +57,6 @@ bool HasSqlState(HSTMT hstmt, const char* szSqlState);
 
 inline PyObject* RaiseErrorFromException(PyObject* pError)
 {
-    // PyExceptionInstance_Class doesn't exist in 2.4
     PyErr_SetObject((PyObject*)Py_TYPE(pError), pError);
     return 0;
 }

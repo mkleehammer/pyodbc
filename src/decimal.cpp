@@ -14,16 +14,11 @@ static PyObject* re_sub = 0;
 static PyObject* re_compile = 0;
 static PyObject* re_escape = 0;
 
-// In Python 2.7, the 3 strings below are bytes objects.  In 3.x they are Unicode objects.
-
-
 static PyObject* pDecimalPoint = 0;
 // A "." object which we replace pLocaleDecimal with if they are not the same.
 
 static PyObject* pLocaleDecimal = 0;
 // The decimal character used by the locale.  This can be overridden by the user.
-//
-// In 2.7 this is a bytes object, otherwise unicode.
 
 static PyObject* pLocaleDecimalEscaped = 0;
 // A version of pLocaleDecimal escaped to be used in a regular expression.  (The character

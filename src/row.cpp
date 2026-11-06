@@ -25,7 +25,7 @@ struct Row
     // cursor.description, accessed as _description
     PyObject* description;
 
-    // A Python dictionary mapping from column name to a PyInteger, used to access columns by name.
+    // A Python dictionary mapping from column name to an int, used to access columns by name.
     PyObject* map_name_to_index;
 
     // The number of values in apValues.

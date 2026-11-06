@@ -465,8 +465,7 @@ class Connection:
 
         Args:
             encoding: Text encoding codec, e.g. "utf-8".
-            ctype: The C data type when passing data - either pyodbc.SQL_CHAR or pyodbc.SQL_WCHAR.  More
-                relevant for Python 2.7.
+            ctype: The C data type when passing data - either pyodbc.SQL_CHAR or pyodbc.SQL_WCHAR.
         """
         ...
 
@@ -480,7 +479,7 @@ class Connection:
             sqltype: pyodbc.SQL_CHAR, pyodbc.SQL_WCHAR, or pyodbc.SQL_WMETADATA.
             encoding: Text encoding codec, e.g. "utf-8".
             ctype: The C data type to request from SQLGetData - either pyodbc.SQL_CHAR or
-                pyodbc.SQL_WCHAR.  More relevant for Python 2.7.
+                pyodbc.SQL_WCHAR.
         """
         ...
 

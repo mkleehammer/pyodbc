@@ -1,8 +1,7 @@
 
 // This was a Microsoft Visual C++ generated resource script, but I've hand modified it to
-// remove the afxres.h include.  Apparently Visual Studio 2008 Express (used to build the
-// Python 2.6 version) does not include afxres.h which is part of MFC.  This will probably
-// not be editable in the Visual Studio resource editor.
+// remove the afxres.h include, which is part of MFC and is not always installed.  This will
+// probably not be editable in the Visual Studio resource editor.
 
 #include <winres.h>
 #include "resource.h"

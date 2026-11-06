@@ -299,9 +299,6 @@ static bool import_types()
     // Note: We can only import types from C extensions since they are shared among all
     // interpreters.  Other classes are imported per-thread via GetClassForThread.
 
-    // In Python 2.5 final, PyDateTime_IMPORT no longer works unless the datetime module was previously
-    // imported (among other problems).
-
     PyObject* pdt = PyImport_ImportModule("datetime");
 
     if (!pdt)
@@ -420,7 +417,7 @@ struct keywordmap
 {
     const char* oldname;
     const char* newname;
-    PyObject* newnameObject;    // PyString object version of newname, created as needed.
+    PyObject* newnameObject;    // str version of newname, created as needed.
 };
 
 static keywordmap keywordmaps[] =
@@ -454,8 +451,8 @@ static PyObject* mod_connect(PyObject* self, PyObject* args, PyObject* kwargs)
 
     if (size == 1)
     {
-        if (!PyUnicode_Check(PyTuple_GET_ITEM(args, 0)) && !PyUnicode_Check(PyTuple_GET_ITEM(args, 0)))
-            return PyErr_Format(PyExc_TypeError, "argument 1 must be a string or unicode object");
+        if (!PyUnicode_Check(PyTuple_GET_ITEM(args, 0)))
+            return PyErr_Format(PyExc_TypeError, "argument 1 must be a str");
 
         pConnectString.Attach(PyUnicode_FromObject(PyTuple_GetItem(args, 0)));
         if (!pConnectString.IsValid())
