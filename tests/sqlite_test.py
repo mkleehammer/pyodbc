@@ -970,3 +970,16 @@ def test_decimal_mode_bool_warning_as_error(cursor: pyodbc.Cursor):
         with pytest.raises(FutureWarning):
             cnxn.fetch_decimal_as_string
     assert cnxn.decimal_mode == 'binary'
+
+
+@pytest.mark.parametrize("initsize", [1, 2, 3, 5])
+def test_readvar_initsize_tiny(cursor: pyodbc.Cursor, initsize):
+    # A buffer smaller than one character plus the terminator made the driver write before the
+    # buffer, and an odd size split UTF-16 characters.
+    cursor.execute("create table t1(n varchar(100), b blob)")
+    values = [("abcdéfghij", b"0123456789"), ("x", b"x"), ("", b"")]
+    for value in values:
+        cursor.execute("insert into t1 values (?, ?)", *value)
+    cursor.connection.readvar_initsize = initsize
+    rows = cursor.execute("select n, b from t1 order by length(n) desc").fetchall()
+    assert [tuple(row) for row in rows] == values

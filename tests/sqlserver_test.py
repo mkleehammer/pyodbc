@@ -2200,6 +2200,19 @@ def test_decimal_mode_default(cursor: pyodbc.Cursor):
     assert cursor.connection.decimal_mode == 'binary'
 
 
+@pytest.mark.parametrize("initsize", [1, 2, 3, 5])
+def test_readvar_initsize_tiny(cursor: pyodbc.Cursor, initsize):
+    # A buffer smaller than one character plus the terminator made the driver write before the
+    # buffer, and an odd size split UTF-16 characters.
+    cursor.execute("create table t1(n nvarchar(max), v varchar(max), b varbinary(max))")
+    values = [("abcdéfghij", "abcdefghij", b"0123456789"), ("x", "x", b"x"), ("", "", b"")]
+    for value in values:
+        cursor.execute("insert into t1 values (?, ?, ?)", *value)
+    cursor.connection.readvar_initsize = initsize
+    rows = cursor.execute("select n, v, b from t1 order by len(v) desc").fetchall()
+    assert [tuple(row) for row in rows] == values
+
+
 def _decimal_samples(precision: int, scale: int) -> list[str]:
     "Random values that fit decimal(precision, scale), plus zero and the extremes"
     rnd = random.Random(precision * 100 + scale)

@@ -119,6 +119,13 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
         cbAllocated = initsize;
     }
 
+    // The buffer must hold at least one element plus the terminator, and a whole number of
+    // elements.  Otherwise the first read leaves no room, and the loop below computes a
+    // negative length and has the driver write before the buffer.
+    if (cbAllocated < cbElement + cbNullTerminator)
+        cbAllocated = cbElement + cbNullTerminator;
+    cbAllocated += (cbElement - cbAllocated % cbElement) % cbElement;
+
     Py_ssize_t cbUsed = 0;
     byte* pb = (byte*)PyMem_Malloc((size_t)cbAllocated);
     if (!pb)
@@ -197,8 +204,8 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
             else
             {
                 // I would not expect to get here - we apparently read all of the data but the
-                // driver did not return SQL_SUCCESS?
-                cbRead = (cbData - cbNullTerminator);
+                // driver did not return SQL_SUCCESS?  cbData does not include the terminator.
+                cbRead = cbData < 0 ? 0 : (Py_ssize_t)cbData;
                 cbRemaining = 0;
             }
 
@@ -225,8 +232,12 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
             //
             // If I'm reading the documentation correctly, SQLGetData is not going to
             // include the null terminator in cbRead.
+            //
+            // A driver should not report more than it was offered, but don't trust it: the
+            // length is used to read the buffer.
 
-            cbUsed += cbData;
+            Py_ssize_t cbMax = cbAvailable - cbNullTerminator;
+            cbUsed += (Py_ssize_t)cbData > cbMax ? cbMax : (Py_ssize_t)cbData;
         }
     }
     while (ret == SQL_SUCCESS_WITH_INFO);
@@ -621,7 +632,7 @@ static PyObject* GetUUID(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
 
     const char* szFmt = "(yyy#)";
-    Object args(Py_BuildValue(szFmt, NULL, NULL, &guid, (int)sizeof(guid)));
+    Object args(Py_BuildValue(szFmt, NULL, NULL, &guid, (Py_ssize_t)sizeof(guid)));  // y# takes a Py_ssize_t
     if (!args)
         return 0;
 
@@ -917,6 +928,11 @@ PyObject *GetData_SqlVariant(Cursor *cur, Py_ssize_t iCol) {
     retcode = SQLColAttribute(cur->hstmt, iCol + 1, SQL_CA_SS_VARIANT_TYPE, NULL, 0, NULL, &variantType);
     if (!SQL_SUCCEEDED(retcode))
         return RaiseErrorFromHandle(cur->cnxn, "SQLColAttribute", cur->cnxn->hdbc, cur->hstmt);
+
+    // A driver reporting a variant inside a variant would recurse without limit.
+    if (variantType == SQL_SS_VARIANT)
+        return RaiseErrorV("HY106", ProgrammingError,
+            "The driver reported sql_variant as the underlying type of a sql_variant value.  column-index=%zd", iCol);
 
     // Replace the original SQL_VARIANT data type with the underlying data type then call GetData() again
     cur->colinfos[iCol].sql_type = static_cast<SQLSMALLINT>(variantType);
