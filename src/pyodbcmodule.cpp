@@ -354,10 +354,12 @@ static bool CheckAttrsVal(PyObject *val, bool allowSeq)
     if (allowSeq && PySequence_Check(val))
     {
         Py_ssize_t len = PySequence_Size(val);
+        if (len < 0)
+            return false;
         for (Py_ssize_t i = 0; i < len; i++)
         {
             Object v(PySequence_GetItem(val, i));
-            if (!CheckAttrsVal(v, false))
+            if (!v || !CheckAttrsVal(v, false))
                 return false;
         }
         return true;
@@ -681,9 +683,12 @@ static PyObject* mod_datasources(PyObject* self, PyObject* args, PyObject* kwarg
         if (!SQL_SUCCEEDED(ret))
             break;
 
+        // On truncation the lengths are the full lengths, not what fit in the buffers.
+        SQLSMALLINT cchDSN  = min(cbDSN,  (SQLSMALLINT)(_countof(szDSN) - 1));
+        SQLSMALLINT cchDesc = min(cbDesc, (SQLSMALLINT)(_countof(szDesc) - 1));
         int byteorder = BYTEORDER_NATIVE;
-        PyObject* key = PyUnicode_DecodeUTF16((char*)szDSN, cbDSN * sizeof(wchar_t), "strict", &byteorder);
-        PyObject* val = PyUnicode_DecodeUTF16((char*)szDesc, cbDesc * sizeof(wchar_t), "strict", &byteorder);
+        PyObject* key = PyUnicode_DecodeUTF16((char*)szDSN, cchDSN * sizeof(wchar_t), "strict", &byteorder);
+        PyObject* val = PyUnicode_DecodeUTF16((char*)szDesc, cchDesc * sizeof(wchar_t), "strict", &byteorder);
 #else
         // UTF-8
         ret = SQLDataSources(henv, nDirection, szDSN,  _countof(szDSN),  &cbDSN, szDesc, _countof(szDesc), &cbDesc);
@@ -731,8 +736,14 @@ static PyObject* mod_timefromticks(PyObject* self, PyObject* args)
     if (!l)
         return 0;
 
-    time_t t = PyLong_AsLong(num);
-    struct tm* fields = localtime(&t);
+    long long ticks = PyLong_AsLongLong(l);
+    if (ticks == -1 && PyErr_Occurred())
+        return 0;
+
+    time_t t = (time_t)ticks;
+    struct tm* fields = ((long long)t == ticks) ? localtime(&t) : 0;
+    if (!fields)
+        return PyErr_Format(PyExc_OverflowError, "timestamp %lld out of range for localtime()", ticks);
 
     return PyTime_FromTime(fields->tm_hour, fields->tm_min, fields->tm_sec, 0);
 }
