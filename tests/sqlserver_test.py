@@ -477,6 +477,38 @@ def test_decimal_fast_executemany_trailing_zeros(cursor: pyodbc.Cursor):
     assert [r.v for r in rows] == values
 
 
+def test_decimal_fast_executemany_huge_exponent(cursor: pyodbc.Cursor):
+    """An exponent far too large for SQL_NUMERIC_STRUCT is an overflow, not a crash."""
+    cursor.execute("create table t1(v decimal(18, 2))")
+    cursor.fast_executemany = True
+    with pytest.raises(pyodbc.ProgrammingError, match="Numeric overflow"):
+        cursor.executemany("insert into t1 values (?)", [(Decimal("1E+100000000000"),)])
+
+
+@pytest.mark.parametrize("fast", [False, True])
+@pytest.mark.parametrize("value", ["NaN", "sNaN", "Infinity", "-Infinity"])
+def test_decimal_special_values_rejected(cursor: pyodbc.Cursor, fast, value):
+    cursor.execute("create table t1(v decimal(18, 2))")
+    cursor.fast_executemany = fast
+    with pytest.raises(pyodbc.ProgrammingError, match="NaN or Infinity"):
+        cursor.executemany("insert into t1 values (?)", [(Decimal(value),)])
+
+
+def test_fast_executemany_cursor_usable_after_dae_error(cursor: pyodbc.Cursor):
+    """
+    An error while sending data-at-execution (max-type) parameters must restore the
+    cursor's parameter-array settings, or the next execute on the cursor fails or crashes.
+    """
+    cursor.execute("create table t1(id int primary key, v varchar(max))")
+    cursor.execute("insert into t1 values (1, 'x')")
+    cursor.fast_executemany = True
+    with pytest.raises(pyodbc.IntegrityError):
+        cursor.executemany("insert into t1 values (?, ?)", [(i, "a") for i in range(1, 6)])
+
+    cursor.execute("insert into t1(id, v) values (?, ?)", 100, "z")
+    assert cursor.execute("select v from t1 where id = 100").fetchval() == "z"
+
+
 def test_subquery_params(cursor: pyodbc.Cursor):
     """Ensure parameter markers work in a subquery"""
     cursor.execute("create table t1(id integer, s varchar(20))")
@@ -1861,6 +1893,44 @@ def test_tvp_with_nulls(cursor: pyodbc.Cursor):
     # Be a good digital citizen.
     _test_tvp_with_nulls_cleanup(cursor, procname, typename)
     cursor.commit()
+
+
+@pytest.fixture
+def tvp_count_proc(cursor: pyodbc.Cursor) -> Iterator[str]:
+    """A procedure taking a one-int-column TVP and returning its row count."""
+    cursor.execute("drop procedure if exists tvp_count_p")
+    cursor.execute("drop type if exists tvp_count_t")
+    cursor.execute("create type tvp_count_t as table (n int)")
+    cursor.execute("create procedure tvp_count_p @t tvp_count_t readonly"
+                   " as select count(*) from @t")
+    cursor.commit()
+    yield "{call tvp_count_p(?)}"
+    cursor.execute("drop procedure if exists tvp_count_p")
+    cursor.execute("drop type if exists tvp_count_t")
+    cursor.commit()
+
+
+@pytest.mark.skipif(SQLSERVER_YEAR < 2008, reason="TVP not supported until 2008")
+@pytest.mark.skipif(IS_FREETDS, reason="FreeTDS does not support TVP")
+def test_tvp_name_errors(cursor: pyodbc.Cursor, tvp_count_proc: str):
+    """Type and schema names that can't be used raise instead of crashing."""
+    rows = ["tvp_count_t", "dbo", (1,), (2,)]
+    assert cursor.execute(tvp_count_proc, (rows,)).fetchval() == 2
+
+    with pytest.raises(TypeError, match="must be str"):
+        cursor.execute(tvp_count_proc, ([b"tvp_count_t", "dbo", (1,)],))
+    with pytest.raises(TypeError, match="must be str"):
+        cursor.execute(tvp_count_proc, (["tvp_count_t", b"dbo", (1,)],))
+    with pytest.raises(UnicodeEncodeError):
+        cursor.execute(tvp_count_proc, (["tvp_count_t\ud800", "dbo", (1,)],))
+
+
+@pytest.mark.skipif(SQLSERVER_YEAR < 2008, reason="TVP not supported until 2008")
+@pytest.mark.skipif(IS_FREETDS, reason="FreeTDS does not support TVP")
+def test_tvp_empty_first_row(cursor: pyodbc.Cursor, tvp_count_proc: str):
+    """An empty first row followed by a non-empty one is a shape error, not a crash."""
+    with pytest.raises(pyodbc.ProgrammingError, match="same size"):
+        cursor.execute(tvp_count_proc, (["tvp_count_t", "dbo", (), (1,)],))
 
 
 @pytest.mark.skipif(SQLSERVER_YEAR < 2000, reason='sql_variant not supported until 2000')
