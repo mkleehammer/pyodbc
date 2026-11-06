@@ -438,6 +438,38 @@ def test_decimal_e(cursor: pyodbc.Cursor):
     assert result == value
 
 
+def test_decimal_fast_executemany_huge_exponent(cursor: pyodbc.Cursor):
+    """An exponent far too large for SQL_NUMERIC_STRUCT is an overflow, not a crash."""
+    cursor.execute("create table t1(v decimal(18, 2))")
+    cursor.fast_executemany = True
+    with pytest.raises(pyodbc.ProgrammingError, match="Numeric overflow"):
+        cursor.executemany("insert into t1 values (?)", [(Decimal("1E+100000000000"),)])
+
+
+@pytest.mark.parametrize("fast", [False, True])
+@pytest.mark.parametrize("value", ["NaN", "sNaN", "Infinity", "-Infinity"])
+def test_decimal_special_values_rejected(cursor: pyodbc.Cursor, fast, value):
+    cursor.execute("create table t1(v decimal(18, 2))")
+    cursor.fast_executemany = fast
+    with pytest.raises(pyodbc.ProgrammingError, match="NaN or Infinity"):
+        cursor.executemany("insert into t1 values (?)", [(Decimal(value),)])
+
+
+def test_fast_executemany_cursor_usable_after_dae_error(cursor: pyodbc.Cursor):
+    """
+    An error while sending data-at-execution (max-type) parameters must restore the
+    cursor's parameter-array settings, or the next execute on the cursor fails or crashes.
+    """
+    cursor.execute("create table t1(id int primary key, v varchar(max))")
+    cursor.execute("insert into t1 values (1, 'x')")
+    cursor.fast_executemany = True
+    with pytest.raises(pyodbc.IntegrityError):
+        cursor.executemany("insert into t1 values (?, ?)", [(i, "a") for i in range(1, 6)])
+
+    cursor.execute("insert into t1(id, v) values (?, ?)", 100, "z")
+    assert cursor.execute("select v from t1 where id = 100").fetchval() == "z"
+
+
 @pytest.mark.parametrize("prec", [10, 28, 38])
 def test_decimal_fast_executemany_ignores_context_precision(cursor: pyodbc.Cursor, prec):
     """
@@ -475,38 +507,6 @@ def test_decimal_fast_executemany_trailing_zeros(cursor: pyodbc.Cursor):
 
     rows = cursor.execute("select id, v from t1 order by id").fetchall()
     assert [r.v for r in rows] == values
-
-
-def test_decimal_fast_executemany_huge_exponent(cursor: pyodbc.Cursor):
-    """An exponent far too large for SQL_NUMERIC_STRUCT is an overflow, not a crash."""
-    cursor.execute("create table t1(v decimal(18, 2))")
-    cursor.fast_executemany = True
-    with pytest.raises(pyodbc.ProgrammingError, match="Numeric overflow"):
-        cursor.executemany("insert into t1 values (?)", [(Decimal("1E+100000000000"),)])
-
-
-@pytest.mark.parametrize("fast", [False, True])
-@pytest.mark.parametrize("value", ["NaN", "sNaN", "Infinity", "-Infinity"])
-def test_decimal_special_values_rejected(cursor: pyodbc.Cursor, fast, value):
-    cursor.execute("create table t1(v decimal(18, 2))")
-    cursor.fast_executemany = fast
-    with pytest.raises(pyodbc.ProgrammingError, match="NaN or Infinity"):
-        cursor.executemany("insert into t1 values (?)", [(Decimal(value),)])
-
-
-def test_fast_executemany_cursor_usable_after_dae_error(cursor: pyodbc.Cursor):
-    """
-    An error while sending data-at-execution (max-type) parameters must restore the
-    cursor's parameter-array settings, or the next execute on the cursor fails or crashes.
-    """
-    cursor.execute("create table t1(id int primary key, v varchar(max))")
-    cursor.execute("insert into t1 values (1, 'x')")
-    cursor.fast_executemany = True
-    with pytest.raises(pyodbc.IntegrityError):
-        cursor.executemany("insert into t1 values (?, ?)", [(i, "a") for i in range(1, 6)])
-
-    cursor.execute("insert into t1(id, v) values (?, ?)", 100, "z")
-    assert cursor.execute("select v from t1 where id = 100").fetchval() == "z"
 
 
 def test_subquery_params(cursor: pyodbc.Cursor):
