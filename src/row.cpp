@@ -176,7 +176,15 @@ static PyObject* Row_getattro(PyObject* o, PyObject* name)
 
     if (index)
     {
+        // The map can come from an unpickled Row, so don't trust its values.
         Py_ssize_t i = PyNumber_AsSsize_t(index, 0);
+        if (i == -1 && PyErr_Occurred())
+            return 0;
+        if (i < 0 || i >= self->cValues)
+        {
+            PyErr_SetString(PyExc_IndexError, "Row column index out of range");
+            return 0;
+        }
         Py_INCREF(self->apValues[i]);
         return self->apValues[i];
     }
@@ -225,9 +233,15 @@ PyObject* Row_item(PyObject* o, Py_ssize_t i)
 
 static int Row_ass_item(PyObject* o, Py_ssize_t i, PyObject* v)
 {
-    // Implements row[i] = value.
+    // Implements row[i] = value.  Python passes a NULL value for `del row[i]`.
 
     Row* self = (Row*)o;
+
+    if (!v)
+    {
+        PyErr_SetString(PyExc_TypeError, "Row columns cannot be deleted");
+        return -1;
+    }
 
     if (i < 0 || i >= self->cValues)
     {
@@ -309,8 +323,13 @@ static PyObject* Row_richcompare(PyObject* olhs, PyObject* orhs, int op)
     }
 
     for (Py_ssize_t i = 0, c = lhs->cValues; i < c; i++)
-        if (!PyObject_RichCompareBool(lhs->apValues[i], rhs->apValues[i], Py_EQ))
+    {
+        int eq = PyObject_RichCompareBool(lhs->apValues[i], rhs->apValues[i], Py_EQ);
+        if (eq < 0)
+            return 0;
+        if (!eq)
             return PyObject_RichCompare(lhs->apValues[i], rhs->apValues[i], op);
+    }
 
     // All items are equal.
     switch (op)
