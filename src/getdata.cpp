@@ -372,7 +372,7 @@ static PyObject* RaiseNotNumericStruct(Py_ssize_t iCol, SQLLEN cbFetched)
 {
     return RaiseErrorV(0, Error,
         "The driver did not return a SQL_NUMERIC_STRUCT for the DECIMAL/NUMERIC column at "
-        "index %zd (length %ld).  Set Connection.fetch_decimal_as_string = True to read "
+        "index %zd (length %ld).  Set Connection.decimal_mode = 'text' or 'locale' to read "
         "these columns as text.", iCol, (long)cbFetched);
 }
 
@@ -396,6 +396,14 @@ static PyObject* GetDataDecimalBinary(Cursor* cur, Py_ssize_t iCol)
     // The buffer is zeroed so that a short text leaves no uninitialized bytes behind it, and has
     // room for the text of any DECIMAL, because drivers do not return a converted DECIMAL in
     // pieces.  A conforming driver ignores the buffer length for SQL_C_NUMERIC.
+    //
+    // A value with more than 38 digits does not fit the struct.  psqlODBC, for one, reports
+    // 01004 for it and leaves a wrong value in the struct, so 01004 raises DataError.  The
+    // column is not read again as text: conforming drivers return SQL_NO_DATA for a column
+    // already read, and what others return cannot be relied on.
+    //
+    // Returns 0 without an exception if SQLGetData failed, and the value should be read as
+    // text instead, as 5.4.0 did.
 
     union
     {
@@ -417,6 +425,14 @@ static PyObject* GetDataDecimalBinary(Cursor* cur, Py_ssize_t iCol)
     if (cbFetched == SQL_NULL_DATA)
         Py_RETURN_NONE;
 
+    if (ret == SQL_SUCCESS_WITH_INFO && HasSqlState(cur->hstmt, "01004"))
+    {
+        return RaiseErrorV("22003", DataError,
+            "The DECIMAL/NUMERIC value at column index %zd does not fit in a "
+            "SQL_NUMERIC_STRUCT.  Set Connection.decimal_mode = 'text' to read it as text.",
+            iCol);
+    }
+
     if (cbFetched > 0 && cbFetched < (SQLLEN)sizeof(buffer) && IsDecimalText(buffer.text, (Py_ssize_t)cbFetched))
     {
         cur->colinfos[iCol].use_decimal_binary = false;
@@ -429,7 +445,7 @@ static PyObject* GetDataDecimalBinary(Cursor* cur, Py_ssize_t iCol)
     return DecimalFromNumericStruct(buffer.num);
 }
 
-static PyObject* GetDataDecimalString(Cursor* cur, Py_ssize_t iCol)
+static PyObject* GetDataDecimalString(Cursor* cur, Py_ssize_t iCol, bool strict)
 {
     // The SQL_NUMERIC_STRUCT support is hopeless (SQL Server ignores scale on input parameters
     // and output columns, Oracle does something else weird, and many drivers don't support it
@@ -466,7 +482,7 @@ static PyObject* GetDataDecimalString(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
     }
 
-    Object result(DecimalFromText(enc, pbData, cbData));
+    Object result(DecimalFromText(enc, pbData, cbData, strict));
 
     PyMem_Free(pbData);
 
@@ -842,7 +858,7 @@ PyObject* GetData(Cursor* cur, Py_ssize_t iCol)
                 return NULL;
             // SQLGetData failed without a Python exception — fall through.
         }
-        return GetDataDecimalString(cur, iCol);
+        return GetDataDecimalString(cur, iCol, cur->cnxn->decimal_mode == DECIMAL_MODE_TEXT);
 
     case SQL_BIT:
         return GetDataBit(cur, iCol);

@@ -573,7 +573,7 @@ bool InitColumnInfo(Cursor* cursor, SQLUSMALLINT iCol, ColumnInfo* pinfo)
         // which doesn't make much sense (to me, anyway). So I'm going to follow the lead of
         // the SQL standard and fall back on fetching the value from the driver as a string
         // when scale does not fall in the range 0..127.
-        if (!cursor->cnxn->fetch_decimal_as_string && pinfo->scale >= 0 && pinfo->scale <= 127)
+        if (cursor->cnxn->decimal_mode == DECIMAL_MODE_BINARY && pinfo->scale >= 0 && pinfo->scale <= 127)
         {
             // Set up the ARD once for this column so SQLGetData fills a SQL_NUMERIC_STRUCT.
             // These settings persist for all rows on this statement handle.

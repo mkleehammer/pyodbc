@@ -41,7 +41,8 @@ struct DAEParam
 // The largest precision a SQL_NUMERIC_STRUCT is used for (SQL Server's maximum).
 static const int MAX_NUMERIC_PRECISION = 38;
 
-static bool GetDecimalParts(PyObject* value, Object& parts, long& sign, PyObject*& digits, Py_ssize_t& exp);
+static bool GetDecimalParts(PyObject* value, Object& parts, long& sign, PyObject*& digits, Py_ssize_t& exp,
+                            const char** special = 0);
 
 static void StripDecimalZeros(PyObject* digits, Py_ssize_t& numDigits, Py_ssize_t& exp)
 {
@@ -272,11 +273,16 @@ static int DetectCType(PyObject *cell, ParamInfo *pi)
     return true;
 }
 
-static bool GetDecimalParts(PyObject* value, Object& parts, long& sign, PyObject*& digits, Py_ssize_t& exp)
+static bool GetDecimalParts(PyObject* value, Object& parts, long& sign, PyObject*& digits, Py_ssize_t& exp,
+                            const char** special)
 {
     // Calls value.as_tuple() and checks that the result is the (sign, digits, exponent) tuple
-    // a Decimal returns, since a subclass can override as_tuple.  NaN and Infinity have a str
-    // exponent and cannot be bound.
+    // a Decimal returns, since a subclass can override as_tuple.
+    //
+    // NaN and Infinity have a str exponent.  If `special` is not null, it is set to the text to
+    // send for them, "NaN", "Infinity", or "-Infinity", and to null for any other value.  If it
+    // is null, they raise, since a SQL_NUMERIC_STRUCT cannot hold them.  A signaling NaN always
+    // raises.
 
     if (!parts.Attach(PyObject_CallMethod(value, "as_tuple", 0)))
         return false;
@@ -288,14 +294,34 @@ static bool GetDecimalParts(PyObject* value, Object& parts, long& sign, PyObject
         return false;
     }
 
-    if (!PyLong_Check(PyTuple_GET_ITEM(t, 2)))
+    if (special)
+        *special = 0;
+
+    sign = PyLong_AsLong(PyTuple_GET_ITEM(t, 0));
+    if (sign == -1 && PyErr_Occurred())
+        return false;
+
+    PyObject* e = PyTuple_GET_ITEM(t, 2);
+    if (!PyLong_Check(e))
     {
-        RaiseErrorV(0, ProgrammingError, "Cannot bind a Decimal NaN or Infinity");
+        // Decimal uses 'n' for NaN, 'N' for a signaling NaN, and 'F' for Infinity.
+        bool snan = PyUnicode_Check(e) && PyUnicode_CompareWithASCIIString(e, "N") == 0;
+        bool inf = PyUnicode_Check(e) && PyUnicode_CompareWithASCIIString(e, "F") == 0;
+        if (snan)
+            RaiseErrorV(0, ProgrammingError, "Cannot bind a Decimal signaling NaN");
+        else if (!special)
+            RaiseErrorV(0, ProgrammingError,
+                "Decimal NaN and Infinity cannot be used with fast_executemany or table-valued "
+                "parameters");
+        else
+        {
+            *special = !inf ? "NaN" : sign ? "-Infinity" : "Infinity";
+            return true;
+        }
         return false;
     }
 
-    sign = PyLong_AsLong(PyTuple_GET_ITEM(t, 0));
-    exp = PyLong_AsSsize_t(PyTuple_GET_ITEM(t, 2));
+    exp = PyLong_AsSsize_t(e);
     if (PyErr_Occurred())
         return false;
 
@@ -1111,13 +1137,34 @@ static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     long sign;
     PyObject* digits;
     Py_ssize_t exp;
-    if (!GetDecimalParts(param, t, sign, digits, exp))
+    const char* special;
+    if (!GetDecimalParts(param, t, sign, digits, exp, &special))
         return false;
-
-    Py_ssize_t count = PyTuple_GET_SIZE(digits);
 
     info.ValueType     = SQL_C_CHAR;
     info.ParameterType = SQL_NUMERIC;
+
+    if (special)
+    {
+        // NaN or Infinity: send the text and leave it to the database to accept it, as
+        // PostgreSQL does, or raise, as SQL Server does.
+        size_t cch = strlen(special);
+        char* text = (char*)PyMem_Malloc(cch + 1);
+        if (!text)
+        {
+            PyErr_NoMemory();
+            return false;
+        }
+        memcpy(text, special, cch + 1);
+        info.ColumnSize        = MAX_NUMERIC_PRECISION;
+        info.DecimalDigits     = 0;
+        info.ParameterValuePtr = text;
+        info.allocated         = true;
+        info.StrLen_or_Ind     = (SQLINTEGER)cch;
+        return true;
+    }
+
+    Py_ssize_t count = PyTuple_GET_SIZE(digits);
 
     if (exp >= 0)
     {

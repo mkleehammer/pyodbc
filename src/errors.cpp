@@ -338,14 +338,19 @@ PyObject* GetErrorFromHandle(Connection *conn, const char* szFunction, HDBC hdbc
 }
 
 
-static bool GetSqlState(HSTMT hstmt, char* szSqlState)
+static bool GetSqlState(HSTMT hstmt, char (&szSqlState)[6])
 {
+    // The buffer length includes the terminator.  Passing 5 lets a driver manager that honors
+    // it truncate the SQLSTATE to 4 characters.
     SQLSMALLINT cchMsg;
     SQLRETURN ret;
 
+    memset(szSqlState, 0, sizeof(szSqlState));
     Py_BEGIN_ALLOW_THREADS
-    ret = SQLGetDiagField(SQL_HANDLE_STMT, hstmt, 1, SQL_DIAG_SQLSTATE, (SQLCHAR*)szSqlState, 5, &cchMsg);
+    ret = SQLGetDiagField(SQL_HANDLE_STMT, hstmt, 1, SQL_DIAG_SQLSTATE, (SQLCHAR*)szSqlState,
+                          sizeof(szSqlState), &cchMsg);
     Py_END_ALLOW_THREADS
+    szSqlState[5] = 0;
     return SQL_SUCCEEDED(ret);
 }
 

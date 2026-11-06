@@ -2,7 +2,9 @@
 # ruff: noqa: E303, N802, N803
 from __future__ import annotations
 from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
-from typing import Any, Final, Self
+from typing import Any, Final, Literal, Self
+
+from typing_extensions import deprecated
 import ctypes
 
 # SQLSetConnectAttr attributes
@@ -362,14 +364,39 @@ class Connection:
         ...
 
     @property
+    def decimal_mode(self) -> Literal['binary', 'text', 'locale']:
+        """How DECIMAL and NUMERIC values are read.
+
+        'binary': into a SQL_NUMERIC_STRUCT, which is not affected by the locale.  This is
+        the default except for PostgreSQL.  The struct cannot hold NaN or Infinity, or more
+        than 38 digits.  A column whose driver returns text in place of the struct is read
+        as text.
+
+        'text': as text with no grouping separators: a sign, digits, and at most one decimal
+        point, which can be '.' or ','; or NaN, Infinity, or -Infinity.  Other text raises
+        DataError.  This is the default for PostgreSQL.
+
+        'locale': as text, after removing everything but digits, '-', and the separator from
+        setDecimalSeparator, which then becomes the decimal point.  For drivers that add
+        grouping separators or currency symbols.
+
+        Setting True or False is deprecated: they select 'locale' and 'binary', and will not
+        be accepted in pyodbc 6.0."""
+        ...
+
+    @decimal_mode.setter
+    def decimal_mode(self, value: Literal['binary', 'text', 'locale']) -> None:
+        ...
+
+    @property
+    @deprecated("Use decimal_mode; fetch_decimal_as_string will be removed in pyodbc 6.0.")
     def fetch_decimal_as_string(self) -> bool:
-        """If True, DECIMAL and NUMERIC values will be fetched as strings using the
-        legacy local-aware path.  If False (the default), values are fetched using a
-        binary representation that is not affected by the locale.  A column whose
-        driver returns text in place of the binary representation is read as text."""
+        """Deprecated; use decimal_mode.  True if decimal_mode is not 'binary'.  Setting True
+        selects 'locale' and False selects 'binary'."""
         ...
 
     @fetch_decimal_as_string.setter
+    @deprecated("Use decimal_mode; fetch_decimal_as_string will be removed in pyodbc 6.0.")
     def fetch_decimal_as_string(self, value: bool) -> None:
         ...
 

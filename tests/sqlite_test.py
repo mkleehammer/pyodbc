@@ -922,3 +922,51 @@ def test_fetch_after_column_name_decode_error(cnxn: pyodbc.Connection):
     assert cursor.description is None
     with pytest.raises(pyodbc.ProgrammingError):
         cursor.fetchone()
+
+
+def test_decimal_mode(cursor: pyodbc.Cursor):
+    cnxn = cursor.connection
+    assert cnxn.decimal_mode == 'binary'
+    for mode in ('text', 'locale', 'binary'):
+        cnxn.decimal_mode = mode
+        assert cnxn.decimal_mode == mode
+    with pytest.raises(ValueError):
+        cnxn.decimal_mode = 'strict'
+    with pytest.raises(TypeError):
+        cnxn.decimal_mode = 1
+    with pytest.raises(TypeError):
+        del cnxn.decimal_mode
+    assert cnxn.decimal_mode == 'binary'
+
+
+@pytest.mark.parametrize('attr', ['decimal_mode', 'fetch_decimal_as_string'])
+def test_decimal_mode_bool_deprecated(cursor: pyodbc.Cursor, attr):
+    # The bool values select the paths fetch_decimal_as_string selected before 5.5.
+    cnxn = cursor.connection
+    with pytest.warns(FutureWarning, match=attr):
+        setattr(cnxn, attr, True)
+    assert cnxn.decimal_mode == 'locale'
+    with pytest.warns(FutureWarning, match=attr):
+        setattr(cnxn, attr, False)
+    assert cnxn.decimal_mode == 'binary'
+
+
+def test_fetch_decimal_as_string_read_deprecated(cursor: pyodbc.Cursor):
+    cnxn = cursor.connection
+    for mode, expected in [('binary', False), ('text', True), ('locale', True)]:
+        cnxn.decimal_mode = mode
+        with pytest.warns(FutureWarning, match='fetch_decimal_as_string'):
+            assert cnxn.fetch_decimal_as_string is expected
+
+
+def test_decimal_mode_bool_warning_as_error(cursor: pyodbc.Cursor):
+    # An exception raised by the warnings filter propagates and leaves the mode unchanged.
+    import warnings
+    cnxn = cursor.connection
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', FutureWarning)
+        with pytest.raises(FutureWarning):
+            cnxn.fetch_decimal_as_string = True
+        with pytest.raises(FutureWarning):
+            cnxn.fetch_decimal_as_string
+    assert cnxn.decimal_mode == 'binary'

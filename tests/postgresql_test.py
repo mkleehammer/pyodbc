@@ -4,7 +4,7 @@ Unit tests for PostgreSQL
 # -*- coding: utf-8 -*-
 
 import ctypes
-import os, uuid
+import os, random, uuid
 from decimal import Decimal
 from typing import Iterator
 
@@ -172,8 +172,8 @@ def test_decimal(cursor: pyodbc.Cursor):
     params = [Decimal(n) for n in "-1000.10 -1234.56 -1 0 1 1000.10 1234.56 100010 123456789.21".split()]
     params.append(None)
 
-    for mode in (True, False):
-        cursor.connection.fetch_decimal_as_string = mode
+    for mode in ('binary', 'text', 'locale'):
+        cursor.connection.decimal_mode = mode
         for param in params:
             cursor.execute("truncate table t1")
             cursor.execute("insert into t1 values (?)", param)
@@ -188,8 +188,8 @@ def test_numeric(cursor: pyodbc.Cursor):
     params = [Decimal(n) for n in "-1234.56  -1  0  1  1234.56  123456789.21".split()]
     params.append(None)
 
-    for mode in (True, False):
-        cursor.connection.fetch_decimal_as_string = mode
+    for mode in ('binary', 'text', 'locale'):
+        cursor.connection.decimal_mode = mode
         for param in params:
             cursor.execute("truncate table t1")
             cursor.execute("insert into t1 values (?)", param)
@@ -706,6 +706,170 @@ def test_handles(cursor: pyodbc.Cursor):
     assert conn.hdbc is None
 
 
+# ---------------------------------------------------------------------------------------------
+# DECIMAL / NUMERIC reads and writes that 5.4.0 gets wrong.
+#
+# psqlODBC cannot put NaN, Infinity, or more than 38 digits into a SQL_NUMERIC_STRUCT, and
+# formats numeric text using the process's C locale at fetch time.
+# ---------------------------------------------------------------------------------------------
+
+SPECIAL_VALUES = ['NaN', 'Infinity', '-Infinity']
+
+# More digits than a SQL_NUMERIC_STRUCT can hold.
+BIG_NUMERICS = [
+    '123456789012345678901234567890123456789012345',
+    '-123456789012345678901234567890123456789012345',
+    '1234567890123456789012345678901234567890.5',
+]
+
+# How each decimal test reads DECIMAL/NUMERIC columns: the connection's default, forced text,
+# or forced binary (SQL_NUMERIC_STRUCT).
+DECIMAL_MODES = ['default', 'text', 'binary']
+
+
+def _set_decimal_mode(cnxn, mode):
+    if mode != 'default':
+        cnxn.decimal_mode = mode
+
+
+def _skip_without_numeric_infinity(cursor, value):
+    # PostgreSQL added Infinity to numeric in version 14.
+    version = int(cursor.execute('show server_version_num').fetchval())
+    if 'Infinity' in value and version < 140000:
+        pytest.skip('numeric Infinity requires PostgreSQL 14')
+
+
+@pytest.fixture()
+def comma_locale():
+    """
+    Sets LC_NUMERIC to a locale whose decimal point is a comma, *after* pyodbc was imported, so
+    psqlODBC formats numerics as '3656,88' while pyodbc's decimal separator is still '.'.
+    """
+    import locale
+    saved = locale.setlocale(locale.LC_NUMERIC)
+    for name in ('de_DE.UTF-8', 'de_DE.utf8', 'German_Germany.1252'):
+        try:
+            locale.setlocale(locale.LC_NUMERIC, name)
+            break
+        except locale.Error:
+            pass
+    else:
+        pytest.skip('no comma-decimal locale is installed')
+    try:
+        yield
+    finally:
+        locale.setlocale(locale.LC_NUMERIC, saved)
+
+
+def test_decimal_mode_default(cursor: pyodbc.Cursor):
+    # psqlODBC cannot put NaN, Infinity, or more than 38 digits in a SQL_NUMERIC_STRUCT.
+    assert cursor.connection.decimal_mode == 'text'
+
+
+@pytest.mark.parametrize('mode', ['default', 'text'])
+@pytest.mark.parametrize('value', SPECIAL_VALUES)
+def test_numeric_special_values_read(cursor: pyodbc.Cursor, mode, value):
+    # 5.4.0 reads these as Decimal('0') in binary mode and raises InvalidOperation in text
+    # mode.
+    _skip_without_numeric_infinity(cursor, value)
+    _set_decimal_mode(cursor.connection, mode)
+    cursor.execute("create table t1(col numeric)")
+    cursor.execute(f"insert into t1 values ('{value}')")
+    result = cursor.execute("select col from t1").fetchval()
+    assert str(result) == value
+
+
+@pytest.mark.parametrize('mode', DECIMAL_MODES)
+@pytest.mark.parametrize('value', BIG_NUMERICS)
+def test_numeric_over_38_digits_read(cursor: pyodbc.Cursor, mode, value):
+    # psqlODBC overflows the struct and returns SQL_SUCCESS_WITH_INFO (01004); 5.4.0 ignores
+    # the info and returns a wrong number.  The binary path raises rather than reading the
+    # column again as text.
+    _set_decimal_mode(cursor.connection, mode)
+    # Both an unconstrained column and one whose declared precision is over 38.
+    cursor.execute("create table t1(col numeric, col50 numeric(50,1))")
+    cursor.execute(f"insert into t1 values ({value}, {value})")
+    for col in ['col', 'col50']:
+        cursor.execute(f"select {col} from t1")
+        if mode == 'binary':
+            with pytest.raises(pyodbc.DataError, match='does not fit'):
+                cursor.fetchval()
+        else:
+            assert cursor.fetchval() == Decimal(value)
+
+
+@pytest.mark.parametrize('mode', DECIMAL_MODES)
+def test_numeric_read_comma_locale(cursor: pyodbc.Cursor, comma_locale, mode):
+    # With a comma-decimal locale set after import, 5.4.0's text path strips the comma and
+    # reads 3656,88 as 365688.
+    _set_decimal_mode(cursor.connection, mode)
+    values = ['3656.88', '-3656.88', '0.5', '-0.5', '1234567', '0']
+    cursor.execute("create table t1(n int, col numeric(20,2))")
+    for i, v in enumerate(values):
+        cursor.execute(f"insert into t1 values ({i}, {v})")
+    results = [row.col for row in cursor.execute("select col from t1 order by n")]
+    assert results == [Decimal(v) for v in values]
+
+
+def test_numeric_read_comma_locale_nan(cursor: pyodbc.Cursor, comma_locale):
+    # The locale must not break the special values.
+    cursor.execute("create table t1(col numeric)")
+    cursor.execute("insert into t1 values ('NaN')")
+    assert cursor.execute("select col from t1").fetchval().is_nan()
+
+
+def test_numeric_write_comma_locale(cursor: pyodbc.Cursor, comma_locale):
+    # Writes are not affected by the locale; this guards against a fix that changes that.
+    cursor.execute("create table t1(col numeric(20,2))")
+    cursor.execute("insert into t1 values (?)", Decimal('3656.88'))
+    # A separate cursor, to stay clear of test_fast_executemany_decimal_scale_after_reuse.
+    fast = cursor.connection.cursor()
+    fast.fast_executemany = True
+    fast.executemany("insert into t1 values (?)", [(Decimal('-1234.5'),)])
+    results = [row[0] for row in cursor.execute("select col::text from t1 order by 1")]
+    assert results == ['-1234.50', '3656.88']
+
+
+@pytest.mark.parametrize('mode', ['default', 'text'])
+def test_numeric_read_separator_mismatch(cursor: pyodbc.Cursor, mode):
+    # The driver sends '3656.88' but pyodbc's separator is ',' (the shape of #753), so 5.4.0's
+    # text path strips the '.' and reads 365688.
+    _set_decimal_mode(cursor.connection, mode)
+    saved = pyodbc.getDecimalSeparator()
+    pyodbc.setDecimalSeparator(',')
+    try:
+        result = cursor.execute("select 3656.88::numeric(10,2)").fetchval()
+    finally:
+        pyodbc.setDecimalSeparator(saved)
+    assert result == Decimal('3656.88')
+
+
+@pytest.mark.parametrize('value', SPECIAL_VALUES)
+def test_numeric_special_values_write(cursor: pyodbc.Cursor, value):
+    # 5.4.0 raises SystemError after inserting 0.
+    _skip_without_numeric_infinity(cursor, value)
+    cursor.execute("create table t1(col numeric)")
+    cursor.execute("insert into t1 values (?)", Decimal(value))
+    assert cursor.execute("select col::text from t1").fetchval() == value
+
+
+def test_numeric_snan_write_rejected(cursor: pyodbc.Cursor):
+    # No database stores a signaling NaN.
+    cursor.execute("create table t1(col numeric)")
+    with pytest.raises(pyodbc.ProgrammingError):
+        cursor.execute("insert into t1 values (?)", Decimal('sNaN'))
+
+
+@pytest.mark.parametrize('value', SPECIAL_VALUES)
+def test_numeric_special_values_fast_executemany_rejected(cursor: pyodbc.Cursor, value):
+    # A SQL_NUMERIC_STRUCT cannot hold these, so fast_executemany raises instead of writing 0.
+    cursor.execute("create table t1(col numeric)")
+    cursor.fast_executemany = True
+    with pytest.raises(pyodbc.ProgrammingError):
+        cursor.executemany("insert into t1 values (?)", [(Decimal(value),)])
+    assert cursor.execute("select count(*) from t1").fetchval() == 0
+
+
 @pytest.mark.parametrize('first', ['execute', 'fast_executemany'])
 def test_fast_executemany_decimal_scale_after_reuse(cursor: pyodbc.Cursor, first):
     # psqlODBC does not support SQLDescribeParam.  5.4.0 reuses the scale guessed from an
@@ -734,6 +898,36 @@ def test_fast_executemany_decimal_scale_from_values(cursor: pyodbc.Cursor):
                        [(i, None if v is None else Decimal(v)) for i, v in enumerate(values)])
     results = [row[0] for row in cursor.execute("select col from t1 order by n")]
     assert results == [None if v is None else Decimal(v) for v in values]
+
+
+def _decimal_samples(precision: int, scale: int) -> list[str]:
+    "Random values that fit decimal(precision, scale), plus zero and the extremes"
+    rnd = random.Random(precision * 100 + scale)
+    values = ['0', '9' * (precision - scale) + ('.' + '9' * scale if scale else '')
+              if precision > scale else '0.' + '9' * scale]
+    for _ in range(50):
+        digits = ''.join(rnd.choice('0123456789') for _ in range(rnd.randint(1, precision)))
+        whole = digits[:max(0, len(digits) - scale)] or '0'
+        frac = digits[max(0, len(digits) - scale):].rjust(scale, '0') if scale else ''
+        values.append(rnd.choice(['', '-']) + whole + ('.' + frac if scale else ''))
+    return values
+
+
+DECIMAL_SHAPES = [(38, 0), (38, 10), (38, 38), (18, 2), (10, 9), (5, 0), (1, 0), (1, 1)]
+
+
+@pytest.mark.parametrize("precision, scale", DECIMAL_SHAPES)
+def test_decimal_binary_and_text_identical(cursor: pyodbc.Cursor, precision, scale):
+    "Binary and text reads give identical Decimals, including the exponent"
+    values = _decimal_samples(precision, scale)
+    rows = ', '.join(f"({i}, '{s}')" for i, s in enumerate(values))
+    sql = f"select v::numeric({precision}, {scale}) from (values {rows}) t(n, v) order by n"
+    results = {}
+    for mode in ('binary', 'text'):
+        cursor.connection.decimal_mode = mode
+        results[mode] = [row[0] for row in cursor.execute(sql)]
+    assert [d.as_tuple() for d in results['binary']] == [d.as_tuple() for d in results['text']]
+    assert results['text'] == [Decimal(s) for s in values]
 
 
 def _fast_executemany_numeric(cursor: pyodbc.Cursor, values, column="numeric"):
@@ -813,3 +1007,19 @@ def test_fast_executemany_decimal_and_str(cursor: pyodbc.Cursor):
     results = _fast_executemany_numeric(cursor, values, column="text")
     assert results == ['x' * 60, '15', 'y' * 60]
 
+
+def test_fetch_decimal_as_string_round_trip(cursor: pyodbc.Cursor):
+    "Saving and restoring the deprecated attribute does not change the mode"
+    cnxn = cursor.connection
+    assert cnxn.decimal_mode == 'text'
+    with pytest.warns(FutureWarning):
+        saved = cnxn.fetch_decimal_as_string
+    with pytest.warns(FutureWarning):
+        cnxn.fetch_decimal_as_string = saved
+    assert cnxn.decimal_mode == 'text'
+    with pytest.warns(FutureWarning):
+        cnxn.fetch_decimal_as_string = False
+    assert cnxn.decimal_mode == 'binary'
+    with pytest.warns(FutureWarning):
+        cnxn.fetch_decimal_as_string = True
+    assert cnxn.decimal_mode == 'locale'

@@ -93,6 +93,7 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
     p->supports_describeparam = false;
     p->datetime_precision     = 19; // default: "yyyy-mm-dd hh:mm:ss"
     p->need_long_data_len     = false;
+    p->is_postgresql          = false;
 
     p->varchar_maxlength  = 1 * 1024 * 1024 * 1024;
     p->wvarchar_maxlength = 1 * 1024 * 1024 * 1024;
@@ -126,6 +127,22 @@ static PyObject* CnxnInfo_New(Connection* cnxn)
 
     if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_NEED_LONG_DATA_LEN, szYN, _countof(szYN), &cch)))
         p->need_long_data_len = (szYN[0] == 'Y');
+
+    // psqlODBC reports "PostgreSQL" for every server it connects to.  PostgreSQL numerics can
+    // hold NaN, Infinity, and more digits than a SQL_NUMERIC_STRUCT, which psqlODBC silently
+    // turns into 0 or a wrong number, so they are read as text.
+    // The buffer is large enough for any real name: unixODBC reads past the end of a buffer
+    // that a long name ("Microsoft SQL Server" is 20 characters) was truncated to fit.
+    char szDBMS[256];
+    if (SQL_SUCCEEDED(SQLGetInfo(cnxn->hdbc, SQL_DBMS_NAME, szDBMS, _countof(szDBMS), &cch)))
+    {
+        szDBMS[_countof(szDBMS) - 1] = 0;
+        const char* pg = "postgresql";
+        int i = 0;
+        while (pg[i] && szDBMS[i] && (szDBMS[i] | 0x20) == pg[i])
+            i++;
+        p->is_postgresql = (pg[i] == 0);
+    }
 
     GetColumnSize(cnxn, SQL_VARCHAR, &p->varchar_maxlength);
     GetColumnSize(cnxn, SQL_WVARCHAR, &p->wvarchar_maxlength);

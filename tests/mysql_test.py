@@ -121,8 +121,8 @@ def test_decimal(cursor: pyodbc.Cursor):
         ('-10.0010', '19,4')
     ]
 
-    for mode in (True, False):
-        cursor.connection.fetch_decimal_as_string = mode
+    for mode in ('binary', 'text', 'locale'):
+        cursor.connection.decimal_mode = mode
         for value, prec in tests:
             value = Decimal(value)
             cursor.execute("drop table if exists t1")

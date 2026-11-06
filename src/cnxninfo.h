@@ -31,6 +31,9 @@ struct CnxnInfo
     // we'll use SQL_DATA_AT_EXEC when possible.  If this is true, however, we'll need to pass the length.
     bool need_long_data_len;
 
+    // True if SQL_DBMS_NAME is PostgreSQL, so DECIMAL and NUMERIC default to DECIMAL_MODE_TEXT.
+    bool is_postgresql;
+
     // These are from SQLGetTypeInfo.column_size, so the char ones are in characters, not bytes.
     int varchar_maxlength;
     int wvarchar_maxlength;

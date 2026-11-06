@@ -3,6 +3,9 @@
 #include "wrapper.h"
 #include "textenc.h"
 #include "decimal.h"
+#include "pyodbcmodule.h"
+#include "connection.h"
+#include "errors.h"
 
 static PyObject* decimal = 0;
 // The Decimal constructor.
@@ -135,15 +138,127 @@ static PyObject* DecimalFromUnicode(PyObject* text)
     return PyObject_CallFunctionObjArgs(decimal, cleaned.Get(), 0);
 }
 
-PyObject* DecimalFromText(const TextEnc& enc, const byte* pb, Py_ssize_t cb)
+static bool MatchesNoCase(const char* pch, Py_ssize_t cch, const char* word)
 {
-    // Creates a Decimal object from a text buffer.
+    // Returns true if the cch characters at pch are `word`, which must be lowercase, ignoring
+    // ASCII case.
+    Py_ssize_t i = 0;
+    for (; i < cch && word[i]; i++)
+        if ((pch[i] | 0x20) != word[i])
+            return false;
+    return i == cch && word[i] == 0;
+}
+
+PyObject* DecimalFromStrictText(PyObject* text)
+{
+    // Creates a Decimal object from the text of a driver that never adds grouping separators,
+    // as Connection.decimal_mode "text" describes: an optional sign, digits with at most one
+    // decimal point, an optional exponent, or NaN, Inf, or Infinity.  Leading and trailing
+    // spaces are allowed.
+    //
+    // Without grouping, the one separator can only be the decimal point, so both '.' and ','
+    // are accepted whatever the locale.  (psqlODBC, for example, writes the decimal point of the
+    // process's C locale, while other drivers always write '.'.)  Anything else raises rather
+    // than being guessed at.
+
+    if (!PyUnicode_IS_ASCII(text))
+        goto invalid;
+
+    {
+        const char* pch = (const char*)PyUnicode_1BYTE_DATA(text);
+        Py_ssize_t start = 0;
+        Py_ssize_t end = PyUnicode_GET_LENGTH(text);
+        while (start < end && pch[start] == ' ')
+            start++;
+        while (end > start && pch[end - 1] == ' ')
+            end--;
+
+        Py_ssize_t i = start;
+        if (i < end && (pch[i] == '-' || pch[i] == '+'))
+            i++;
+
+        if (i < end && !(pch[i] >= '0' && pch[i] <= '9') && pch[i] != '.' && pch[i] != ',')
+        {
+            const char* word = pch + i;
+            Py_ssize_t cch = end - i;
+            if (MatchesNoCase(word, cch, "nan") || MatchesNoCase(word, cch, "inf") ||
+                MatchesNoCase(word, cch, "infinity"))
+            {
+                return PyObject_CallFunctionObjArgs(decimal, text, 0);
+            }
+            goto invalid;
+        }
+
+        Py_ssize_t cDigits = 0;
+        Py_ssize_t iComma = -1;
+        bool point = false;
+        for (; i < end; i++)
+        {
+            char ch = pch[i];
+            if (ch >= '0' && ch <= '9')
+                cDigits++;
+            else if ((ch == '.' || ch == ',') && !point)
+            {
+                point = true;
+                if (ch == ',')
+                    iComma = i;
+            }
+            else
+                break;
+        }
+        if (cDigits == 0)
+            goto invalid;
+
+        if (i < end && (pch[i] == 'e' || pch[i] == 'E'))
+        {
+            i++;
+            if (i < end && (pch[i] == '-' || pch[i] == '+'))
+                i++;
+            Py_ssize_t cExpDigits = 0;
+            while (i < end && pch[i] >= '0' && pch[i] <= '9')
+            {
+                i++;
+                cExpDigits++;
+            }
+            if (cExpDigits == 0)
+                goto invalid;
+        }
+        if (i != end)
+            goto invalid;
+
+        if (iComma == -1)
+            return PyObject_CallFunctionObjArgs(decimal, text, 0);
+
+        // Replace the decimal comma, which the Decimal constructor does not accept.
+        Py_ssize_t cch = end - start;
+        char* copy = (char*)PyMem_Malloc(cch);
+        if (!copy)
+            return PyErr_NoMemory();
+        memcpy(copy, pch + start, cch);
+        copy[iComma - start] = '.';
+        Object point_text(PyUnicode_FromStringAndSize(copy, cch));
+        PyMem_Free(copy);
+        if (!point_text)
+            return 0;
+        return PyObject_CallFunctionObjArgs(decimal, point_text.Get(), 0);
+    }
+
+invalid:
+    return RaiseErrorV(0, DataError,
+        "Unexpected text %R for a DECIMAL or NUMERIC value.  Set Connection.decimal_mode = "
+        "'locale' if the driver adds grouping separators or currency symbols.", text);
+}
+
+PyObject* DecimalFromText(const TextEnc& enc, const byte* pb, Py_ssize_t cb, bool strict)
+{
+    // Creates a Decimal object from a text buffer.  If `strict` is true, the text is parsed as
+    // DecimalFromStrictText describes; otherwise it is cleaned using the decimal separator.
 
     Object text(TextBufferToObject(enc, pb, cb));
     if (!text)
         return 0;
 
-    return DecimalFromUnicode(text.Get());
+    return strict ? DecimalFromStrictText(text.Get()) : DecimalFromUnicode(text.Get());
 }
 
 PyObject* DecimalFromAsciiText(const char* pch, Py_ssize_t cch)

@@ -5,6 +5,7 @@ import ctypes
 import decimal
 import gc
 import os
+import random
 import re
 import uuid
 from collections.abc import Iterator
@@ -402,13 +403,13 @@ def test_bit(cursor: pyodbc.Cursor):
 def test_decimal(cursor: pyodbc.Cursor):
     # From test provided by planders (thanks!) in Issue 91
 
-    for mode in (True, False):
+    for mode in ('binary', 'text', 'locale'):
         for (precision, scale, negative) in [
                 (1, 0, False), (1, 0, True), (6, 0, False), (6, 2, False),
                 (6, 4, True), (6, 6, True), (38, 0, False), (38, 10, False),
                 (38, 38, False), (38, 0, True), (38, 10, True), (38, 38, True)]:
 
-            cursor.connection.fetch_decimal_as_string = mode
+            cursor.connection.decimal_mode = mode
             try:
                 cursor.execute("drop table t1")
             except Exception:
@@ -448,13 +449,31 @@ def test_decimal_fast_executemany_huge_exponent(cursor: pyodbc.Cursor):
         cursor.executemany("insert into t1 values (?)", [(value,)])
 
 
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+def test_decimal_special_values_rejected(cursor: pyodbc.Cursor, value):
+    # pyodbc sends NaN and Infinity as text, for databases that store them, and SQL Server
+    # rejects them.
+    cursor.execute("create table t1(v decimal(18, 2))")
+    with pytest.raises(pyodbc.DataError):
+        cursor.execute("insert into t1 values (?)", Decimal(value))
+    assert cursor.execute("select count(*) from t1").fetchval() == 0
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+def test_decimal_special_values_fast_executemany_rejected(cursor: pyodbc.Cursor, value):
+    # A SQL_NUMERIC_STRUCT cannot hold these.
+    cursor.execute("create table t1(v decimal(18, 2))")
+    cursor.fast_executemany = True
+    with pytest.raises(pyodbc.ProgrammingError, match="fast_executemany"):
+        cursor.executemany("insert into t1 values (?)", [(Decimal(value),)])
+
+
 @pytest.mark.parametrize("fast", [False, True])
-@pytest.mark.parametrize("value", ["NaN", "sNaN", "Infinity", "-Infinity"])
-def test_decimal_special_values_rejected(cursor: pyodbc.Cursor, fast, value):
+def test_decimal_snan_rejected(cursor: pyodbc.Cursor, fast):
     cursor.execute("create table t1(v decimal(18, 2))")
     cursor.fast_executemany = fast
-    with pytest.raises(pyodbc.ProgrammingError, match="NaN or Infinity"):
-        cursor.executemany("insert into t1 values (?)", [(Decimal(value),)])
+    with pytest.raises(pyodbc.ProgrammingError, match="signaling NaN"):
+        cursor.executemany("insert into t1 values (?)", [(Decimal("sNaN"),)])
 
 
 def test_fast_executemany_cursor_usable_after_dae_error(cursor: pyodbc.Cursor):
@@ -2175,3 +2194,38 @@ def test_tvp_row_changes_size(cursor: pyodbc.Cursor, tvp_binary_proc: str):
     "A row whose length changes after binding raises instead of overrunning the bindings"
     with pytest.raises(pyodbc.ProgrammingError, match="same size"):
         cursor.execute(tvp_binary_proc, ([_ShapeShiftingRow()],))
+
+
+def test_decimal_mode_default(cursor: pyodbc.Cursor):
+    assert cursor.connection.decimal_mode == 'binary'
+
+
+def _decimal_samples(precision: int, scale: int) -> list[str]:
+    "Random values that fit decimal(precision, scale), plus zero and the extremes"
+    rnd = random.Random(precision * 100 + scale)
+    values = ['0', '9' * (precision - scale) + ('.' + '9' * scale if scale else '')
+              if precision > scale else '0.' + '9' * scale]
+    for _ in range(50):
+        digits = ''.join(rnd.choice('0123456789') for _ in range(rnd.randint(1, precision)))
+        whole = digits[:max(0, len(digits) - scale)] or '0'
+        frac = digits[max(0, len(digits) - scale):].rjust(scale, '0') if scale else ''
+        values.append(rnd.choice(['', '-']) + whole + ('.' + frac if scale else ''))
+    return values
+
+
+DECIMAL_SHAPES = [(38, 0), (38, 10), (38, 38), (18, 2), (10, 9), (5, 0), (1, 0), (1, 1)]
+
+
+@pytest.mark.parametrize("precision, scale", DECIMAL_SHAPES)
+def test_decimal_binary_and_text_identical(cursor: pyodbc.Cursor, precision, scale):
+    "Binary and text reads give identical Decimals, including the exponent"
+    values = _decimal_samples(precision, scale)
+    rows = ', '.join(f"({i}, cast('{s}' as decimal({precision}, {scale})))"
+                     for i, s in enumerate(values))
+    sql = f"select v from (values {rows}) t(n, v) order by n"
+    results = {}
+    for mode in ('binary', 'text'):
+        cursor.connection.decimal_mode = mode
+        results[mode] = [row[0] for row in cursor.execute(sql)]
+    assert [d.as_tuple() for d in results['binary']] == [d.as_tuple() for d in results['text']]
+    assert results['text'] == [Decimal(s) for s in values]
