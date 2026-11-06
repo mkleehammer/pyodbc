@@ -170,13 +170,32 @@ bool PyMem_Realloc(BYTE** pp, size_t newlen)
 
 
 
+static int GetModuleFlag(const char* name, bool identity)
+{
+    // Returns 1 if the module attribute `name` is set, 0 if it is not, and -1 (with no
+    // exception) if it has been deleted or cannot be tested.  If `identity` is true, only True
+    // counts as set.
+    PyObject* o = PyObject_GetAttrString(pModule, name);
+    if (!o)
+    {
+        PyErr_Clear();
+        return -1;
+    }
+    int r = identity ? (o == Py_True) : PyObject_IsTrue(o);
+    Py_DECREF(o);
+    if (r < 0)
+        PyErr_Clear();
+    return r;
+}
+
 bool UseNativeUUID()
 {
-    PyObject* o = PyObject_GetAttrString(pModule, "native_uuid");
-    // If this fails for some reason, we'll assume false and allow the exception to pop up later.
-    bool b = o && PyObject_IsTrue(o);
-    Py_XDECREF(o);
-    return b;
+    return GetModuleFlag("native_uuid", false) == 1;
+}
+
+bool lowercase()
+{
+    return GetModuleFlag("lowercase", true) == 1;
 }
 
 HENV henv = SQL_NULL_HANDLE;
@@ -305,9 +324,8 @@ static bool import_types()
 
 static bool AllocateEnv()
 {
-    PyObject* pooling = PyObject_GetAttrString(pModule, "pooling");
-    bool bPooling = pooling == Py_True;
-    Py_DECREF(pooling);
+    // pooling defaults to True if it has been deleted.
+    bool bPooling = GetModuleFlag("pooling", true) != 0;
 
     if (bPooling)
     {
@@ -326,13 +344,11 @@ static bool AllocateEnv()
 
     SQLPOINTER defaultVersion = (SQLPOINTER)SQL_OV_ODBC3;
     PyObject* odbcversion = PyObject_GetAttrString(pModule, "odbcversion");
-    if (PyObject_TypeCheck(odbcversion, &PyUnicode_Type)) {
-        if (PyUnicode_CompareWithASCIIString(odbcversion, "3.8") == 0)
-        {
-            defaultVersion = (SQLPOINTER)SQL_OV_ODBC3_80;
-        }
-    }
-    Py_DECREF(odbcversion);
+    if (!odbcversion)
+        PyErr_Clear();
+    else if (PyUnicode_Check(odbcversion) && PyUnicode_CompareWithASCIIString(odbcversion, "3.8") == 0)
+        defaultVersion = (SQLPOINTER)SQL_OV_ODBC3_80;
+    Py_XDECREF(odbcversion);
 
     if (!SQL_SUCCEEDED(SQLSetEnvAttr(henv, SQL_ATTR_ODBC_VERSION, defaultVersion, sizeof(int))))
     {

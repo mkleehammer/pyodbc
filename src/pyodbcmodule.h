@@ -53,10 +53,8 @@ extern PyTypeObject ConnectionType;
 // Thd pyodbc module.
 extern PyObject* pModule;
 
-inline bool lowercase()
-{
-    return PyObject_GetAttrString(pModule, "lowercase") == Py_True;
-}
+bool lowercase();
+// Returns True if pyodbc.lowercase is True, meaning column names should be lowercased.
 
 bool UseNativeUUID();
 // Returns True if pyodbc.native_uuid is true, meaning uuid.UUID objects should be returned.

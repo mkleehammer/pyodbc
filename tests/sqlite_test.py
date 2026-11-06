@@ -22,6 +22,8 @@ import pathlib
 import pickle
 import platform
 import re
+import subprocess
+import sys
 from collections.abc import Iterator
 from datetime import datetime, time
 
@@ -1020,3 +1022,23 @@ def test_set_decimal_separator_regex_characters(sep):
     finally:
         pyodbc.setDecimalSeparator(saved)
     assert pyodbc.getDecimalSeparator() == saved
+
+
+def test_deleted_module_settings(connection_string: str):
+    "Deleting pyodbc.pooling, odbcversion, or lowercase uses the defaults instead of crashing"
+    # The environment is allocated by the first connect, so this needs a new interpreter.
+    script = """
+import sys, pyodbc
+del pyodbc.pooling, pyodbc.odbcversion, pyodbc.lowercase, pyodbc.native_uuid
+cnxn = pyodbc.connect(sys.argv[1])
+row = cnxn.execute("select 1 as Abc").fetchone()
+print(row.Abc)
+"""
+    env = dict(os.environ)
+    # Make sure the child imports the same pyodbc build.
+    env["PYTHONPATH"] = os.pathsep.join([os.path.dirname(pyodbc.__file__),
+                                         env.get("PYTHONPATH", "")])
+    result = subprocess.run([sys.executable, "-c", script, connection_string], env=env,
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "1"
