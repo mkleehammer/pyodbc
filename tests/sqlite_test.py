@@ -104,6 +104,15 @@ def test_different_bindings(cursor: pyodbc.Cursor):
     cursor.execute("insert into t2 values (?)", datetime.now())  # noqa: DTZ005
 
 
+def test_fast_executemany_negative_scale(cursor: pyodbc.Cursor):
+    "A negative decimal scale must not be used to index the scaling table"
+    cursor.execute("create table t1(n numeric(18, 0))")
+    cursor.fast_executemany = True
+    cursor.setinputsizes([(pyodbc.SQL_DECIMAL, 18, -1)])
+    with pytest.raises(pyodbc.ProgrammingError, match="Numeric overflow"):
+        cursor.executemany("insert into t1 values (?)", [(123,)])
+
+
 def test_drivers():
     p = pyodbc.drivers()
     assert isinstance(p, list)

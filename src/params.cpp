@@ -225,7 +225,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
                 static PyObject *tenObject;
 
                 // Need to scale by 10**pi->DecimalDigits
-                if (pi->DecimalDigits > 38)
+                if (pi->DecimalDigits < 0 || pi->DecimalDigits > 38)
                 {
                 NumericOverflow:
                     RaiseErrorV(0, ProgrammingError, "Numeric overflow");
@@ -347,7 +347,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         pts->second = PyDateTime_DATE_GET_SECOND(cell);
 
         // Truncate the fraction according to precision
-        size_t digits = min(9, pi->DecimalDigits);
+        size_t digits = (pi->DecimalDigits > 0) ? min(9, pi->DecimalDigits) : 0;
         long fast_pow10[] = {1,10,100,1000,10000,100000,1000000,10000000,100000000,1000000000};
         SQLUINTEGER milliseconds = PyDateTime_DATE_GET_MICROSECOND(cell) * 1000;
         pts->fraction = milliseconds - (milliseconds % fast_pow10[9 - digits]);
