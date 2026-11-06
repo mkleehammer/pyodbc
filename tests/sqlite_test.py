@@ -838,3 +838,32 @@ def test_rows_as_dicts(cursor: pyodbc.Cursor):
     row = cursor.execute("select name, name from t1").fetchone()
     assert len(row) == 1
     assert row == {"name": "Kathleen"}
+
+
+def test_rows_as_dicts_fetchval(cursor: pyodbc.Cursor):
+    "fetchval returns the first column even when rows are dicts"
+    cursor.rows_as_dicts = True
+    assert cursor.execute("select 42 as a, 1 as b").fetchval() == 42
+
+
+@pytest.mark.parametrize("method, args", [
+    ("tables", ()), ("tablePrivileges", ()), ("columns", ()), ("statistics", ("t1",)),
+    ("rowIdColumns", ("t1",)), ("rowVerColumns", ("t1",)), ("primaryKeys", ("t1",)),
+    ("foreignKeys", ()), ("getTypeInfo", ()), ("procedures", ()), ("procedureColumns", ()),
+])
+def test_catalog_on_closed_cursor(cursor: pyodbc.Cursor, method, args):
+    "Catalog functions on a closed cursor raise instead of crashing"
+    cursor.close()
+    with pytest.raises(pyodbc.ProgrammingError, match="closed cursor"):
+        getattr(cursor, method)(*args)
+
+
+def test_fetch_after_column_name_decode_error(cnxn: pyodbc.Connection):
+    "If column names can't be decoded, a later fetch raises instead of reading bad state"
+    cnxn.setdecoding(pyodbc.SQL_WMETADATA, encoding="ascii")
+    cursor = cnxn.cursor()
+    with pytest.raises(UnicodeDecodeError):
+        cursor.execute('select 1 as "é"')
+    assert cursor.description is None
+    with pytest.raises(pyodbc.ProgrammingError):
+        cursor.fetchone()
