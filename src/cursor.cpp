@@ -594,8 +594,8 @@ bool InitColumnInfo(Cursor* cursor, SQLUSMALLINT iCol, ColumnInfo* pinfo)
                 // SQL_DESC_TYPE must be set first.
                 descRet =
                     SQLSetDescField(hDesc, i, SQL_DESC_TYPE, (void*)SQL_C_NUMERIC, 0) == SQL_SUCCESS &&
-                    SQLSetDescField(hDesc, i, SQL_DESC_PRECISION, (void*)precision, 0) == SQL_SUCCESS &&
-                    SQLSetDescField(hDesc, i, SQL_DESC_SCALE, (void*)scale, 0) == SQL_SUCCESS
+                    SQLSetDescField(hDesc, i, SQL_DESC_PRECISION, (SQLPOINTER)(SQLLEN)precision, 0) == SQL_SUCCESS &&
+                    SQLSetDescField(hDesc, i, SQL_DESC_SCALE, (SQLPOINTER)(SQLLEN)scale, 0) == SQL_SUCCESS
                     ? SQL_SUCCESS : SQL_ERROR;
                 Py_END_ALLOW_THREADS
 
@@ -837,7 +837,13 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         bool isWide = (penc->ctype == SQL_C_WCHAR);
 
         const char* pch = PyBytes_AS_STRING(query.Get());
-        SQLINTEGER  cch = (SQLINTEGER)(PyBytes_GET_SIZE(query.Get()) / (isWide ? sizeof(uint16_t) : 1));
+        Py_ssize_t  len = PyBytes_GET_SIZE(query.Get()) / (isWide ? sizeof(uint16_t) : 1);
+        if (len > INT_MAX)
+        {
+            PyErr_SetString(PyExc_ValueError, "SQL statement is too long");
+            return 0;
+        }
+        SQLINTEGER  cch = (SQLINTEGER)len;
 
         Py_BEGIN_ALLOW_THREADS
         if (isWide)

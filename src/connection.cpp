@@ -832,7 +832,7 @@ static PyObject* Connection_getinfo(PyObject* self, PyObject* args)
     }
 
     if (i == _countof(aInfoTypes))
-        return RaiseErrorV(0, ProgrammingError, "Unsupported getinfo value: %d", infotype);
+        return RaiseErrorV(0, ProgrammingError, "Unsupported getinfo value: %lu", infotype);
 
     char szBuffer[0x1000];
     SQLSMALLINT cch = 0;

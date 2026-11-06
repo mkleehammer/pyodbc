@@ -41,6 +41,10 @@ struct DAEParam
 // The largest precision a SQL_NUMERIC_STRUCT is used for (SQL Server's maximum).
 static const int MAX_NUMERIC_PRECISION = 38;
 
+// The largest exponent a Decimal can have (decimal.MAX_EMAX), well below the Py_ssize_t limit
+// on 64-bit platforms.
+static const Py_ssize_t MAX_DECIMAL_EXPONENT = (Py_ssize_t)(PY_SSIZE_T_MAX > 0x7FFFFFFF ? 999999999999999999LL : 0x3FFFFFFF);
+
 static bool GetDecimalParts(PyObject* value, Object& parts, long& sign, PyObject*& digits, Py_ssize_t& exp,
                             const char** special = 0);
 
@@ -321,11 +325,62 @@ static bool GetDecimalParts(PyObject* value, Object& parts, long& sign, PyObject
         return false;
     }
 
-    exp = PyLong_AsSsize_t(e);
-    if (PyErr_Occurred())
+    // An exponent too large for a Py_ssize_t (which a subclass can return, and which is only 32
+    // bits on 32-bit platforms) saturates, so the range checks below raise the same errors
+    // everywhere.
+    int overflow = 0;
+    long long llexp = PyLong_AsLongLongAndOverflow(e, &overflow);
+    if (llexp == -1 && PyErr_Occurred())
         return false;
+    if (overflow > 0 || llexp > PY_SSIZE_T_MAX)
+        exp = PY_SSIZE_T_MAX;
+    else if (overflow < 0 || llexp < PY_SSIZE_T_MIN)
+        exp = PY_SSIZE_T_MIN;
+    else
+        exp = (Py_ssize_t)llexp;
+
+    // The callers size buffers from the sign and digits, so check them too.  The scale is
+    // bound as a SQLSMALLINT.
+    if (sign != 0 && sign != 1)
+    {
+        PyErr_SetString(PyExc_TypeError, "Decimal.as_tuple() returned an invalid sign");
+        return false;
+    }
 
     digits = PyTuple_GET_ITEM(t, 1);
+    if (PyTuple_GET_SIZE(digits) == 0)
+    {
+        PyErr_SetString(PyExc_TypeError, "Decimal.as_tuple() returned no digits");
+        return false;
+    }
+    for (Py_ssize_t i = 0, c = PyTuple_GET_SIZE(digits); i < c; i++)
+    {
+        PyObject* digit = PyTuple_GET_ITEM(digits, i);
+        long n = PyLong_Check(digit) ? PyLong_AsLong(digit) : -1;
+        if (n < 0 || n > 9)
+        {
+            PyErr_Clear();
+            PyErr_SetString(PyExc_TypeError, "Decimal.as_tuple() returned an invalid digit");
+            return false;
+        }
+    }
+
+    if (exp > MAX_DECIMAL_EXPONENT)
+    {
+        // Larger than any Decimal's, so it can only come from a subclass, and would overflow
+        // the arithmetic on it.
+        RaiseErrorV(0, ProgrammingError, "Numeric overflow");
+        return false;
+    }
+
+    if (exp < -SHRT_MAX)
+    {
+        RaiseErrorV(0, ProgrammingError,
+                    "Cannot bind a Decimal with more than %d digits after the decimal point",
+                    SHRT_MAX);
+        return false;
+    }
+
     return true;
 }
 
@@ -479,7 +534,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         {
             if (len > pi->BufferLength)
             {
-                RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
+                RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %zd buffer %zd", (Py_ssize_t)len, (Py_ssize_t)pi->BufferLength);
                 return false;
             }
             memcpy(*outbuf, PyBytes_AS_STRING(cell), len);
@@ -518,7 +573,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         {
             if (len > pi->BufferLength)
             {
-                RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
+                RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %zd buffer %zd", (Py_ssize_t)len, (Py_ssize_t)pi->BufferLength);
                 return false;
             }
             memcpy(*outbuf, PyBytes_AS_STRING((PyObject*)encoded), len);
@@ -603,7 +658,7 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         {
             if (len > pi->BufferLength)
             {
-                RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %u buffer %u", len, pi->BufferLength);
+                RaiseErrorV(0, ProgrammingError, "String data, right truncation: length %zd buffer %zd", (Py_ssize_t)len, (Py_ssize_t)pi->BufferLength);
                 return false;
             }
             memcpy(*outbuf, PyByteArray_AS_STRING(cell), len);
@@ -867,8 +922,8 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
     {
         info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_VARCHAR : SQL_WVARCHAR;
         info.ParameterValuePtr = PyBytes_AS_STRING(info.pObject);
-        info.BufferLength      = (SQLINTEGER)cb;
-        info.StrLen_or_Ind     = (SQLINTEGER)cb;
+        info.BufferLength      = (SQLLEN)cb;
+        info.StrLen_or_Ind     = (SQLLEN)cb;
     }
     else
     {
@@ -876,7 +931,7 @@ static bool GetUnicodeInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
         info.ParameterType     = (enc.ctype == SQL_C_CHAR) ? SQL_LONGVARCHAR : SQL_WLONGVARCHAR;
         info.ParameterValuePtr = &info;
         info.BufferLength      = sizeof(ParamInfo*);
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLINTEGER)cb) : SQL_DATA_AT_EXEC;
+        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)cb) : SQL_DATA_AT_EXEC;
         info.maxlength = maxlength;
     }
 
@@ -1194,39 +1249,8 @@ static bool GetDecimalInfo(Cursor* cur, Py_ssize_t index, PyObject* param, Param
         return false;
     info.allocated = true;
 
-    info.StrLen_or_Ind = (SQLINTEGER)strlen((char*)info.ParameterValuePtr);
+    info.StrLen_or_Ind = (SQLLEN)strlen((char*)info.ParameterValuePtr);
 
-    return true;
-}
-
-
-static bool GetByteArrayInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo& info, bool isTVP)
-{
-    info.ValueType = SQL_C_BINARY;
-
-    Py_ssize_t cb = PyByteArray_Size(param);
-
-    SQLLEN maxlength = cur->cnxn->GetMaxLength(info.ValueType);
-
-    if (maxlength == 0 || cb <= maxlength || isTVP)
-    {
-        info.ParameterType     = SQL_VARBINARY;
-        info.ParameterValuePtr = (SQLPOINTER)PyByteArray_AsString(param);
-        info.BufferLength      = (SQLINTEGER)cb;
-        info.ColumnSize        = isTVP?0:(SQLUINTEGER)max(cb, 1);
-        info.StrLen_or_Ind     = (SQLINTEGER)cb;
-    }
-    else
-    {
-        info.ParameterType     = SQL_LONGVARBINARY;
-        info.ParameterValuePtr = &info;
-        info.BufferLength      = sizeof(ParamInfo*);
-        info.ColumnSize        = (SQLUINTEGER)cb;
-        info.StrLen_or_Ind     = cur->cnxn->need_long_data_len ? SQL_LEN_DATA_AT_EXEC((SQLLEN)cb) : SQL_DATA_AT_EXEC;
-        info.pObject = param;
-        Py_INCREF(info.pObject);
-        info.maxlength = maxlength;
-    }
     return true;
 }
 
@@ -1317,7 +1341,19 @@ bool GetParameterInfo(Cursor* cur, Py_ssize_t index, PyObject* param, ParamInfo&
         return GetFloatInfo(cur, index, param, info);
 
     if (PyByteArray_Check(param))
-        return GetByteArrayInfo(cur, index, param, info, isTVP);
+    {
+        // The driver reads the data with the GIL released, when another thread could resize
+        // the bytearray and free its buffer, so bind a snapshot.  info.pObject keeps it alive
+        // until the parameters are freed.
+        Object snapshot(PyBytes_FromObject(param));
+        if (!snapshot)
+            return false;
+        if (!GetBytesInfo(cur, index, snapshot.Get(), info, isTVP))
+            return false;
+        if (!info.pObject)
+            info.pObject = snapshot.Detach();
+        return true;
+    }
 
     PyObject* cls = 0;
     if (!IsInstanceForThread(param, "decimal", "Decimal", &cls))
@@ -1469,6 +1505,12 @@ static bool SetTVPName(Cursor* cur, SQLHDESC desc, Py_ssize_t index, SQLSMALLINT
     Object encoded(PyCodec_Encode(name, "UTF-16LE", "strict"));
     if (!encoded)
         return false;
+
+    if (PyBytes_GET_SIZE(encoded.Get()) > INT_MAX)
+    {
+        PyErr_SetString(PyExc_ValueError, "A TVP's type or schema name is too long");
+        return false;
+    }
 
     SQLRETURN ret = SQLSetDescFieldW(desc, (SQLSMALLINT)(index + 1), field,
                                      (SQLPOINTER)PyBytes_AS_STRING(encoded.Get()),
@@ -1642,8 +1684,8 @@ static bool BindTVPColumns(Cursor* cur, Py_ssize_t index, ParamInfo& info)
                     if (!GetDecimalPrecisionAndScale(value.Get(), precision, scale)) {
                         if (!PyErr_ExceptionMatches(PyExc_AttributeError))
                             return false;
-                        RaiseErrorV(0, PyExc_TypeError, "Expected Decimal but got %s (TVP column %d)",
-                            Py_TYPE(value)->tp_name, i);
+                        RaiseErrorV(0, PyExc_TypeError, "Expected Decimal but got %s (TVP column %zd)",
+                            Py_TYPE(value)->tp_name, (Py_ssize_t)i);
                         return false;
                     }
                     SQLULEN integerDigits = max(precision - scale, 0);
@@ -1828,7 +1870,13 @@ bool Prepare(Cursor* cur, PyObject* pSql)
         bool isWide = (penc->ctype == SQL_C_WCHAR);
 
         const char* pch = PyBytes_AS_STRING(query.Get());
-        SQLINTEGER  cch = (SQLINTEGER)(PyBytes_GET_SIZE(query.Get()) / (isWide ? sizeof(uint16_t) : 1));
+        Py_ssize_t  len = PyBytes_GET_SIZE(query.Get()) / (isWide ? sizeof(uint16_t) : 1);
+        if (len > INT_MAX)
+        {
+            PyErr_SetString(PyExc_ValueError, "SQL statement is too long");
+            return false;
+        }
+        SQLINTEGER  cch = (SQLINTEGER)len;
 
         TRACE("SQLPrepare(%s)\n", pch);
 
@@ -1882,8 +1930,8 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
 
     if (cParams != cur->paramcount)
     {
-        RaiseErrorV(0, ProgrammingError, "The SQL contains %d parameter markers, but %d parameters were supplied",
-                    cur->paramcount, cParams);
+        RaiseErrorV(0, ProgrammingError, "The SQL contains %d parameter markers, but %zd parameters were supplied",
+                    cur->paramcount, (Py_ssize_t)cParams);
         return false;
     }
 
@@ -2008,7 +2056,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
         }
         if (PySequence_Fast_GET_SIZE(colseq) != cur->paramcount)
         {
-            RaiseErrorV(0, ProgrammingError, "Expected %u parameters, supplied %u", cur->paramcount, PySequence_Fast_GET_SIZE(colseq));
+            RaiseErrorV(0, ProgrammingError, "Expected %d parameters, supplied %zd", cur->paramcount, PySequence_Fast_GET_SIZE(colseq));
         ErrorRet3:
             Py_XDECREF(colseq);
             goto ErrorRet2;
@@ -2113,7 +2161,7 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
             }
             if (PySequence_Fast_GET_SIZE(colseq) != cur->paramcount)
             {
-                RaiseErrorV(0, ProgrammingError, "Expected %u parameters, supplied %u", cur->paramcount, PySequence_Fast_GET_SIZE(colseq));
+                RaiseErrorV(0, ProgrammingError, "Expected %d parameters, supplied %zd", cur->paramcount, PySequence_Fast_GET_SIZE(colseq));
                 Py_XDECREF(colseq);
                 goto ErrorRet5;
             }
@@ -2232,6 +2280,17 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                         objCell = bytes;
                     }
                     //TODO: Raise or clear error when bytes == NULL.
+                }
+
+                // Another thread could resize a bytearray while the GIL is released for
+                // SQLPutData, freeing its buffer, so send a snapshot.
+                Object snapshot;
+                if (PyByteArray_Check(objCell))
+                {
+                    snapshot.Attach(PyBytes_FromObject(objCell));
+                    if (!snapshot)
+                        goto ErrorRet8;
+                    objCell = snapshot.Get();
                 }
 
                 szLastFunction = "SQLPutData";

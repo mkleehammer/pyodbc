@@ -2225,6 +2225,126 @@ def test_long_diagnostic_messages(cursor: pyodbc.Cursor, length):
     assert any(m[1].endswith(text) for m in cursor.messages)
 
 
+class _BadTupleDecimal(Decimal):
+    "A Decimal whose as_tuple() returns the given tuple"
+    def __new__(cls, value, parts):
+        d = super().__new__(cls, value)
+        d.parts = parts
+        return d
+
+    def as_tuple(self):
+        return self.parts
+
+
+_BAD_DECIMAL_PARTS = [
+    pytest.param((-5, (1,), 0), id="negative-sign"),
+    pytest.param((2, (1,), 0), id="large-sign"),
+    pytest.param((0, (99,), 0), id="digit-too-large"),
+    pytest.param((0, (-1,), 0), id="negative-digit"),
+    pytest.param((0, ("1",), 0), id="str-digit"),
+    pytest.param((0, (), 0), id="no-digits"),
+    pytest.param((0, (1, 2)), id="short-tuple"),
+]
+
+
+@pytest.mark.parametrize("fast", [False, True])
+@pytest.mark.parametrize("parts", _BAD_DECIMAL_PARTS)
+def test_decimal_subclass_bad_as_tuple(cursor: pyodbc.Cursor, fast, parts):
+    "A Decimal subclass whose as_tuple() returns nonsense raises instead of corrupting memory"
+    cursor.execute("create table t1(v decimal(18, 2))")
+    cursor.fast_executemany = fast
+    with pytest.raises(TypeError, match="as_tuple"):
+        cursor.executemany("insert into t1 values (?)", [(_BadTupleDecimal("1", parts),)])
+
+
+@pytest.mark.parametrize("fast", [False, True])
+@pytest.mark.parametrize("exp, match", [
+    (2**62, "Numeric overflow"),
+    (2**70, "Numeric overflow"),
+    (-2**70, "digits after the decimal point"),
+])
+def test_decimal_subclass_huge_exponent(cursor: pyodbc.Cursor, fast, exp, match):
+    """An exponent larger than any Decimal's, from a subclass, raises instead of overflowing,
+    with the same error whether or not it fits a Py_ssize_t."""
+    cursor.execute("create table t1(v decimal(18, 2))")
+    cursor.fast_executemany = fast
+    value = _BadTupleDecimal("1", (0, (1,), exp))
+    with pytest.raises(pyodbc.ProgrammingError, match=match):
+        cursor.executemany("insert into t1 values (?)", [(value,)])
+
+
+@pytest.mark.parametrize("fast", [False, True])
+def test_decimal_scale_too_large(cursor: pyodbc.Cursor, fast):
+    "A scale too large to bind raises instead of being truncated to a SQLSMALLINT"
+    cursor.execute("create table t1(v decimal(18, 2))")
+    cursor.fast_executemany = fast
+    with pytest.raises(pyodbc.ProgrammingError, match="digits after the decimal point"):
+        cursor.executemany("insert into t1 values (?)", [(Decimal("1E-40000"),)])
+
+
+class _BadUUID(uuid.UUID):
+    "A UUID whose bytes_le is the wrong length"
+    @property
+    def bytes_le(self):
+        return b"short"
+
+
+def test_uuid_subclass_bad_bytes_le(cursor: pyodbc.Cursor):
+    cursor.execute("create table t1(v uniqueidentifier)")
+    with pytest.raises(TypeError, match="bytes_le"):
+        cursor.execute("insert into t1 values (?)", _BadUUID(int=1))
+
+
+@pytest.mark.parametrize("fast", [False, True])
+@pytest.mark.parametrize("length", [10, 4000, 100000])
+def test_bytearray_params(cursor: pyodbc.Cursor, fast, length):
+    "bytearray parameters are copied when bound and inserted correctly, long or short"
+    cursor.execute("create table t1(n int, v varbinary(max))")
+    cursor.fast_executemany = fast
+    values = [bytearray(range(256)) * (length // 256) + bytearray(b"x" * (length % 256)),
+              bytearray(b"y" * length)]
+    cursor.executemany("insert into t1 values (?, ?)", list(enumerate(values)))
+    rows = cursor.execute("select v from t1 order by n").fetchall()
+    assert [row.v for row in rows] == [bytes(v) for v in values]
+
+
+@pytest.fixture
+def tvp_decimal_proc(cursor: pyodbc.Cursor) -> Iterator[str]:
+    """A procedure taking a one-decimal-column TVP and returning its rows."""
+    cursor.execute("drop procedure if exists tvp_decimal_p")
+    cursor.execute("drop type if exists tvp_decimal_t")
+    cursor.execute("create type tvp_decimal_t as table (v decimal(20, 4))")
+    cursor.execute("create procedure tvp_decimal_p @t tvp_decimal_t readonly"
+                   " as select v from @t")
+    cursor.commit()
+    yield "{call tvp_decimal_p(?)}"
+    cursor.execute("drop procedure if exists tvp_decimal_p")
+    cursor.execute("drop type if exists tvp_decimal_t")
+    cursor.commit()
+
+
+class _RaisingDecimal(Decimal):
+    "A Decimal whose as_tuple() raises"
+    def as_tuple(self):
+        raise ValueError("as_tuple failed")
+
+
+@pytest.mark.skipif(SQLSERVER_YEAR < 2008, reason="TVP not supported until 2008")
+@pytest.mark.skipif(IS_FREETDS, reason="FreeTDS does not support TVP")
+def test_tvp_decimal_column_errors(cursor: pyodbc.Cursor, tvp_decimal_proc: str):
+    "Errors from a later row of a Decimal TVP column are raised, not replaced"
+    rows = [(Decimal("1.5"),), (Decimal("2.25"),)]
+    results = [r.v for r in cursor.execute(tvp_decimal_proc, (rows,))]
+    assert results == [Decimal("1.5000"), Decimal("2.2500")]
+    with pytest.raises(TypeError, match="Expected Decimal"):
+        cursor.execute(tvp_decimal_proc, ([(Decimal("1.5"),), (5,)],))
+    with pytest.raises(ValueError, match="as_tuple failed"):
+        cursor.execute(tvp_decimal_proc, ([(Decimal("1.5"),), (_RaisingDecimal("2"),)],))
+    with pytest.raises(TypeError, match="invalid sign"):
+        cursor.execute(tvp_decimal_proc,
+                       ([(Decimal("1.5"),), (_BadTupleDecimal("2", (-5, (2,), 0)),)],))
+
+
 def _decimal_samples(precision: int, scale: int) -> list[str]:
     "Random values that fit decimal(precision, scale), plus zero and the extremes"
     rnd = random.Random(precision * 100 + scale)
