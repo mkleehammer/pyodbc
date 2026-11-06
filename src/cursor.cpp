@@ -1605,6 +1605,22 @@ static char tablePrivileges_doc[] =
     "  6) is_grantable";
 
 
+static bool GetWideNameLength(PyObject* bytes, SQLSMALLINT& cch)
+{
+    // Sets `cch` to the length in characters of a UTF-16 catalog function argument.  The
+    // length is a SQLSMALLINT, so a longer name would wrap, and one of exactly 65533 characters
+    // would become SQL_NTS, making the driver read past the end looking for a terminator.
+
+    Py_ssize_t cchName = PyBytes_GET_SIZE(bytes) / (Py_ssize_t)sizeof(uint16_t);
+    if (cchName > SHRT_MAX)
+    {
+        PyErr_SetString(PyExc_ValueError, "Catalog function names cannot be longer than 32767 characters");
+        return false;
+    }
+    cch = (SQLSMALLINT)cchName;
+    return true;
+}
+
 static PyObject* Cursor_tablePrivileges(PyObject* self, PyObject* args, PyObject* kwargs)
 {
     PyObject* pCatalog = 0;
@@ -1653,24 +1669,24 @@ static PyObject* Cursor_tablePrivileges(PyObject* self, PyObject* args, PyObject
     if (oTable)
     {
         szTable = PyBytes_AS_STRING(oTable.Get());
-        if (isWide)
-            cchTable = (SQLSMALLINT)(PyBytes_GET_SIZE(oTable.Get()) / sizeof(uint16_t));
+        if (isWide && !GetWideNameLength(oTable.Get(), cchTable))
+            return 0;
     }
     char* szCatalog = 0;
     SQLSMALLINT cchCatalog = SQL_NTS;
     if (oCatalog)
     {
         szCatalog = PyBytes_AS_STRING(oCatalog.Get());
-        if (isWide)
-            cchCatalog = (SQLSMALLINT)(PyBytes_GET_SIZE(oCatalog.Get()) / sizeof(uint16_t));
+        if (isWide && !GetWideNameLength(oCatalog.Get(), cchCatalog))
+            return 0;
     }
     char* szSchema = 0;
     SQLSMALLINT cchSchema = SQL_NTS;
     if (oSchema)
     {
         szSchema = PyBytes_AS_STRING(oSchema.Get());
-        if (isWide)
-            cchSchema = (SQLSMALLINT)(PyBytes_GET_SIZE(oSchema.Get()) / sizeof(uint16_t));
+        if (isWide && !GetWideNameLength(oSchema.Get(), cchSchema))
+            return 0;
     }
 
     Py_BEGIN_ALLOW_THREADS
@@ -1873,24 +1889,24 @@ static PyObject* Cursor_statistics(PyObject* self, PyObject* args, PyObject* kwa
     if (oTable)
     {
         szTable = PyBytes_AS_STRING(oTable.Get());
-        if (isWide)
-            cchTable = (SQLSMALLINT)(PyBytes_GET_SIZE(oTable.Get()) / sizeof(uint16_t));
+        if (isWide && !GetWideNameLength(oTable.Get(), cchTable))
+            return 0;
     }
     char* szCatalog = 0;
     SQLSMALLINT cchCatalog = SQL_NTS;
     if (oCatalog)
     {
         szCatalog = PyBytes_AS_STRING(oCatalog.Get());
-        if (isWide)
-            cchCatalog = (SQLSMALLINT)(PyBytes_GET_SIZE(oCatalog.Get()) / sizeof(uint16_t));
+        if (isWide && !GetWideNameLength(oCatalog.Get(), cchCatalog))
+            return 0;
     }
     char* szSchema = 0;
     SQLSMALLINT cchSchema = SQL_NTS;
     if (oSchema)
     {
         szSchema = PyBytes_AS_STRING(oSchema.Get());
-        if (isWide)
-            cchSchema = (SQLSMALLINT)(PyBytes_GET_SIZE(oSchema.Get()) / sizeof(uint16_t));
+        if (isWide && !GetWideNameLength(oSchema.Get(), cchSchema))
+            return 0;
     }
 
     SQLRETURN ret = 0;

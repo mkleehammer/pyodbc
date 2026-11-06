@@ -20,12 +20,9 @@ void SQLWChar::init(PyObject* src, const TextEnc& enc)
 
     isNone = false;
 
-    // If there are optimized encodings that don't require a temporary object, use them.
-    if (enc.optenc == OPTENC_UTF8 && PyUnicode_Check(src))
-    {
-        psz = (SQLWCHAR*)PyUnicode_AsUTF8(src);
-        return;
-    }
+    // There is deliberately no shortcut returning PyUnicode_AsUTF8 for UTF-8: these buffers go
+    // to the W APIs with SQL_NTS, and that string ends in one NUL byte, not the NUL character
+    // the driver looks for.  The bytes below end in four NULs, enough for any SQLWCHAR size.
 
     PyObject* pb = 0;
 
@@ -37,14 +34,22 @@ void SQLWChar::init(PyObject* src, const TextEnc& enc)
         // Careful: Some encodings don't return bytes.
         if (!PyBytes_Check(pb))
         {
-            // REVIEW: Error or just return null?
+            PyErr_Format(PyExc_TypeError, "Encoding '%s' did not return bytes", enc.name);
             psz = 0;
             Py_DECREF(pb);
             return;
         }
         
-        if(!nulls)
+        if (!nulls)
+        {
             nulls = PyBytes_FromStringAndSize("\0\0\0\0", 4);
+            if (!nulls)
+            {
+                psz = 0;
+                Py_DECREF(pb);
+                return;
+            }
+        }
 
         PyBytes_Concat(&pb, nulls);
         if (!pb)
@@ -53,9 +58,8 @@ void SQLWChar::init(PyObject* src, const TextEnc& enc)
             return;
         }
     } else {
-        // If the encoding failed (possibly due to "strict"), it will generate an exception, but
-        // we're going to continue.
-        PyErr_Clear();
+        // The encoding failed, so leave its exception set.  Callers check isValid() and
+        // return.
         psz = 0;
     }
 

@@ -983,3 +983,28 @@ def test_readvar_initsize_tiny(cursor: pyodbc.Cursor, initsize):
     cursor.connection.readvar_initsize = initsize
     rows = cursor.execute("select n, b from t1 order by length(n) desc").fetchall()
     assert [tuple(row) for row in rows] == values
+
+
+@pytest.mark.parametrize("method", ["tablePrivileges", "statistics"])
+@pytest.mark.parametrize("length", [32768, 65533, 70000])
+def test_catalog_name_too_long(cursor: pyodbc.Cursor, method, length):
+    # The length is a SQLSMALLINT.  65533 characters used to become SQL_NTS, so the driver read
+    # past the end of the name looking for a terminator.
+    with pytest.raises(ValueError):
+        getattr(cursor, method)("x" * length)
+
+
+def test_catalog_utf8_metadata(cursor: pyodbc.Cursor):
+    # Catalog arguments encoded as UTF-8 for a W API used to end in a single NUL byte.
+    cursor.connection.setdecoding(pyodbc.SQL_WMETADATA, encoding='utf-8')
+    for name in ("t", "t1", "t12"):
+        assert isinstance(cursor.columns(table=name).fetchall(), list)
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-16le"])
+def test_catalog_unencodable_name(cursor: pyodbc.Cursor, encoding):
+    "A catalog name that cannot be encoded raises the encoding error, not SystemError"
+    cursor.connection.setdecoding(pyodbc.SQL_WMETADATA, encoding=encoding)
+    with pytest.raises(UnicodeEncodeError):
+        cursor.columns(table="t\ud800")
+

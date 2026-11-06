@@ -490,13 +490,9 @@ static PyObject* Connection_set_attr(PyObject* self, PyObject* args)
     }
     else if (PyUnicode_Check(value))
     {
-        // SQLWChar clears encoding errors and leaves a NULL buffer, so check first to raise them.
-        Object check(PyUnicode_AsEncodedString(value, "utf-16le", "strict"));
-        if (!check)
-            return 0;
         sqlchar.set(value, "utf-16le");
         if (!sqlchar.isValid())
-            return PyErr_NoMemory();
+            return 0;
         Py_BEGIN_ALLOW_THREADS
         ret = SQLSetConnectAttrW(cnxn->hdbc, id, sqlchar.get(), SQL_NTS);
         Py_END_ALLOW_THREADS
