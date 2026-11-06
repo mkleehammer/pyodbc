@@ -154,6 +154,7 @@ static bool ReadVarColumn(Cursor* cur, Py_ssize_t iCol, SQLSMALLINT ctype, bool&
         if (!SQL_SUCCEEDED(ret) && ret != SQL_NO_DATA)
         {
             RaiseErrorFromHandle(cur->cnxn, "SQLGetData", cur->cnxn->hdbc, cur->hstmt);
+            PyMem_Free(pb);
             return false;
         }
 

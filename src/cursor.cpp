@@ -2262,7 +2262,7 @@ static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
 {
     UNUSED(args);
 
-    Cursor* cur = Cursor_Validate(self, 0);
+    Cursor* cur = Cursor_Validate(self, CURSOR_REQUIRE_OPEN | CURSOR_RAISE_ERROR);
 
     if (!cur)
         return 0;
@@ -2333,7 +2333,12 @@ static PyObject* Cursor_nextset(PyObject* self, PyObject* args)
 
         PyObject* pError = GetErrorFromHandle(cur->cnxn, "SQLNumResultCols", cur->cnxn->hdbc, cur->hstmt);
         free_results(cur, FREE_STATEMENT | KEEP_PREPARED | KEEP_MESSAGES);
-        return pError;
+        if (pError)
+        {
+            RaiseErrorFromException(pError);
+            Py_DECREF(pError);
+        }
+        return 0;
     }
     free_results(cur, KEEP_STATEMENT | KEEP_PREPARED | KEEP_MESSAGES);
 

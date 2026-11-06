@@ -1042,3 +1042,9 @@ print(row.Abc)
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "1"
+
+
+def test_nextset_closed_cursor(cursor: pyodbc.Cursor):
+    cursor.close()
+    with pytest.raises(pyodbc.ProgrammingError, match="closed cursor"):
+        cursor.nextset()
