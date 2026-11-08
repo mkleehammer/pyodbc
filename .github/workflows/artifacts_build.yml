@@ -159,14 +159,14 @@ jobs:
 
   build_macos_arm64_wheels:
     name: Build wheels on macOS ARM64
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v7.0.1
 
       - name: Install unixODBC
         # unixODBC is necessary for the SQL C header files, e.g. sql.h, but doesn't appear
-        # to be pre-installed on macos-14, hence make sure it really is installed
+        # to be pre-installed on the macOS runners, hence make sure it really is installed
         run: brew install unixodbc
 
       - name: Build wheels
