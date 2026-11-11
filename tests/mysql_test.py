@@ -96,6 +96,13 @@ def test_int(cursor: pyodbc.Cursor):
     _test_scalar(cursor, 'int', [None, -1, 0, 1, 12345678])
 
 
+def test_int_unsigned(cursor: pyodbc.Cursor):
+    # The driver reports these as unsigned SQL_INTEGER columns.  Values above 0x7FFFFFFF
+    # used to come back negative.
+    _test_scalar(cursor, 'int unsigned', [None, 0, 1, 0x7FFFFFFF, 0x80000000, 0xC0A80101,
+                                          0xFFFFFFFF])
+
+
 def test_bigint(cursor: pyodbc.Cursor):
     _test_scalar(cursor, 'bigint', [None, -1, 0, 1, 0x123456789, 0x7FFFFFFF, 0xFFFFFFFF,
                                     0x123456789])
