@@ -544,7 +544,7 @@ static PyObject* GetDataLong(Cursor* cur, Py_ssize_t iCol)
         Py_RETURN_NONE;
 
     if (pinfo->is_unsigned)
-        return PyLong_FromLong(*(SQLINTEGER*)&value);
+        return PyLong_FromUnsignedLong((SQLUINTEGER)value);
 
     return PyLong_FromLong(value);
 }
