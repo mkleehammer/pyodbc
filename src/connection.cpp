@@ -1465,9 +1465,12 @@ static void NormalizeCodecName(const char* src, char* dest, size_t cbDest)
 
     while (*src && pch < pchLast)
     {
-        if (isupper(*src))
+        // isupper/tolower are undefined for a char that is negative when char is signed, which
+        // a byte of a non-ASCII (e.g. UTF-8) codec name is, so pass it as an unsigned char.
+        if (isupper((unsigned char)*src))
         {
-            *pch++ = (char)tolower(*src++);
+            *pch++ = (char)tolower((unsigned char)*src);
+            src++;
         }
         else if (*src == '_')
         {
