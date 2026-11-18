@@ -799,6 +799,11 @@ static int PyToCType(Cursor *cur, unsigned char **outbuf, PyObject *cell, ParamI
         RaiseErrorV(0, ProgrammingError, "Unknown object type: %s",cell->ob_type->tp_name);
         return false;
     }
+    // Advance to the SQLLEN indicator's alignment before storing it; ExecuteMulti reserved the
+    // matching padding after the value so the indicator and the next value stay aligned.
+    size_t slack = (uintptr_t)(*outbuf) % sizeof(SQLLEN);
+    if (slack)
+        *outbuf += sizeof(SQLLEN) - slack;
     *(SQLLEN*)(*outbuf) = ind;
     *outbuf += sizeof(SQLLEN);
     return true;
@@ -2077,9 +2082,27 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                 goto ErrorRet3;
             }
 
+            // Each row packs every value directly in front of its 8-byte SQLLEN length
+            // indicator.  Pad the value out to that alignment so the indicator, the next
+            // value, and the start of each row stay aligned: an unaligned SQLLEN access is
+            // undefined behavior and faults where alignment is enforced.  A value whose length
+            // is already a multiple of sizeof(SQLLEN) is left unchanged.  BufferLength comes
+            // from the driver's (or setinputsizes') column size, so also guard the row length
+            // against overflow.  (Declared without initializers so the goto ErrorRet4 paths
+            // below may jump past them.)
+            SQLLEN cbParam, cbValue;
+            cbParam = cur->paramInfos[i].BufferLength;
+            cbValue = (cbParam < 0) ? 0 :
+                cbParam + (SQLLEN)((sizeof(SQLLEN) - (size_t)cbParam % sizeof(SQLLEN)) % sizeof(SQLLEN));
+            if (cbParam < 0 || rowlen > PY_SSIZE_T_MAX - (Py_ssize_t)(2 * sizeof(SQLLEN)) - cbParam)
+            {
+                RaiseErrorV(0, ProgrammingError, "Parameter %zd is too large for fast_executemany", i + 1);
+                goto ErrorRet4;
+            }
+
             if (!SQL_SUCCEEDED(SQLBindParameter(cur->hstmt, i + 1, SQL_PARAM_INPUT, cur->paramInfos[i].ValueType,
                 cur->paramInfos[i].ParameterType, cur->paramInfos[i].ColumnSize, cur->paramInfos[i].DecimalDigits,
-                bindptr, cur->paramInfos[i].BufferLength, (SQLLEN*)(bindptr + cur->paramInfos[i].BufferLength))))
+                bindptr, cbParam, (SQLLEN*)(bindptr + cbValue))))
             {
                 RaiseErrorFromHandle(cur->cnxn, "SQLBindParameter", GetConnection(cur)->hdbc, cur->hstmt);
             ErrorRet4:
@@ -2095,16 +2118,8 @@ bool ExecuteMulti(Cursor* cur, PyObject* pSql, PyObject* paramArrayObj)
                 SQLSetDescField(desc, i + 1, SQL_DESC_SCALE, (SQLPOINTER)(uintptr_t)cur->paramInfos[i].DecimalDigits, 0);
                 SQLSetDescField(desc, i + 1, SQL_DESC_DATA_PTR, bindptr, 0);
             }
-            // BufferLength comes from the driver's (or setinputsizes') column size, so make sure
-            // the row length cannot overflow.
-            SQLLEN cbParam = cur->paramInfos[i].BufferLength;
-            if (cbParam < 0 || rowlen > PY_SSIZE_T_MAX - (Py_ssize_t)sizeof(SQLLEN) - cbParam)
-            {
-                RaiseErrorV(0, ProgrammingError, "Parameter %zd is too large for fast_executemany", i + 1);
-                goto ErrorRet4;
-            }
-            rowlen += cbParam + sizeof(SQLLEN);
-            bindptr += cbParam + sizeof(SQLLEN);
+            rowlen += cbValue + sizeof(SQLLEN);
+            bindptr += cbValue + sizeof(SQLLEN);
         }
 
         // Assume parameters are homogeneous between rows in the common case, to avoid
