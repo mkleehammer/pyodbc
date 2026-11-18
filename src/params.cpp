@@ -1954,6 +1954,12 @@ bool PrepareAndBind(Cursor* cur, PyObject* pSql, PyObject* original_params, bool
             cur->paramInfos = 0;
             return false;
         }
+
+        // ParameterValuePtr can point into the parameter's own buffer (bytes), which the driver
+        // reads during SQLExecute.  The caller's sequence may be a list that drops the object
+        // before then, so keep it alive until the parameters are freed.
+        if (!cur->paramInfos[i].pObject)
+            cur->paramInfos[i].pObject = param.Detach();
     }
 
     for (Py_ssize_t i = 0; i < cParams; i++)

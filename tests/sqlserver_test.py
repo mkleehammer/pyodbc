@@ -2308,6 +2308,25 @@ def test_bytearray_params(cursor: pyodbc.Cursor, fast, length):
     assert [row.v for row in rows] == [bytes(v) for v in values]
 
 
+@pytest.mark.parametrize("length", [40, 4000])
+def test_bytes_param_released_by_caller(cursor: pyodbc.Cursor, length):
+    "A bytes parameter is kept alive until execution if the caller's list releases it"
+    value = bytes(range(256)) * (length // 256) + b"x" * (length % 256)
+    params = [bytes(bytearray(value)), None]
+
+    class _ReleasingDecimal(Decimal):
+        "Removes the bytes from the list when it is bound, after them"
+        def as_tuple(self):
+            params[0] = None
+            junk = [b"\xaa" * length for _ in range(20)]  # reuse the freed memory
+            del junk
+            return super().as_tuple()
+
+    params[1] = _ReleasingDecimal("1")
+    row = cursor.execute("select ?, ?", params).fetchone()
+    assert row[0] == value
+
+
 @pytest.fixture
 def tvp_decimal_proc(cursor: pyodbc.Cursor) -> Iterator[str]:
     """A procedure taking a one-decimal-column TVP and returning its rows."""
