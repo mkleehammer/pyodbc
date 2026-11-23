@@ -750,6 +750,33 @@ def test_row_compare_error():
         row1 == row2  # noqa: B015
 
 
+def test_row_compare_replaces_value():
+    "The Row keeps a value alive while comparing it, even if the comparison replaces it"
+    events = []
+
+    class Value:
+        def __eq__(self, other):
+            events.append("eq")
+            return NotImplemented
+
+        def __del__(self):
+            events.append("del")
+
+    class Replacer:
+        def __eq__(self, other):
+            row[0] = None
+            return NotImplemented
+
+    row = pyodbc.Row(("a",), {"a": 0}, Value())
+    assert Replacer() not in row
+    assert events == ["eq", "del"]
+
+    events.clear()
+    row = pyodbc.Row(("a",), {"a": 0}, Value())
+    assert not pyodbc.Row(("a",), {"a": 0}, Replacer()) == row
+    assert events == ["eq", "eq", "del"]
+
+
 def _test_context_manager(connection_string):
     # TODO: This is failing, but it may be due to the design of sqlite.  I've disabled it
     # for now until I can research it some more.

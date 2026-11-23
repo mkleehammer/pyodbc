@@ -208,8 +208,14 @@ static int Row_contains(PyObject* o, PyObject* el)
 
     int cmp = 0;
 
+    // The comparison can run Python code that replaces the value (row[i] = x), so hold a
+    // reference to it.
     for (Py_ssize_t i = 0, c = self->cValues ; cmp == 0 && i < c; ++i)
-        cmp = PyObject_RichCompareBool(el, self->apValues[i], Py_EQ);
+    {
+        Object item(self->apValues[i]);
+        Py_INCREF(item.Get());
+        cmp = PyObject_RichCompareBool(el, item, Py_EQ);
+    }
 
     return cmp;
 }
@@ -324,11 +330,16 @@ static PyObject* Row_richcompare(PyObject* olhs, PyObject* orhs, int op)
 
     for (Py_ssize_t i = 0, c = lhs->cValues; i < c; i++)
     {
-        int eq = PyObject_RichCompareBool(lhs->apValues[i], rhs->apValues[i], Py_EQ);
+        // The comparison can run Python code that replaces either value, so hold references.
+        Object l(lhs->apValues[i]);
+        Py_INCREF(l.Get());
+        Object r(rhs->apValues[i]);
+        Py_INCREF(r.Get());
+        int eq = PyObject_RichCompareBool(l, r, Py_EQ);
         if (eq < 0)
             return 0;
         if (!eq)
-            return PyObject_RichCompare(lhs->apValues[i], rhs->apValues[i], op);
+            return PyObject_RichCompare(l, r, op);
     }
 
     // All items are equal.
