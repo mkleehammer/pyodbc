@@ -338,7 +338,7 @@ static bool free_results(Cursor* self, int flags)
     // this even when a query has not been executed.
 
     // If we ran out of memory, it is possible that we have a cursor but colinfos is zero.  However, we should be
-    // deleting this object, so the cursor will be freed when the HSTMT is destroyed. */
+    // deleting this object, so the cursor will be freed when the HSTMT is destroyed.
 
     assert((flags & STATEMENT_MASK) != 0);
     assert((flags & PREPARED_MASK) != 0);
@@ -357,6 +357,8 @@ static bool free_results(Cursor* self, int flags)
 
     if (StatementIsValid(self))
     {
+        TRACE("free_results: %p\n", self);
+
         if ((flags & STATEMENT_MASK) == FREE_STATEMENT)
         {
             Py_BEGIN_ALLOW_THREADS
@@ -400,6 +402,8 @@ static bool free_results(Cursor* self, int flags)
 
     self->rowcount = -1;
 
+    TRACE("free_results: done\n");
+
     return true;
 }
 
@@ -420,6 +424,8 @@ static void closeimpl(Cursor* cur)
         HSTMT hstmt = cur->hstmt;
         cur->hstmt = SQL_NULL_HANDLE;
 
+        TRACE("SQLFreeHandle\n");
+
         SQLRETURN ret;
         Py_BEGIN_ALLOW_THREADS
         ret = SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
@@ -428,6 +434,8 @@ static void closeimpl(Cursor* cur)
         // If there is already an exception, don't overwrite it.
         if (!SQL_SUCCEEDED(ret) && !PyErr_Occurred())
             RaiseErrorFromHandle(cur->cnxn, "SQLFreeHandle", cur->cnxn->hdbc, SQL_NULL_HANDLE);
+    } else {
+        TRACE("Invalid statement handle, skipping SQLFreeHandle\n");
     }
 
     Py_XDECREF(cur->pPreparedSQL);
@@ -845,12 +853,16 @@ static PyObject* execute(Cursor* cur, PyObject* pSql, PyObject* params, bool ski
         }
         SQLINTEGER  cch = (SQLINTEGER)len;
 
+        TRACE("cursor.execute: isWide=%d query_len=%d\n", isWide, cch);
+
         Py_BEGIN_ALLOW_THREADS
         if (isWide)
             ret = SQLExecDirectW(cur->hstmt, (SQLWCHAR*)pch, cch);
         else
             ret = SQLExecDirect(cur->hstmt, (SQLCHAR*)pch, cch);
         Py_END_ALLOW_THREADS
+
+        TRACE("cursor.execute, finished\n");
     }
 
     if (cur->cnxn->hdbc == SQL_NULL_HANDLE)
@@ -2963,6 +2975,8 @@ Cursor_New(Connection* cnxn)
 
         if (cnxn->timeout)
         {
+            TRACE("cursor.new: setting timeout to %d\n", cnxn->timeout);
+
             Py_BEGIN_ALLOW_THREADS
             ret = SQLSetStmtAttr(cur->hstmt, SQL_ATTR_QUERY_TIMEOUT, (SQLPOINTER)(uintptr_t)cnxn->timeout, 0);
             Py_END_ALLOW_THREADS
@@ -2975,7 +2989,7 @@ Cursor_New(Connection* cnxn)
             }
         }
 
-        TRACE("cursor.new cnxn=%p hdbc=%d cursor=%p hstmt=%d\n", (Connection*)cur->cnxn, ((Connection*)cur->cnxn)->hdbc, cur, cur->hstmt);
+        TRACE("cursor.new: cnxn=%p hdbc=%d cursor=%p hstmt=%d\n", (Connection*)cur->cnxn, ((Connection*)cur->cnxn)->hdbc, cur, cur->hstmt);
     }
 
     return cur;

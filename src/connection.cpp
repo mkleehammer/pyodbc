@@ -214,6 +214,8 @@ static bool ApplyPreconnAttrs(HDBC hdbc, SQLINTEGER ikey, PyObject *value, char 
         return false;
     }
 
+    TRACE("ApplyPreconnAttrs.SQLSetConnectAttrW key=%d value=%p vallen=%d\n", ikey, ivalue);
+
     Py_BEGIN_ALLOW_THREADS
     ret = SQLSetConnectAttrW(hdbc, ikey, ivalue, vallen);
     Py_END_ALLOW_THREADS
@@ -246,7 +248,7 @@ PyObject* Connection_New(PyObject* pConnectString, bool fAutoCommit, long timeou
         return RaiseErrorFromHandle(0, "SQLAllocHandle", SQL_NULL_HANDLE, SQL_NULL_HANDLE);
 
     //
-    // Attributes that must be set before connecting.
+    // Attributes that must be set before connecting. These are passed via `attr_before` in python.
     //
 
     PyObject* preconn_keepalives = 0;
@@ -475,6 +477,8 @@ static PyObject* Connection_set_attr(PyObject* self, PyObject* args)
     Connection* cnxn = Connection_Validate(self);
     if (!cnxn)
         return 0;
+
+    TRACE("SQLSetConnectAttr id=%d value=%d\n", id, value);
 
     SQLRETURN ret;
     SQLWChar sqlchar;  // declared here so buffer stays alive across the call
